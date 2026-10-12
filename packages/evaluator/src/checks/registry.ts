@@ -1,5 +1,6 @@
 import type { Problem, Scenario } from "@archdrill/model";
 import { populateAfterMiss } from "./dataflow";
+import { ingressHasCapability } from "./ingress";
 import {
   costWithinBudget,
   hitRatioAbove,
@@ -8,6 +9,7 @@ import {
   utilizationBelow,
 } from "./metrics";
 import { allSuccessPathsContain, noPath, outcomeHandled, statusForCondition } from "./paths";
+import { recognizeStrategy } from "./strategy";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
 
@@ -25,6 +27,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     successRateAbove,
     hitRatioAbove,
     costWithinBudget,
+    recognizeStrategy,
+    ingressHasCapability,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

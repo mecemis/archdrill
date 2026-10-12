@@ -90,6 +90,22 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       ],
     },
     {
+      id: "api-gateway",
+      label: "API gateway",
+      description: "Routes, authenticates and rate-limits requests.",
+      capabilities: ["routing", "rate-limiting", "authn"],
+      replicable: false,
+      holdsData: false,
+      flavors: [
+        {
+          id: "managed",
+          label: "Managed gateway",
+          description: "Managed gateway.",
+          managedRedundancy: true,
+        },
+      ],
+    },
+    {
       id: "id-generator",
       label: "Id generator",
       description: "Hands out unique keys.",

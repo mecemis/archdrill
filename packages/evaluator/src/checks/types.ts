@@ -23,6 +23,8 @@ export interface CheckOutcome {
   /** Optional supporting lines, e.g. the offending paths. */
   readonly details: readonly string[];
   readonly evidence: readonly Evidence[];
+  /** Structured facts for the UI, e.g. the strategy a design was recognised as. */
+  readonly data?: Readonly<Record<string, string>>;
 }
 
 export interface CheckDef<S extends z.ZodType = z.ZodType> {
