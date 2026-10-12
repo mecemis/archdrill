@@ -29,6 +29,18 @@ describe("cacheHitRatio", () => {
     expect(at(7e7, 3600)).toBeLessThanOrEqual(at(7e7, null));
   });
 
+  it("gives the same answer whatever order nearby inputs are asked in", () => {
+    const a = { ...base, rate: 123_456.1 };
+    const b = { ...base, rate: 123_456.4 };
+    const forward = [cacheHitRatio(a), cacheHitRatio(b)];
+    const backward = [
+      cacheHitRatio({ ...b, ttlSec: 1234 }),
+      cacheHitRatio({ ...a, ttlSec: 1234 }),
+    ].reverse();
+    expect(forward[0]).toBe(forward[1]);
+    expect(backward[0]).toBe(backward[1]);
+  });
+
   it("is zero without traffic or memory", () => {
     expect(cacheHitRatio({ ...base, rate: 0 })).toBe(0);
     expect(cacheHitRatio({ ...base, capacityItems: 0 })).toBe(0);

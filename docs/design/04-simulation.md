@@ -78,7 +78,7 @@ hit_k ≈ min(1 − e^{−λ_k t_C}, λ_k T / (1 + λ_k T))
 
 The first term is the capacity limit (Che); the second is the TTL limit. Taking the minimum is a bound-based approximation, and is documented as such. If the TTL is refreshed on reads, the TTL acts as a reset timer and the second term becomes `1 − e^{−λ_k T}`. The aggregate hit ratio is `Σ_k q_k hit_k`. This is where design decisions become visible: halving memory, or a 60-second TTL for takedown compliance, changes the hit ratio by an amount the candidate can see.
 
-**Negative caching** applies the same model to not-found keys with their own TTL.
+**Negative caching** applies the same model to not-found keys with their own TTL. Positive and negative entries compete for the same memory, which is split between them in proportion to their lookup rates. This is a simple, documented approximation.
 
 **Near cache (two-tier).** A small in-process cache with its own capacity per service replica and its own TTL sits in front. Its misses feed the shared cache.
 
@@ -102,14 +102,16 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
   ```
 
   It was measured to stay within 4% of the service time of the exact value across c = 2…100 and ρ = 0.5…0.95. Its *relative* error is large only where waits are negligible. Utilisation is capped at 0.98 inside the formula.
-- **Overload wait.** Requests that an overloaded component (`ρ > 1`) still serves have waited in a queue that keeps growing until callers give up. Until timeouts arrive (M4), this is a fixed, documented wait of **1 s**. Without it, overloaded designs would look fast, because the excess is rejected rather than queued.
+- **Overload wait.** Requests that an overloaded component (`ρ > 1`) still serves have waited in a queue that keeps growing until callers give up. Until timeouts arrive (M4), this is a fixed, documented wait of **1 s**. Without it, overloaded designs would look fast, because the excess is rejected rather than queued. Two limits follow:
+  - Between `ρ = 0.98` and `1.0` the queueing wait stays at its capped value, and it jumps to the overload wait above 1.0.
+  - Headroom checks (`utilization-below`, usually at 0.8) keep scenarios away from that region.
 - **Node latency.** Moments are `mean = S + W_q` and `variance = (cv·S)² + W_q²`.
 - **Network hops.** Each connection adds a round trip of 0.5 ms within a zone. Zone and region placement arrive with the failure scenarios.
 
 ### 5. Path latency and percentiles
 
 - **Per path.** Path latency is the sum of its hop and node latencies. Means and variances add, and the path is moment-matched to a **Gamma** distribution. A rejected call fails fast: it costs the round trip, not the service time.
-- **Per operation.** Operation latency is the **mixture** over paths weighted by `π(p)`. p50, p95, and p99 are found by bisection on the mixture CDF.
+- **Per operation.** Operation latency is the **mixture** over the paths of *successful* requests, weighted by `π(p)`. p50, p95, and p99 are found by bisection on the mixture CDF. Failed requests are reported by the success rate instead, because fast failures would otherwise pull the tail down. Latency checks also fail outright when fewer than 99% of requests succeed.
 - **Mixture, not maximum.** A cache hit and a cache miss are different distributions, and the p99 is often decided by the miss path. Taking the longest path instead would hide this.
 
 ### 6. Overload, timeouts, retries: the fixed point
@@ -165,7 +167,7 @@ Monthly cost has three parts:
 
 - **instances**: `Σ shards × replicas × size.costPerHour × 730`;
 - **storage**: GB-month for durable stores, `(stored entities × entity bytes) × copies × price`. The stored-entity counts come from the workload's `dataset`. Every replica of a shard holds a full copy, so read replicas are expensive at this data size. For URL Shortener, one copy of 158 B links is ~79 TB, so read replicas cannot be the main way to absorb 300,000 reads per second.
-- **requests and egress**: for request-priced flavors (on-demand key-value DB, CDN later), from loads × seconds per month × price per million.
+- **requests and egress**: for request-priced flavors (on-demand key-value DB, CDN later), from loads × seconds per month × price per million. This assumes the environment's traffic is sustained for the whole month. Budgets are therefore checked against the average environment, and peak-environment costs are a ceiling.
 
 Prices are order-of-magnitude list prices with a stated date and source. They are used for **relative** comparison and budget checks with ±25% tolerance, never as quotes.
 

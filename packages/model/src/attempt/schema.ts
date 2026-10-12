@@ -5,6 +5,9 @@ import { IdSchema } from "../catalog/schema";
 import { HttpStatusSchema } from "../problem/schema";
 
 export const ATTEMPT_SCHEMA_VERSION = 1;
+/** Upper bounds that keep imported designs within what the model is calibrated for. */
+export const MAX_REPLICAS = 1000;
+export const MAX_SHARDS = 1024;
 
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 export type Position = z.infer<typeof PositionSchema>;
@@ -17,9 +20,9 @@ export const ComponentSchema = z.object({
   flavor: IdSchema,
   label: z.string().min(1),
   size: IdSchema.optional(),
-  replicas: z.number().int().min(1).default(1),
+  replicas: z.number().int().min(1).max(MAX_REPLICAS).default(1),
   /** Number of shards for shardable kinds; each shard holds part of the data. */
-  shards: z.number().int().min(1).default(1),
+  shards: z.number().int().min(1).max(MAX_SHARDS).default(1),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
 });

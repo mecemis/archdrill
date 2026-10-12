@@ -13,6 +13,17 @@ import {
 const EnvironmentParam = z.string().min(1);
 /** A target missed by more than this factor earns no partial credit. */
 const PARTIAL_LIMIT = 1.5;
+/** Below this success rate, latency of the few successful requests says little about the design. */
+const MEANINGFUL_SUCCESS = 0.99;
+/** Rounding slack when comparing shares that should be exactly equal. */
+const EPSILON = 1e-9;
+
+/** Appended to messages when the overload model did not settle, so readers treat numbers as approximate. */
+function approximateNote(env: EnvironmentMetrics): string {
+  return env.converged
+    ? ""
+    : " (approximate: a component is so far over capacity that the load model did not settle)";
+}
 
 function environmentOf(ctx: CheckContext, id: string): EnvironmentMetrics | null {
   return ctx.metrics.get(id) ?? null;
@@ -62,11 +73,17 @@ export const latencyBelow = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const op = env?.operations.get(params.operation);
     if (!env || !op) return notApplicable("This scenario does not simulate that operation.");
+    if (op.successRate < MEANINGFUL_SUCCESS) {
+      return failed(
+        `Only ${percent(op.successRate)} of requests succeed at ${env.environment.label}, so latency cannot meet the target.${approximateNote(env)}`,
+        hotComponents(env, 1),
+      );
+    }
     const actual = op.latency[params.percentile];
     const slow = op.paths
       .filter((p) => p.probability > 0.001 && p.latency.p99 > params.ms)
       .map((p): Evidence => ({ type: "path", operation: params.operation, pathId: p.pathId }));
-    const message = `${params.percentile} is ${ms(actual)} at ${env.environment.label}; the target is under ${ms(params.ms)}.`;
+    const message = `${params.percentile} is ${ms(actual)} at ${env.environment.label}; the target is under ${ms(params.ms)}.${approximateNote(env)}`;
     return gradeAtMost(actual, params.ms, message, [...slow, ...hotComponents(env, 0.8)]);
   },
 });
@@ -117,7 +134,7 @@ export const successRateAbove = defineCheck({
     const op = env?.operations.get(params.operation);
     if (!env || !op) return notApplicable("This scenario does not simulate that operation.");
     const base = `${percent(op.successRate)} of requests succeed at ${env.environment.label}; the target is ${percent(params.min)}.`;
-    if (op.successRate >= params.min) return passed(base);
+    if (op.successRate >= params.min - EPSILON) return passed(base);
     const { rejected, unhandled, errorStatus } = op.failures;
     const causes = [
       rejected > 0 ? `${percent(rejected)} rejected by overloaded components on the way in` : null,
@@ -127,7 +144,8 @@ export const successRateAbove = defineCheck({
     const unhandledPaths: Evidence[] = (ctx.analysis.operations.get(params.operation)?.paths ?? [])
       .filter((p) => p.terminal.kind === "unhandled")
       .map((p) => ({ type: "path", operation: params.operation, pathId: p.id }));
-    return failed(`${base} Failures: ${causes.join("; ")}.`, [
+    const why = causes.length > 0 ? ` Failures: ${causes.join("; ")}.` : "";
+    return failed(`${base}${why}${approximateNote(env)}`, [
       ...hotComponents(env, 1),
       ...unhandledPaths,
     ]);
@@ -148,6 +166,11 @@ export const hitRatioAbove = defineCheck({
     const caches = env?.caches.filter((c) => c.entity === params.entity) ?? [];
     if (!env || caches.length === 0) return notApplicable(`No cache serves ${params.entity}.`);
     const lookups = caches.reduce((sum, c) => sum + c.lookupRate, 0);
+    if (lookups <= 0) {
+      return notApplicable(
+        `No ${params.entity} lookups reach a cache at ${env.environment.label}.`,
+      );
+    }
     const ratio =
       lookups > 0 ? caches.reduce((sum, c) => sum + c.hitRatio * c.lookupRate, 0) / lookups : 0;
     const evidence: Evidence[] = caches.map((c) => ({
@@ -185,7 +208,7 @@ export const costWithinBudget = defineCheck({
       type: "component",
       componentId: c.componentId,
     }));
-    const message = `The design costs about ${usd(env.monthlyCost)}/month at ${env.environment.label}; the budget is ${usd(params.monthlyUsd)}.`;
+    const message = `The design costs about ${usd(env.monthlyCost)}/month if ${env.environment.label.toLowerCase()} traffic is sustained; the budget is ${usd(params.monthlyUsd)}.`;
     const outcome = gradeAtMost(env.monthlyCost, params.monthlyUsd, message, evidence);
     return { ...outcome, details };
   },

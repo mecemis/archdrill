@@ -1,9 +1,11 @@
+import type { EnvironmentMetrics } from "@archdrill/engine";
 import { type Attempt, ScenarioSchema } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { evaluateAttempt } from "../evaluate";
 import type { CheckResult } from "../score";
-import { mutated } from "../test-support";
+import { contextFor, mutated } from "../test-support";
+import { CHECKS } from "./registry";
 
 const check = (id: string, use: string, dimension: string, params: Record<string, unknown>) => ({
   id,
@@ -119,6 +121,13 @@ describe("metric checks", () => {
     expect(results(attempt, 6000).get("hits")?.status).toBe("n/a");
   });
 
+  it("refuse to call latency good when most requests fail", () => {
+    const p99 = results(cacheAsideAttempt(), 60_000).get("p99");
+
+    expect(p99?.status).toBe("fail");
+    expect(p99?.message).toContain("succeed");
+  });
+
   it("give partial credit just over budget and none far over it", () => {
     const pricier = mutated("updateComponent", { id: "db", replicas: 3 });
     const muchPricier = mutated("updateComponent", { id: "db", replicas: 6 });
@@ -126,5 +135,25 @@ describe("metric checks", () => {
     expect(results(pricier, 6000).get("budget")?.status).toBe("partial");
     expect(results(muchPricier, 6000).get("budget")?.status).toBe("fail");
     expect(results(muchPricier, 6000).get("budget")?.details[0]).toContain("Postgres");
+  });
+
+  it("treat a cache that no lookup reaches as not applicable, not as a 0% hit ratio", () => {
+    const check = CHECKS.get("hit-ratio-above");
+    if (!check) throw new Error("missing check");
+    const env = {
+      environment: { id: "peak", label: "Peak", rates: {} },
+      caches: [
+        { componentId: "redis", entity: "Link", hitRatio: 0, lookupRate: 0, populated: true },
+      ],
+      converged: true,
+    } as unknown as EnvironmentMetrics;
+    const ctx = { ...contextFor(cacheAsideAttempt()), metrics: new Map([["peak", env]]) };
+
+    const outcome = check.run(
+      check.params.parse({ entity: "Link", environment: "peak", min: 0.8 }),
+      ctx,
+    );
+
+    expect(outcome.status).toBe("n/a");
   });
 });

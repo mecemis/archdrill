@@ -125,18 +125,13 @@ export function simulateEnvironment(
       delta = Math.max(delta, relax(drop, id, target));
     }
     for (const spec of caches) {
-      const lookups = flow.lookups.get(cacheKey(spec.componentId, spec.entity));
+      const key = cacheKey(spec.componentId, spec.entity);
+      const lookups = flow.lookups.get(key) ?? { existing: 0, absent: 0 };
+      const [positiveItems, negativeItems] = splitCapacity(spec, lookups);
+      delta = Math.max(delta, relax(hit, key, hitFor(spec, lookups.existing, positiveItems)));
       delta = Math.max(
         delta,
-        relax(hit, cacheKey(spec.componentId, spec.entity), hitFor(spec, lookups?.existing ?? 0)),
-      );
-      delta = Math.max(
-        delta,
-        relax(
-          negativeHit,
-          cacheKey(spec.componentId, spec.entity),
-          negativeHitFor(spec, lookups?.absent ?? 0),
-        ),
+        relax(negativeHit, key, negativeHitFor(spec, lookups.absent, negativeItems)),
       );
     }
     if (delta < TOLERANCE) {
@@ -185,22 +180,33 @@ function dropFor(
   return rho > 1 ? 1 - 1 / rho : 0;
 }
 
-function hitFor(spec: CacheSpec, rate: number): number {
-  if (!spec.populated || !spec.existing) return 0;
-  return cacheHitRatio({
-    rate,
-    popularity: spec.existing,
-    capacityItems: spec.capacityItems,
-    ttlSec: spec.ttlSec,
-  });
+/**
+ * Positive and negative entries compete for the same memory. Without negative
+ * caching all of it holds positive entries; with it, memory is shared in
+ * proportion to lookups, a simple and documented approximation.
+ */
+function splitCapacity(
+  spec: CacheSpec,
+  lookups: { existing: number; absent: number },
+): [number, number] {
+  if (!spec.negativePopulated) return [spec.capacityItems, 0];
+  const total = lookups.existing + lookups.absent;
+  if (total <= 0) return [spec.capacityItems, 0];
+  const negativeShare = lookups.absent / total;
+  return [spec.capacityItems * (1 - negativeShare), spec.capacityItems * negativeShare];
 }
 
-function negativeHitFor(spec: CacheSpec, rate: number): number {
+function hitFor(spec: CacheSpec, rate: number, capacityItems: number): number {
+  if (!spec.populated || !spec.existing) return 0;
+  return cacheHitRatio({ rate, popularity: spec.existing, capacityItems, ttlSec: spec.ttlSec });
+}
+
+function negativeHitFor(spec: CacheSpec, rate: number, capacityItems: number): number {
   if (!spec.negativePopulated || !spec.absent) return 0;
   return cacheHitRatio({
     rate,
     popularity: spec.absent,
-    capacityItems: spec.capacityItems,
+    capacityItems,
     ttlSec: spec.negativeTtlSec,
   });
 }
@@ -477,10 +483,11 @@ function summarizeOperations(
       else if (op.operation.successStatuses.includes(status)) success += probability;
       else errorStatus += probability;
       paths.push({ pathId: path.id, probability, latency: summarize([{ weight: 1, ...moments }]) });
-      mixture.push({ weight: pass * probability, ...moments });
+      // Latency is measured on successful requests: fast failures would otherwise pull the tail down.
+      if (status !== null && op.operation.successStatuses.includes(status)) {
+        mixture.push({ weight: pass * probability, ...moments });
+      }
     }
-    if (pass < 1)
-      mixture.push({ weight: 1 - pass, mean: NETWORK_HOP.mean, variance: NETWORK_HOP.variance });
     result.set(op.operation.id, {
       operation: op.operation.id,
       rate: op.rate,

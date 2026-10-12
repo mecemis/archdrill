@@ -7,6 +7,7 @@ export const ISSUE_CODES = [
   "unknown-size",
   "replicas-not-supported",
   "shards-not-supported",
+  "replicas-ignored",
   "connection-unknown-endpoint",
   "connection-self-loop",
   "connection-duplicate",

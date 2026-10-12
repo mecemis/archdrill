@@ -69,6 +69,7 @@ export interface OperationMetrics {
     /** Answered with a status that is not a success for this operation (e.g. 503 after a rejected call). */
     readonly errorStatus: number;
   };
+  /** Latency of successful requests; failed requests are reported by the success rate instead. */
   readonly latency: LatencySummary;
   readonly paths: readonly PathMetrics[];
 }

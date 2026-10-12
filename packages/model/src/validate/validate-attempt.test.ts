@@ -249,6 +249,18 @@ describe("validateAttempt", () => {
     expect(codes(unknownSize)).toContain("unknown-size");
   });
 
+  it("warns that replicas are ignored on managed components", () => {
+    const base = cacheAsideAttempt();
+    const components = base.architecture.components.map((c) =>
+      c.id === "lb" ? { ...c, replicas: 3 } : c,
+    );
+    const managed: Attempt = { ...base, architecture: { ...base.architecture, components } };
+
+    const issue = validateAttempt(managed, ctx).find((i) => i.code === "replicas-ignored");
+
+    expect(issue?.severity).toBe("warning");
+  });
+
   it("rejects decisions that the problem does not define", () => {
     const attempt = mutate("setDecision", { decision: "redirect-status", option: "s307" });
 

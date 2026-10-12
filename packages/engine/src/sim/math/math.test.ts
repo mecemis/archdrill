@@ -108,6 +108,13 @@ describe("gamma and mixtures", () => {
     expect(mixed).toBeGreaterThan(20);
   });
 
+  it("stays accurate for very narrow distributions", () => {
+    // shape 1e8: the CDF at mean ± 2 sd should match the normal's 2.3% / 97.7%.
+    const narrow = { mean: 100, variance: 1e-4 };
+    expect(momentGammaCdf(100 - 0.02, narrow)).toBeCloseTo(0.0228, 3);
+    expect(momentGammaCdf(100 + 0.02, narrow)).toBeCloseTo(0.9772, 3);
+  });
+
   it("treats zero variance as a fixed latency", () => {
     expect(momentGammaCdf(2.9, { mean: 3, variance: 0 })).toBe(0);
     expect(momentGammaCdf(3, { mean: 3, variance: 0 })).toBe(1);

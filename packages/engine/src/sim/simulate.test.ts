@@ -133,6 +133,51 @@ describe("simulateEnvironment", () => {
     expect(metrics.components.get("db")?.storageGb).toBeCloseTo(1000, 6);
   });
 
+  it("makes negative entries share cache memory with positive ones", () => {
+    const withAbsent = WorkloadSchema.parse({
+      ...workload,
+      keys: {
+        Link: {
+          existing: { distribution: "zipf", s: 1.05, population: 2e10 },
+          absent: { distribution: "zipf", s: 0.7, population: 1e9 },
+        },
+      },
+    });
+    // At 200k lookups/s memory, not the TTL, limits the hit ratio, so sharing it shows.
+    const busy = applyCommand(cacheAsideAttempt(), "updateComponent", {
+      id: "api",
+      replicas: 100,
+    }).attempt;
+    const negative = applyCommand(busy, "addStep", {
+      operation: "redirect",
+      step: {
+        type: "call",
+        target: "redis",
+        action: "cache.setNegative",
+        entity: "Link",
+        ttlSec: 3600,
+      },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "ok" },
+    }).attempt;
+    const run = (attempt: Attempt) => {
+      const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
+      const env = { id: "steady", label: "Steady", rates: { redirect: 200_000 } };
+      return simulateEnvironment(withAbsent, env, {
+        attempt,
+        catalog: testCatalogIndex,
+        problem: testProblem,
+        analysis,
+      });
+    };
+
+    const without = run(busy).caches[0];
+    const shared = run(negative).caches[0];
+
+    expect(shared?.negativeHitRatio).toBeGreaterThan(0);
+    expect(shared?.hitRatio).toBeLessThan(without?.hitRatio ?? 0);
+  });
+
   it("is deterministic", () => {
     expect(simulate(cacheAsideAttempt())).toEqual(simulate(cacheAsideAttempt()));
   });

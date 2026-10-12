@@ -233,6 +233,15 @@ describe("commands", () => {
     ).toThrow();
   });
 
+  it("keeps counts within the calibrated bounds", () => {
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 5000 }),
+    ).toThrow();
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "db", shards: 5000 }),
+    ).toThrow();
+  });
+
   it("sets and clears decisions", () => {
     const set = applyCommand(cacheAsideAttempt(), "setDecision", {
       decision: "redirect-status",

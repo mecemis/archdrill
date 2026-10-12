@@ -63,11 +63,27 @@ export interface Moments {
   readonly variance: number;
 }
 
+/** Above this shape the Gamma is indistinguishable from a normal and the series would need too many terms. */
+const NORMAL_APPROXIMATION_SHAPE = 1e4;
+
+/** Error function, Abramowitz & Stegun 7.1.26 (absolute error below 1.5e-7). */
+function erf(x: number): number {
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const poly =
+    t *
+    (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  return sign * (1 - poly * Math.exp(-x * x));
+}
+
 /** CDF of a Gamma distribution matched to the given mean and variance (degenerate if variance ≈ 0). */
 export function momentGammaCdf(x: number, { mean, variance }: Moments): number {
   if (mean <= 0) return 1;
-  if (variance <= mean * mean * 1e-9) return x >= mean ? 1 : 0;
+  if (variance <= mean * mean * 1e-12) return x >= mean ? 1 : 0;
   const shape = (mean * mean) / variance;
+  if (shape > NORMAL_APPROXIMATION_SHAPE) {
+    return 0.5 * (1 + erf((x - mean) / Math.sqrt(2 * variance)));
+  }
   const scale = variance / mean;
   return regularizedGammaP(shape, x / scale);
 }

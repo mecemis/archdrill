@@ -7,12 +7,18 @@ import { type Highlight, useUi } from "./ui-store";
 
 let cached: { readonly attempt: Attempt; readonly evaluation: AttemptEvaluation } | undefined;
 
+/** Evaluation never reads the layout, so moving nodes must not trigger a re-run. */
+function sameEvaluationInputs(a: Attempt, b: Attempt): boolean {
+  return a.architecture === b.architecture && a.flows === b.flows && a.decisions === b.decisions;
+}
+
 /**
- * Evaluates every scenario once per attempt version. Attempts are immutable,
- * so identity is a safe cache key and every component sees the same result.
+ * Evaluates every scenario once per version of the evaluated parts of the
+ * attempt. Attempts are immutable with structural sharing, so reference
+ * equality is a safe cache key and every component sees the same result.
  */
 export function evaluate(attempt: Attempt): AttemptEvaluation {
-  if (cached?.attempt !== attempt) {
+  if (!cached || !sameEvaluationInputs(cached.attempt, attempt)) {
     cached = {
       attempt,
       evaluation: evaluateAttempt(attempt, { ...activePack, catalog: catalogIndex }),

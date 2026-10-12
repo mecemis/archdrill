@@ -29,17 +29,24 @@ const MAX_LOG_TIME = Math.log(1e15);
  */
 export function cacheHitRatio(input: CacheModelInput): number {
   if (input.rate <= 0 || input.capacityItems <= 0) return 0;
-  // Fixed-point iterations ask for nearly identical inputs; 4 significant digits is plenty.
+  // Fixed-point iterations ask for nearly identical inputs. Inputs are rounded to
+  // 4 significant digits and the model runs on the rounded values, so the result
+  // depends only on the key, never on which caller happened to fill the memo.
+  const rounded: CacheModelInput = {
+    ...input,
+    rate: Number(input.rate.toPrecision(4)),
+    capacityItems: Number(input.capacityItems.toPrecision(4)),
+  };
   const key = [
-    input.rate.toPrecision(4),
-    input.popularity.s,
-    input.popularity.population,
-    input.capacityItems.toPrecision(4),
-    input.ttlSec,
+    rounded.rate,
+    rounded.popularity.s,
+    rounded.popularity.population,
+    rounded.capacityItems,
+    rounded.ttlSec,
   ].join("|");
   const cached = memo.get(key);
   if (cached !== undefined) return cached;
-  const result = computeHitRatio(input);
+  const result = computeHitRatio(rounded);
   if (memo.size >= MEMO_LIMIT) memo.clear();
   memo.set(key, result);
   return result;
