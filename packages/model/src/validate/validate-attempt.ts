@@ -6,7 +6,7 @@ import {
   stepOutcomes,
   unhandledOutcomes,
 } from "../attempt/steps";
-import { ACTIONS, CONDITIONAL_OUTCOMES } from "../catalog/actions";
+import { ACTIONS, actionTakesParam, CONDITIONAL_OUTCOMES } from "../catalog/actions";
 import type { CatalogIndex } from "../catalog/schema";
 import { findIngressRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -329,9 +329,7 @@ function validateCallStep(
   }
   if (action.effect !== "allocate")
     issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
-  const optional: readonly string[] =
-    "optionalParams" in action ? (action.optionalParams ?? []) : [];
-  if (step.batchSize !== undefined && !optional.includes("batchSize")) {
+  if (step.batchSize !== undefined && !actionTakesParam(step.action, "batchSize")) {
     issues.push(
       error(
         "step-unexpected-param",

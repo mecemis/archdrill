@@ -133,6 +133,15 @@ export function getAction(id: ActionId): ActionDef {
   return ACTIONS[id];
 }
 
+/** Whether a step with this action may carry the parameter (required or optional). */
+export function actionTakesParam(id: ActionId, param: ActionParam | OptionalActionParam): boolean {
+  const action = getAction(id);
+  return (
+    (action.params as readonly string[]).includes(param) ||
+    (action.optionalParams ?? []).includes(param as OptionalActionParam)
+  );
+}
+
 /**
  * Outcomes that can only happen when the design makes them possible. A cache
  * can only answer with a negative hit if some flow stores negative entries for

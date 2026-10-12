@@ -2,6 +2,7 @@ import {
   ACTIONS,
   type ActionId,
   type Attempt,
+  actionTakesParam,
   type Flow,
   LOGIC,
   type LogicId,
@@ -21,6 +22,10 @@ const DEFAULT_TTL: Partial<Record<ActionId, number>> = {
   "cache.set": 3600,
   "cache.setNegative": 60,
 };
+const MAX_BATCH = 1_000_000;
+
+/** Allocation calls produce a key rather than touching an entity. */
+const touchesEntity = (action: ActionId) => ACTIONS[action].effect !== "allocate";
 
 function callableTargets(attempt: Attempt, flow: Flow): string[] {
   return attempt.architecture.connections
@@ -50,6 +55,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const [action, setAction] = useState<ActionId | "">(actions[0] ?? "");
   const [entity, setEntity] = useState(activePack.problem.entities[0]?.name ?? "");
   const [ttl, setTtl] = useState(3600);
+  const [batchSize, setBatchSize] = useState(1);
   const [logic, setLogic] = useState<LogicId>("checkExpiry");
   const [status, setStatus] = useState(302);
   const [gotoStep, setGotoStep] = useState("");
@@ -68,7 +74,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
     if (action) setTtl(DEFAULT_TTL[action] ?? 3600);
   }, [action]);
 
-  const draft = buildStep(mode, { target, action, entity, ttl, logic, status });
+  const draft = buildStep(mode, { target, action, entity, ttl, batchSize, logic, status });
   const outcomes = useMemo(() => draftOutcomes(draft), [draft]);
   useEffect(() => {
     if (inserting && !outcomes.includes(continueWith)) setContinueWith(outcomes[0] ?? "");
@@ -146,16 +152,32 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
               ))}
             </Select>
           </Field>
-          <Field label="Entity">
-            <Select value={entity} onChange={(e) => setEntity(e.target.value)}>
-              {activePack.problem.entities.map((e) => (
-                <option key={e.name} value={e.name}>
-                  {e.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {action && (ACTIONS[action].params as readonly string[]).includes("ttlSec") && (
+          {action && touchesEntity(action) && (
+            <Field label="Entity">
+              <Select value={entity} onChange={(e) => setEntity(e.target.value)}>
+                {activePack.problem.entities.map((e) => (
+                  <option key={e.name} value={e.name}>
+                    {e.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {action && actionTakesParam(action, "batchSize") && (
+            <Field label="Batch size (keys per call; 1 = every request)">
+              <input
+                type="number"
+                min={1}
+                max={MAX_BATCH}
+                value={batchSize}
+                onChange={(e) =>
+                  setBatchSize(Math.min(MAX_BATCH, Math.max(1, Math.round(Number(e.target.value)))))
+                }
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+              />
+            </Field>
+          )}
+          {action && actionTakesParam(action, "ttlSec") && (
             <Field label="TTL (seconds)">
               <input
                 type="number"
@@ -232,19 +254,21 @@ function buildStep(
     action: ActionId | "";
     entity: string;
     ttl: number;
+    batchSize: number;
     logic: LogicId;
     status: number;
   },
 ): StepInput | null {
   if (mode === "call") {
     if (!v.target || !v.action) return null;
-    const needsTtl = (ACTIONS[v.action].params as readonly string[]).includes("ttlSec");
+    const batched = actionTakesParam(v.action, "batchSize") && v.batchSize > 1;
     return {
       type: "call",
       target: v.target,
       action: v.action,
-      entity: v.entity,
-      ...(needsTtl ? { ttlSec: v.ttl } : {}),
+      ...(touchesEntity(v.action) ? { entity: v.entity } : {}),
+      ...(actionTakesParam(v.action, "ttlSec") ? { ttlSec: v.ttl } : {}),
+      ...(batched ? { batchSize: v.batchSize } : {}),
     };
   }
   if (mode === "logic") return { type: "logic", logic: v.logic };
