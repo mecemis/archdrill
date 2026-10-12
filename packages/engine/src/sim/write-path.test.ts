@@ -1,10 +1,4 @@
-import {
-  type Attempt,
-  applyCommand,
-  type CommandArgs,
-  type CommandName,
-  WorkloadSchema,
-} from "@archdrill/model";
+import { type Attempt, applyCommand, WorkloadSchema } from "@archdrill/model";
 import { createLinkAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
