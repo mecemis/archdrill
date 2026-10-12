@@ -222,22 +222,23 @@ checks:
 
   - id: non-enumerable
     use: no-path
-    title: Counter-based codes are not enumerable
+    title: Generated codes are not enumerable
     dimension: security
     weight: 3
     severity: critical
     requirements: [NFR-3]
     params:
       operation: create-link
-      applicableWhen: { hasStep: { action: coord.leaseRange } }
       where:
         all:
           - status: [201]
           - hasStep: { action: coord.leaseRange, outcome: ok }
           - not: { hasStep: { logic: obfuscateId } }
     why: >-
-      Sequential ids encoded in base62 are trivially enumerable: anyone can
-      walk the keyspace and harvest every link, including private ones.
+      A code must not lead to other links. Random, hashed and pre-generated
+      codes are safe, but sequential ids encoded in base62 are trivially
+      enumerable: anyone can walk the keyspace and harvest every link,
+      including private ones.
     fix: >-
       Scramble the id with a reversible permutation (for example a Feistel
       network or format-preserving encryption) before encoding it.
