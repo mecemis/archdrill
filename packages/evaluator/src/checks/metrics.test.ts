@@ -1,6 +1,11 @@
 import type { EnvironmentMetrics } from "@archdrill/engine";
-import { type Attempt, ScenarioSchema } from "@archdrill/model";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
+import { type Attempt, applyCommand, ScenarioSchema } from "@archdrill/model";
+import {
+  cacheAsideAttempt,
+  createLinkAttempt,
+  testCatalogIndex,
+  testProblem,
+} from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { evaluateAttempt } from "../evaluate";
 import type { CheckResult } from "../score";
@@ -155,5 +160,50 @@ describe("metric checks", () => {
     );
 
     expect(outcome.status).toBe("n/a");
+  });
+});
+
+describe("success-rate-above", () => {
+  const createScenario = ScenarioSchema.parse({
+    id: "create",
+    problemId: "url-shortener",
+    title: "Create",
+    order: 1,
+    story: "Links are created.",
+    focusOperations: ["create-link"],
+    dimensions: { availability: 1 },
+    workload: {
+      operations: { "create-link": { entity: "Link", classes: [{ id: "generated", share: 1 }] } },
+      keys: { Link: { existing: { distribution: "zipf", s: 1, population: 1e6 } } },
+      dataset: { Link: 1.58e11 },
+      keyspace: { Link: { alphabet: 62, lengthDecision: "code-length" } },
+      environments: [{ id: "peak", label: "Peak", rates: { "create-link": 1000 } }],
+    },
+    checks: [
+      check("success", "success-rate-above", "availability", {
+        operation: "create-link",
+        environment: "peak",
+        min: 0.999,
+      }),
+    ],
+  });
+
+  it("names the step whose outcome sends requests to an error response", () => {
+    const attempt = applyCommand(createLinkAttempt("random"), "setDecision", {
+      decision: "code-length",
+      option: "6",
+    }).attempt;
+
+    const [result] = evaluateAttempt(attempt, {
+      problem: testProblem,
+      scenarios: [createScenario],
+      catalog: testCatalogIndex,
+    }).scenarios;
+    const success = result?.status === "evaluated" ? result.checks[0] : undefined;
+
+    expect(success?.status).toBe("fail");
+    expect(success?.details).toEqual([
+      "100.0% of requests: Postgres · insert if absent: conflict → 503",
+    ]);
   });
 });

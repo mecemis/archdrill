@@ -1,4 +1,4 @@
-import type { Attempt } from "@archdrill/model";
+import { type Attempt, ScenarioSchema } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { evaluateAttempt, type ScenarioResult } from "./evaluate";
@@ -111,6 +111,35 @@ describe("evaluateAttempt", () => {
     const { scorecard } = evaluated(cacheAsideAttempt());
 
     expect(scorecard.signals.senior).toEqual({ demonstrated: 0, total: 1 });
+  });
+
+  it("leaves signals about approaches the design does not use out of the count", () => {
+    const counterSignal = {
+      id: "counter-obfuscated",
+      use: "no-path",
+      title: "Counters are scrambled",
+      dimension: "latency",
+      signal: "senior",
+      params: {
+        operation: "redirect",
+        applicableWhen: { hasStep: { action: "coord.leaseRange" } },
+        where: { hasStep: { action: "coord.leaseRange" } },
+      },
+      why: "w",
+      fix: "f",
+    };
+    const scenario = ScenarioSchema.parse({
+      ...redirectScenario,
+      checks: [...redirectScenario.checks, counterSignal],
+    });
+
+    const result = evaluateAttempt(cacheAsideAttempt(), { ...input, scenarios: [scenario] })
+      .scenarios[0];
+
+    expect(result?.status === "evaluated" && result.scorecard.signals.senior).toEqual({
+      demonstrated: 0,
+      total: 1,
+    });
   });
 
   it("refuses to score when the scenario's flow has validation errors", () => {

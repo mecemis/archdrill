@@ -131,8 +131,9 @@ export function bandFor(score: number): Band {
   return "not-passing";
 }
 
+/** Signals the design could show; ones about approaches it does not use (n/a) are left out. */
 function signals(results: readonly CheckResult[], level: "senior" | "staff"): SignalSummary {
-  const relevant = results.filter((r) => r.instance.signal === level);
+  const relevant = results.filter((r) => r.instance.signal === level && r.status !== "n/a");
   return {
     demonstrated: relevant.filter((r) => r.status === "pass").length,
     total: relevant.length,

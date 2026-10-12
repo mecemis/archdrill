@@ -30,6 +30,7 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
   const dispatch = useAttemptStore((s) => s.dispatch);
   const implemented = useImplementedStrategy(point.id);
   const effective = chosen ?? point.default;
+  const assumed = point.options.find((o) => o.id === point.default);
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1">
@@ -44,11 +45,11 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
             onChange={() => dispatch("setDecision", { decision: point.id, option: option.id })}
           />
           {option.label}
-          {chosen === undefined && point.default === option.id && (
-            <span className="text-xs text-zinc-500">(assumed until you decide)</span>
-          )}
         </label>
       ))}
+      {chosen === undefined && assumed && (
+        <p className="text-xs text-zinc-500">Assumed: {assumed.label}, until you decide.</p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {point.requirements.map((r) => (
           <span key={r} className="rounded bg-sky-50 px-1.5 py-0.5 font-medium text-sky-800">

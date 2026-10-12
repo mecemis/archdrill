@@ -176,6 +176,19 @@ describe("App", () => {
     expect(screen.getByText("KGS · allocate id (batch 1,000)")).toBeDefined();
   });
 
+  it("shows the ingress route while the flow has errors", () => {
+    const raw = JSON.parse(JSON.stringify(createLinkAttempt("kgs")));
+    const create = raw.flows.find((f: { operation: string }) => f.operation === "create-link");
+    create.steps.insert.action = "store.insert"; // keeps a conflict link put does not have
+    useAttemptStore.getState().replace(AttemptSchema.parse(raw));
+    useUi.getState().setScenario("s1-create");
+    renderApp();
+
+    expect(screen.getByText(/^Not evaluable yet/)).toBeDefined();
+    expect(screen.getByText(/^Ingress:/)).toBeDefined();
+    expect(screen.queryByText(/No client can reach/)).toBeNull();
+  });
+
   it("records interview decisions and shows the approach the flow implements", () => {
     useAttemptStore.getState().replace(createLinkAttempt("kgs", 1000));
     useUi.getState().setScenario("s1-create");
@@ -185,7 +198,7 @@ describe("App", () => {
     const length = within(
       screen.getByRole("group", { name: "How many characters do generated codes have?" }),
     );
-    expect(length.getByText("(assumed until you decide)")).toBeDefined();
+    expect(length.getByText(/^Assumed: 7 characters/)).toBeDefined();
     expect(length.getByText("affects the simulation")).toBeDefined();
     fireEvent.click(length.getByRole("radio", { name: /8 characters/ }));
 
