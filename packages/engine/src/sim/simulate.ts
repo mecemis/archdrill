@@ -11,7 +11,7 @@ import {
   type Zipf,
 } from "@archdrill/model";
 import type { Analysis, OperationAnalysis } from "../analyze";
-import type { Path } from "../paths/types";
+import type { Path, PathStep } from "../paths/types";
 import { cacheHitRatio } from "./cache-model";
 import {
   type ComponentProfile,
@@ -52,6 +52,8 @@ const DEFAULT_CLASS: RequestClass = {
   expired: false,
   disabled: false,
   invalidInput: false,
+  customAlias: false,
+  aliasTaken: false,
 };
 
 export interface SimulationContext {
@@ -108,7 +110,9 @@ export function simulateEnvironment(
   const drop = new Map<string, number>();
   const hit = new Map<string, number>();
   const negativeHit = new Map<string, number>();
+  const occupancyByEntity = occupancies(workload, ctx);
   const state: OutcomeState = {
+    occupancy: (entity) => occupancyByEntity.get(entity ?? "") ?? 0,
     dropRate: (id) => drop.get(id) ?? 0,
     hitRatio: (id, entity) => hit.get(cacheKey(id, entity)) ?? 0,
     negativeHitRatio: (id, entity) => negativeHit.get(cacheKey(id, entity)) ?? 0,
@@ -299,11 +303,29 @@ function buildCacheSpecs(
 
 function pathProbability(path: Path, cls: RequestClass, state: OutcomeState): number {
   let probability = 1;
-  for (const step of path.steps) {
-    probability *= outcomeProbability(step, cls, state);
-    if (probability === 0) return 0;
-  }
+  path.steps.forEach((step, index) => {
+    if (probability === 0) return;
+    probability *= outcomeProbability(step, cls, state, path.steps.slice(0, index));
+  });
   return probability;
+}
+
+/** Share of the keyspace already taken, per entity, from the dataset size and the code-length decision. */
+function occupancies(workload: Workload, ctx: SimulationContext): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const [entity, { alphabet, lengthDecision }] of Object.entries(workload.keyspace)) {
+    const point = ctx.problem.decisionPoints.find((d) => d.id === lengthDecision);
+    const length = Number(ctx.attempt.decisions[lengthDecision] ?? point?.default);
+    const stored = workload.dataset[entity] ?? 0;
+    if (!Number.isFinite(length) || length <= 0) continue;
+    result.set(entity, Math.min(1, stored / alphabet ** length));
+  }
+  return result;
+}
+
+/** Allocation steps with a batch size call their target once per batch. */
+function callShare(step: PathStep): number {
+  return step.kind === "call" && step.batchSize ? 1 / step.batchSize : 1;
 }
 
 /** Share of requests that make it through every ingress hop. */
@@ -343,8 +365,9 @@ function propagate(operations: readonly OperationModel[], state: OutcomeState): 
         if (weight === 0) continue;
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
-          addLoad(step.target, weight, ACTIONS[step.action].effect !== "read");
-          addConnection(step.connectionId, weight);
+          const calls = weight * callShare(step);
+          addLoad(step.target, calls, ACTIONS[step.action].effect !== "read");
+          addConnection(step.connectionId, calls);
           if (step.action === "cache.get") {
             const entry = lookups.get(cacheKey(step.target, step.entity)) ?? {
               existing: 0,
@@ -420,6 +443,11 @@ function addMoments(a: Moments, b: Moments): Moments {
   return { mean: a.mean + b.mean, variance: a.variance + b.variance };
 }
 
+/** Moments of a cost paid with probability `share` (mean and variance scaled; a documented approximation). */
+function scaleMoments(m: Moments, share: number): Moments {
+  return share === 1 ? m : { mean: m.mean * share, variance: m.variance * share };
+}
+
 const NETWORK_HOP: Moments = { mean: NETWORK_RTT_MS, variance: (0.2 * NETWORK_RTT_MS) ** 2 };
 
 function pathLatency(
@@ -431,11 +459,13 @@ function pathLatency(
   let total = ingressLatency;
   for (const step of path.steps) {
     if (step.kind !== "call") continue;
-    total = addMoments(total, NETWORK_HOP);
+    // Batched allocation: only one request in a batch pays for the call.
+    const share = callShare(step);
+    total = addMoments(total, scaleMoments(NETWORK_HOP, share));
     // A rejected call fails fast: it costs the round trip, not the service time.
     const rejected = step.outcome === "error" && state.dropRate(step.target) > 0;
     const latency = components.get(step.target)?.latency;
-    if (latency && !rejected) total = addMoments(total, latency);
+    if (latency && !rejected) total = addMoments(total, scaleMoments(latency, share));
   }
   return total;
 }

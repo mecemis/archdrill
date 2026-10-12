@@ -14,6 +14,7 @@ const oneOrMany = <T extends z.ZodType>(schema: T) =>
 
 const EFFECTS = [
   "read",
+  "allocate",
   "write",
   "conditional-write",
   "delete",

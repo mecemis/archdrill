@@ -7,6 +7,42 @@ export interface OutcomeState {
   dropRate(componentId: string): number;
   hitRatio(componentId: string, entity: string | undefined): number;
   negativeHitRatio(componentId: string, entity: string | undefined): number;
+  /** Chance that a randomly drawn code for this entity is already taken (stored / keyspace, capped at 1). */
+  occupancy(entity: string | undefined): number;
+}
+
+/** Where the code a conditional insert writes came from, judging by the steps before it. */
+type CodeOrigin = "custom" | "random" | "unique" | "unknown";
+
+function codeOrigin(prior: readonly PathStep[]): CodeOrigin {
+  for (let i = prior.length - 1; i >= 0; i--) {
+    const step = prior[i];
+    if (!step) continue;
+    if (step.kind === "logic") {
+      if (step.logic === "hasCustomAlias" && step.outcome === "custom") return "custom";
+      if (step.logic === "generateRandomCode" || step.logic === "hashUrl") return "random";
+    } else if (step.action === "ids.allocate" || step.action === "coord.leaseRange") {
+      return "unique";
+    }
+  }
+  return "unknown";
+}
+
+function conflictProbability(
+  prior: readonly PathStep[],
+  cls: RequestClass,
+  state: OutcomeState,
+  entity: string | undefined,
+): number {
+  switch (codeOrigin(prior)) {
+    case "custom":
+      return cls.aliasTaken ? 1 : 0;
+    case "random":
+      return state.occupancy(entity);
+    default:
+      // Keys from a generator or a counter range are unique by construction.
+      return 0;
+  }
 }
 
 /**
@@ -14,7 +50,12 @@ export interface OutcomeState {
  * request of the given class. Outcomes of one step always sum to 1 over the
  * outcomes the design makes feasible.
  */
-export function outcomeProbability(step: PathStep, cls: RequestClass, state: OutcomeState): number {
+export function outcomeProbability(
+  step: PathStep,
+  cls: RequestClass,
+  state: OutcomeState,
+  prior: readonly PathStep[] = [],
+): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
   const drop = state.dropRate(step.target);
   if (step.outcome === "error") return drop;
@@ -40,9 +81,11 @@ export function outcomeProbability(step: PathStep, cls: RequestClass, state: Out
       if (step.outcome === "ok") return cls.exists ? served : 0;
       if (step.outcome === "notFound") return cls.exists ? 0 : served;
       return 0;
-    case "store.insertIfAbsent":
-      // Collision rates arrive with the write path (M3); until then inserts never conflict.
-      return step.outcome === "ok" ? served : 0;
+    case "store.insertIfAbsent": {
+      const conflict = conflictProbability(prior, cls, state, step.entity);
+      if (step.outcome === "conflict") return served * conflict;
+      return step.outcome === "ok" ? served * (1 - conflict) : 0;
+    }
     default:
       return step.outcome === "ok" ? served : 0;
   }
@@ -56,6 +99,13 @@ function logicProbability(logic: string, outcome: string, cls: RequestClass): nu
       return (outcome === "disabled") === cls.disabled ? 1 : 0;
     case "validateUrl":
       return (outcome === "invalid") === cls.invalidInput ? 1 : 0;
+    case "hasCustomAlias":
+      return (outcome === "custom") === cls.customAlias ? 1 : 0;
+    case "generateRandomCode":
+    case "hashUrl":
+    case "encodeBase62":
+    case "obfuscateId":
+      return outcome === "ok" ? 1 : 0;
     default:
       return 0;
   }

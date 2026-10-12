@@ -24,6 +24,10 @@ export const RequestClassSchema = z.object({
   disabled: z.boolean().default(false),
   /** The request carries invalid input (e.g. a malformed URL). */
   invalidInput: z.boolean().default(false),
+  /** The request asks for a specific alias instead of a generated code. */
+  customAlias: z.boolean().default(false),
+  /** The requested alias is already taken. */
+  aliasTaken: z.boolean().default(false),
 });
 export type RequestClass = z.infer<typeof RequestClassSchema>;
 
@@ -61,6 +65,17 @@ export const WorkloadSchema = z.object({
   keys: z.record(z.string().min(1), KeyPopularitySchema),
   /** Number of stored entities per entity type, for storage cost and capacity. */
   dataset: z.record(z.string().min(1), z.number().nonnegative()).default({}),
+  /**
+   * Keyspace of generated codes per entity: alphabet size and the decision
+   * that sets the code length. Random codes collide with probability
+   * stored / alphabet^length.
+   */
+  keyspace: z
+    .record(
+      z.string().min(1),
+      z.object({ alphabet: z.number().int().min(2), lengthDecision: IdSchema }),
+    )
+    .default({}),
   environments: z.array(EnvironmentSchema).min(1),
 });
 export type Workload = z.infer<typeof WorkloadSchema>;

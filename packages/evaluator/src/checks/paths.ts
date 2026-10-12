@@ -64,6 +64,7 @@ export const outcomeHandled = defineCheck({
               action: step.action,
               entity: step.entity,
               ttlSec: step.ttlSec,
+              batchSize: step.batchSize,
               outcome: params.outcome,
             }
           : { kind: "logic" as const, stepId, logic: step.logic, outcome: params.outcome };

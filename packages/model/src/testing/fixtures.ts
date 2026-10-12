@@ -90,6 +90,23 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       ],
     },
     {
+      id: "id-generator",
+      label: "Id generator",
+      description: "Hands out unique keys.",
+      capabilities: ["id-generation"],
+      replicable: true,
+      holdsData: false,
+      flavors: [
+        {
+          id: "kgs",
+          label: "KGS",
+          description: "Key generation service.",
+          sizes: { m: size(50000, 50000, 1, 0.17) },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
       id: "key-value-db",
       label: "Key-value database",
       description: "Managed key-value store.",
@@ -149,6 +166,16 @@ export const testProblem: Problem = ProblemSchema.parse({
         { id: "s301", label: "301" },
         { id: "s302", label: "302" },
       ],
+    },
+    {
+      id: "code-length",
+      question: "How long are generated codes?",
+      options: [
+        { id: "6", label: "6 characters" },
+        { id: "7", label: "7 characters" },
+        { id: "8", label: "8 characters" },
+      ],
+      default: "7",
     },
   ],
   scenarios: ["s2-redirect"],

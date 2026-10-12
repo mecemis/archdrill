@@ -21,6 +21,7 @@ export const StepInputSchema = z.discriminatedUnion("type", [
     action: ActionIdSchema,
     entity: z.string().min(1).optional(),
     ttlSec: z.number().int().positive().optional(),
+    batchSize: z.number().int().min(1).max(1_000_000).optional(),
   }),
   z.object({ type: z.literal("logic"), logic: LogicIdSchema }),
   z.object({ type: z.literal("respond"), status: HttpStatusSchema }),
@@ -101,16 +102,28 @@ export const updateStep = defineCommand(
   z.object({
     operation: IdSchema,
     stepId: IdSchema,
+    /** Switch a call to another action on the same target; links on outcomes the new action lacks are dropped. */
+    action: ActionIdSchema.optional(),
     entity: z.string().min(1).optional(),
     ttlSec: z.number().int().positive().nullable().optional(),
+    batchSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
     status: HttpStatusSchema.optional(),
   }),
   (draft, args) => {
     const step = requireStep(requireFlow(draft, args.operation), args.stepId);
     if (step.type === "call") {
+      if (args.action !== undefined && args.action !== step.action) {
+        step.action = args.action;
+        const outcomes = new Set(stepOutcomes(step));
+        for (const outcome of Object.keys(step.next)) {
+          if (!outcomes.has(outcome)) delete step.next[outcome];
+        }
+      }
       if (args.entity !== undefined) step.entity = args.entity;
       if (args.ttlSec === null) delete step.ttlSec;
       else if (args.ttlSec !== undefined) step.ttlSec = args.ttlSec;
+      if (args.batchSize === null) delete step.batchSize;
+      else if (args.batchSize !== undefined) step.batchSize = args.batchSize;
     }
     if (step.type === "respond" && args.status !== undefined) step.status = args.status;
   },
@@ -206,13 +219,14 @@ function repointReferences(flow: Draft<Flow>, from: string, to: string | undefin
 function toStep(input: StepInput): Step {
   switch (input.type) {
     case "call": {
-      const { type, target, action, entity, ttlSec } = input;
+      const { type, target, action, entity, ttlSec, batchSize } = input;
       return {
         type,
         target,
         action,
         ...(entity === undefined ? {} : { entity }),
         ...(ttlSec === undefined ? {} : { ttlSec }),
+        ...(batchSize === undefined ? {} : { batchSize }),
         next: {},
       };
     }

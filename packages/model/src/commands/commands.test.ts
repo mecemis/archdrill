@@ -242,6 +242,37 @@ describe("commands", () => {
     ).toThrow();
   });
 
+  it("switches a call to another action and drops links the new action cannot produce", () => {
+    const withConflict = applyCommand(cacheAsideAttempt(), "updateStep", {
+      operation: "redirect",
+      stepId: "read",
+      action: "store.update",
+    }).attempt;
+
+    const step = withConflict.flows[0]?.steps.read;
+    expect(step).toMatchObject({
+      action: "store.update",
+      next: { notFound: "r404", error: "r503" },
+    });
+    expect(step?.type === "call" && "found" in step.next).toBe(false);
+  });
+
+  it("sets and clears a batch size on allocation steps", () => {
+    const set = applyCommand(cacheAsideAttempt(), "updateStep", {
+      operation: "redirect",
+      stepId: "read",
+      batchSize: 1000,
+    }).attempt;
+    const cleared = applyCommand(set, "updateStep", {
+      operation: "redirect",
+      stepId: "read",
+      batchSize: null,
+    }).attempt;
+
+    expect(set.flows[0]?.steps.read).toMatchObject({ batchSize: 1000 });
+    expect(cleared.flows[0]?.steps.read).not.toHaveProperty("batchSize");
+  });
+
   it("sets and clears decisions", () => {
     const set = applyCommand(cacheAsideAttempt(), "setDecision", {
       decision: "redirect-status",

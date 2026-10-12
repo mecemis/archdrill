@@ -4,6 +4,7 @@ import type { Capability } from "./capabilities";
 /** What an action does to data; dataflow facts are derived from this. */
 export type ActionEffect =
   | "read"
+  | "allocate"
   | "write"
   | "conditional-write"
   | "delete"
@@ -11,8 +12,11 @@ export type ActionEffect =
   | "populate-negative"
   | "invalidate";
 
-/** Optional step parameters an action may require. */
+/** Step parameters an action requires. */
 export type ActionParam = "ttlSec";
+
+/** Step parameters an action accepts but does not require. */
+export type OptionalActionParam = "batchSize";
 
 export interface ActionDef {
   readonly label: string;
@@ -20,6 +24,7 @@ export interface ActionDef {
   readonly effect: ActionEffect;
   readonly outcomes: readonly string[];
   readonly params: readonly ActionParam[];
+  readonly optionalParams?: readonly OptionalActionParam[];
   readonly description: string;
 }
 
@@ -66,12 +71,13 @@ export const ACTIONS = {
     description: "Read an entity by key from a durable store.",
   },
   "store.insert": {
-    label: "insert",
+    label: "put",
     capability: "durable-store",
     effect: "write",
     outcomes: ["ok", "error"],
     params: [],
-    description: "Unconditional insert. Does not guarantee uniqueness under concurrency.",
+    description:
+      "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other.",
   },
   "store.insertIfAbsent": {
     label: "insert if absent",
@@ -96,6 +102,26 @@ export const ACTIONS = {
     outcomes: ["ok", "error"],
     params: [],
     description: "Delete an entity by key.",
+  },
+  "ids.allocate": {
+    label: "allocate id",
+    capability: "id-generation",
+    effect: "allocate",
+    outcomes: ["ok", "error"],
+    params: [],
+    optionalParams: ["batchSize"],
+    description:
+      "Take a unique key from an id generator (for example a key generation service with pre-generated random keys). With a batch size, the handler takes keys in batches and calls the generator once per batch.",
+  },
+  "coord.leaseRange": {
+    label: "lease id range",
+    capability: "leases",
+    effect: "allocate",
+    outcomes: ["ok", "error"],
+    params: [],
+    optionalParams: ["batchSize"],
+    description:
+      "Atomically claim the next range of a counter from a coordination service. With a batch size, one call yields that many sequential ids.",
   },
 } as const satisfies Record<string, ActionDef>;
 

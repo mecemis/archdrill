@@ -261,6 +261,38 @@ describe("validateAttempt", () => {
     expect(issue?.severity).toBe("warning");
   });
 
+  it("rejects a batch size on actions that do not allocate", () => {
+    const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
+
+    expect(codes(attempt)).toContain("step-unexpected-param");
+  });
+
+  it("accepts id allocation without an entity", () => {
+    let attempt = mutate("addComponent", {
+      id: "kgs",
+      kind: "id-generator",
+      flavor: "kgs",
+      label: "KGS",
+      size: "m",
+      replicas: 2,
+      position: { x: 0, y: 0 },
+    });
+    attempt = mutate("addConnection", { from: "api", to: "kgs" }, attempt);
+    attempt = mutate("createFlow", { operation: "create-link", handler: "api" }, attempt);
+    attempt = mutate(
+      "addStep",
+      {
+        operation: "create-link",
+        step: { type: "call", target: "kgs", action: "ids.allocate", batchSize: 1000 },
+        attach: { to: "root" },
+      },
+      attempt,
+    );
+
+    const errors = validateAttempt(attempt, ctx).filter((i) => i.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
   it("rejects decisions that the problem does not define", () => {
     const attempt = mutate("setDecision", { decision: "redirect-status", option: "s307" });
 

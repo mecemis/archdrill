@@ -28,6 +28,7 @@ export const ISSUE_CODES = [
   "step-unknown-entity",
   "step-entity-not-stored",
   "step-missing-param",
+  "step-unexpected-param",
   "step-unknown-outcome",
   "step-next-missing",
   "step-unhandled-outcome",

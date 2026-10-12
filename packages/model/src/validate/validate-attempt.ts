@@ -327,7 +327,19 @@ function validateCallStep(
       error("step-action-not-supported", `"${target.label}" does not support ${step.action}.`, loc),
     );
   }
-  issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
+  if (action.effect !== "allocate")
+    issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
+  const optional: readonly string[] =
+    "optionalParams" in action ? (action.optionalParams ?? []) : [];
+  if (step.batchSize !== undefined && !optional.includes("batchSize")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) does not take a batch size.`,
+        loc,
+      ),
+    );
+  }
   for (const param of action.params) {
     if (step[param] === undefined) {
       issues.push(

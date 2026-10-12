@@ -45,6 +45,8 @@ export const CallStepSchema = z.object({
   action: ActionIdSchema,
   entity: z.string().min(1).optional(),
   ttlSec: z.number().int().positive().optional(),
+  /** For allocation actions: how many ids one call yields, so only one request in a batch pays for the call. */
+  batchSize: z.number().int().min(1).max(1_000_000).optional(),
   next: NextSchema,
 });
 export type CallStep = z.infer<typeof CallStepSchema>;

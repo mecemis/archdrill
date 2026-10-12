@@ -21,6 +21,11 @@ export const CAPABILITIES = [
   "secondary-index",
   "range-scan",
   "atomic-increment",
+  "id-generation",
+  "leases",
+  "consensus",
+  "rate-limiting",
+  "authn",
 ] as const;
 
 export const CapabilitySchema = z.enum(CAPABILITIES);
