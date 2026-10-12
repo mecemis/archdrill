@@ -84,12 +84,22 @@ describe("no-path", () => {
   });
 
   it("fails with the offending path when a miss redirects blindly", () => {
-    let attempt = mutated("addStep", {
+    let attempt = mutated("linkOutcome", {
       operation: "redirect",
-      id: "blind",
-      step: { type: "respond", status: 302 },
-      attach: { to: "outcome", stepId: "get", outcome: "miss" },
+      stepId: "get",
+      outcome: "miss",
+      target: null,
     });
+    attempt = mutated(
+      "addStep",
+      {
+        operation: "redirect",
+        id: "blind",
+        step: { type: "respond", status: 302 },
+        attach: { to: "outcome", stepId: "get", outcome: "miss" },
+      },
+      attempt,
+    );
     attempt = mutated("removeStep", { operation: "redirect", stepId: "read" }, attempt);
 
     const outcome = runCheck("no-path", redirectWithoutRead, attempt);

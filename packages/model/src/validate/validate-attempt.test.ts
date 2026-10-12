@@ -113,6 +113,53 @@ describe("validateAttempt", () => {
     expect(codes).not.toContain("step-unhandled-outcome:negativeHit");
   });
 
+  it("does not let negative caching behind the negative-hit branch justify itself", () => {
+    const linked = mutate("linkOutcome", {
+      operation: "redirect",
+      stepId: "get",
+      outcome: "negativeHit",
+      target: "r404",
+    });
+    const selfJustifying = mutate(
+      "addStep",
+      {
+        operation: "redirect",
+        id: "neg",
+        step: {
+          type: "call",
+          target: "redis",
+          action: "cache.setNegative",
+          entity: "Link",
+          ttlSec: 60,
+        },
+        attach: { to: "root" },
+        continueWith: { outcome: "ok" },
+      },
+      mutate(
+        "linkOutcome",
+        { operation: "redirect", stepId: "get", outcome: "negativeHit", target: null },
+        linked,
+      ),
+    );
+    // Now: neg (root) → get; but move neg behind get's negativeHit so it can only run after a negative hit.
+    const hidden = mutate(
+      "setRoot",
+      { operation: "redirect", stepId: "get" },
+      mutate(
+        "linkOutcome",
+        { operation: "redirect", stepId: "get", outcome: "negativeHit", target: "neg" },
+        selfJustifying,
+      ),
+    );
+
+    const issues = validateAttempt(hidden, ctx).map(
+      (i) => `${i.code}:${"stepId" in i.location ? i.location.stepId : ""}`,
+    );
+
+    expect(issues).toContain("step-infeasible-outcome:get");
+    expect(issues).toContain("step-unreachable:neg");
+  });
+
   it("rejects durable-store actions on a store that does not hold the entity", () => {
     const attempt = mutate("setComponentData", { id: "db", entities: [] });
 

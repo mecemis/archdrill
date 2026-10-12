@@ -134,6 +134,32 @@ describe("evaluateAttempt", () => {
     });
   });
 
+  it("refuses to score a flow whose paths exceed the enumeration cap", () => {
+    // Twelve two-way decisions that rejoin produce 4096 paths, above the cap.
+    const base = cacheAsideAttempt();
+    const steps: Record<string, unknown> = { done: { type: "respond", status: 302 } };
+    for (let i = 0; i < 12; i++) {
+      const next = i === 11 ? "done" : `c${i + 1}`;
+      steps[`c${i}`] = {
+        type: "logic",
+        logic: "checkStatus",
+        next: { active: next, disabled: next },
+      };
+    }
+    const flow = base.flows[0];
+    if (!flow) throw new Error("fixture changed");
+    const attempt = {
+      ...base,
+      flows: [{ ...flow, root: "c0", steps: steps as typeof flow.steps }],
+    };
+
+    expect(evaluate(attempt)).toEqual({
+      scenarioId: "s2-redirect",
+      status: "incomplete",
+      operations: [{ operation: "redirect", status: "too-complex" }],
+    });
+  });
+
   it("is deterministic", () => {
     const first = evaluateAttempt(cacheAsideAttempt(), input).scenarios;
     const second = evaluateAttempt(cacheAsideAttempt(), input).scenarios;

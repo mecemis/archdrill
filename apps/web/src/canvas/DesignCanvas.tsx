@@ -13,11 +13,39 @@ import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react
 import { catalogIndex } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
+import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
 import { ComponentNode } from "./ComponentNode";
 import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
 import { addComponentFromPalette, PALETTE_MIME, parsePaletteData } from "./palette-drop";
 import { type ComponentNodeData, projectEdges, projectNodes } from "./projection";
+
+/**
+ * Deletes what the user removed on the canvas as one undoable step. Edges that
+ * belong to removed nodes go away with their nodes.
+ */
+function removeFromCanvas(nodes: readonly Node[], edges: readonly Edge[]): void {
+  const store = useAttemptStore.getState();
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const flowsBefore = store.attempt.flows.length;
+  const removed = store.dispatchAll([
+    ...edges
+      .filter((e) => !nodeIds.has(e.source) && !nodeIds.has(e.target))
+      .map((e) => ({ name: "removeConnection" as const, args: { id: e.id } })),
+    ...nodes.map((n) => ({ name: "removeComponent" as const, args: { id: n.id } })),
+  ]);
+  if (!removed) return;
+  useUi.getState().select(null);
+  const lostFlows = flowsBefore - useAttemptStore.getState().attempt.flows.length;
+  if (lostFlows > 0) {
+    const plural = lostFlows === 1 ? "" : "s";
+    useToasts
+      .getState()
+      .notify(
+        `Removed ${lostFlows} flow${plural} handled by the deleted service. Undo with Ctrl/Cmd+Z.`,
+      );
+  }
+}
 
 const nodeTypes = { component: ComponentNode };
 const edgeTypes = { connection: ConnectionEdge };
@@ -52,20 +80,30 @@ function CanvasInner() {
 
   // React Flow needs live positions while dragging; the attempt only changes on drop.
   const [nodes, setNodes] = useState<Node<ComponentNodeData>[]>(projectedNodes);
-  useEffect(() => setNodes(projectedNodes), [projectedNodes]);
+  useEffect(
+    () =>
+      setNodes((current) =>
+        projectedNodes.map((node) => {
+          const live = current.find((n) => n.id === node.id);
+          return live?.dragging ? { ...node, position: live.position, dragging: true } : node;
+        }),
+      ),
+    [projectedNodes],
+  );
 
   const onNodesChange = useCallback((changes: NodeChange<Node<ComponentNodeData>>[]) => {
     const local = changes.filter((c) => c.type === "position" || c.type === "dimensions");
     if (local.length > 0) setNodes((current) => applyNodeChanges(local, current));
   }, []);
 
-  const onNodeDragStop = useCallback(
-    (_event: unknown, _node: Node, dragged: Node[]) => {
-      for (const node of dragged)
-        dispatch("moveComponent", { id: node.id, position: node.position });
-    },
-    [dispatch],
-  );
+  const onNodeDragStop = useCallback((_event: unknown, _node: Node, dragged: Node[]) => {
+    useAttemptStore.getState().dispatchAll(
+      dragged.map((node) => ({
+        name: "moveComponent" as const,
+        args: { id: node.id, position: node.position },
+      })),
+    );
+  }, []);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -108,12 +146,9 @@ function CanvasInner() {
         useUi.getState().select(null);
         useUi.getState().clearPin();
       }}
-      onNodesDelete={(deleted) => {
-        for (const node of deleted) dispatch("removeComponent", { id: node.id });
-      }}
-      onEdgesDelete={(deleted) => {
-        for (const edge of deleted) dispatch("removeConnection", { id: edge.id });
-      }}
+      onDelete={({ nodes: deletedNodes, edges: deletedEdges }) =>
+        removeFromCanvas(deletedNodes, deletedEdges)
+      }
       onDragOver={(event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";

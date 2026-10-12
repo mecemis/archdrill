@@ -29,6 +29,7 @@ export const ISSUE_CODES = [
   "step-unknown-outcome",
   "step-next-missing",
   "step-unhandled-outcome",
+  "step-infeasible-outcome",
   "step-unreachable",
   "decision-unknown",
   "decision-unknown-option",

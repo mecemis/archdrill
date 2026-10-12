@@ -13,7 +13,7 @@ export type ScenarioResult =
       readonly status: "incomplete";
       readonly operations: readonly {
         readonly operation: string;
-        readonly status: OperationStatus;
+        readonly status: Readiness;
       }[];
     }
   | {
@@ -22,6 +22,20 @@ export type ScenarioResult =
       readonly checks: readonly CheckResult[];
       readonly scorecard: Scorecard;
     };
+
+/**
+ * Why an operation cannot be evaluated yet. "too-complex" means path
+ * enumeration hit its cap: checks over a partial path set could pass a design
+ * that fails on a path nobody looked at, so the scenario is not scored.
+ */
+export type Readiness = OperationStatus | "too-complex";
+
+function readiness(ctx: CheckContext, operation: string): Readiness {
+  const analysis = ctx.analysis.operations.get(operation);
+  if (!analysis) return "missing";
+  if (analysis.status === "ready" && analysis.truncated) return "too-complex";
+  return analysis.status;
+}
 
 export interface AttemptEvaluation {
   readonly analysis: Analysis;
@@ -49,10 +63,7 @@ export function evaluateScenario(scenario: Scenario, ctx: CheckContext): Scenari
   if (blocking.length > 0) return { scenarioId: scenario.id, status: "invalid", blocking };
 
   const notReady = scenario.focusOperations
-    .map((operation) => ({
-      operation,
-      status: ctx.analysis.operations.get(operation)?.status ?? "missing",
-    }))
+    .map((operation) => ({ operation, status: readiness(ctx, operation) }))
     .filter((op) => op.status !== "ready");
   if (notReady.length > 0)
     return { scenarioId: scenario.id, status: "incomplete", operations: notReady };

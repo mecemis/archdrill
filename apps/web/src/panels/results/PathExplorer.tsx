@@ -61,6 +61,8 @@ function PathRow({
         type="button"
         onMouseEnter={() => setHover(onHighlight())}
         onMouseLeave={() => setHover(null)}
+        onFocus={() => setHover(onHighlight())}
+        onBlur={() => setHover(null)}
         onClick={() => togglePin(path.id, onHighlight())}
         aria-pressed={pinned}
         className={`flex w-full flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5 text-left ${

@@ -170,6 +170,51 @@ describe("commands", () => {
     ]);
   });
 
+  it("refuses to overwrite an outcome that already leads somewhere", () => {
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "addStep", {
+        operation: "redirect",
+        step: { type: "respond", status: 500 },
+        attach: { to: "outcome", stepId: "read", outcome: "error" },
+      }),
+    ).toThrow(/already leads somewhere/);
+  });
+
+  it("prunes only what the removal cut off, not steps parked earlier", () => {
+    const parked = applyCommand(cacheAsideAttempt(), "addStep", {
+      operation: "redirect",
+      id: "parked",
+      step: { type: "logic", logic: "validateUrl" },
+      attach: { to: "root" },
+      continueWith: { outcome: "valid" },
+    }).attempt;
+    const detached = applyCommand(parked, "setRoot", {
+      operation: "redirect",
+      stepId: "get",
+    }).attempt;
+
+    const { attempt } = applyCommand(detached, "removeStep", {
+      operation: "redirect",
+      stepId: "read",
+      prune: true,
+    });
+
+    expect(Object.keys(attempt.flows[0]?.steps ?? {})).toContain("parked");
+    expect(attempt.flows[0]?.steps.expiryDb).toBeUndefined();
+  });
+
+  it("refuses to reverse a connection onto an id that is taken", () => {
+    const taken = applyCommand(cacheAsideAttempt(), "addConnection", {
+      id: "api--lb",
+      from: "db",
+      to: "redis",
+    }).attempt;
+
+    expect(() => applyCommand(taken, "reverseConnection", { id: "lb--api" })).toThrow(
+      /already exists/,
+    );
+  });
+
   it("rejects links to outcomes a step does not have", () => {
     expect(() =>
       applyCommand(cacheAsideAttempt(), "linkOutcome", {

@@ -2,11 +2,11 @@ import {
   type Attempt,
   type Flow,
   feasibleOutcomes,
-  reachableStepIds,
+  liveStepIds,
   type Step,
 } from "@archdrill/model";
 import { CornerDownRight, Plus, Trash2, Unlink } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { stepNumbers } from "../../canvas/projection";
 import { useAttemptStore } from "../../state/store";
 import { type Attach, type Slot, useUi } from "../../state/ui-store";
@@ -62,12 +62,12 @@ export function StepTree({ flow }: { readonly flow: Flow }) {
   const attempt = useAttemptStore((s) => s.attempt);
   const ctx: TreeContext = {
     flow,
-    numbers: stepNumbers(flow),
+    numbers: stepNumbers(flow, attempt),
     plan: planTree(flow, attempt),
     highlighted,
   };
-  const reachable = new Set(reachableStepIds(flow));
-  const orphans = Object.keys(flow.steps).filter((id) => !reachable.has(id));
+  const live = new Set(liveStepIds(flow, attempt));
+  const orphans = Object.keys(flow.steps).filter((id) => !live.has(id));
 
   return (
     <div className="flex flex-col gap-1 text-sm" data-testid="step-tree">
@@ -146,10 +146,26 @@ function StepBlock({
               </li>
             );
           })}
+          {inactiveLinks(step, attempt).map((outcome) => (
+            <li key={outcome} className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <span className="opacity-50">
+                <OutcomeChip outcome={outcome} />
+              </span>
+              never happens in this design
+              <UnlinkButton flow={ctx.flow} stepId={stepId} outcome={outcome} />
+            </li>
+          ))}
         </ul>
       )}
     </div>
   );
+}
+
+/** Outcomes that are linked but cannot occur (e.g. negative hits without negative caching). */
+function inactiveLinks(step: Step, attempt: Attempt): string[] {
+  if (step.type === "respond") return [];
+  const feasible = new Set(feasibleOutcomes(step, attempt));
+  return Object.keys(step.next).filter((outcome) => !feasible.has(outcome));
 }
 
 function StepRow({
@@ -172,6 +188,17 @@ function StepRow({
   const insertSlot: Slot = { operation, attach: attachedFrom, before: stepId };
   const inserting = slot?.before === stepId && slot.operation === operation;
   const isLeaf = step.type === "respond";
+  const [choosing, setChoosing] = useState(false);
+  const continuations = isLeaf ? [] : distinctContinuations(step, attempt);
+  const remove = (bypass?: string) => {
+    setChoosing(false);
+    dispatch("removeStep", { operation, stepId, prune: true, ...(bypass ? { bypass } : {}) });
+  };
+  // With several different continuations, ask which one should take the removed step's place.
+  const onRemove = () => {
+    if (continuations.length <= 1) remove(continuations[0]?.outcome);
+    else setChoosing(true);
+  };
   return (
     <>
       {inserting && <AddStepForm slot={insertSlot} flow={ctx.flow} />}
@@ -198,16 +225,63 @@ function StepRow({
               <Plus className="h-3.5 w-3.5" />
             </IconButton>
           )}
-          <IconButton
-            label="Remove step"
-            onClick={() => dispatch("removeStep", { operation, stepId, prune: true })}
-          >
+          <IconButton label="Remove step" onClick={onRemove}>
             <Trash2 className="h-3.5 w-3.5" />
           </IconButton>
         </span>
       </div>
+      {choosing && (
+        <div className="flex flex-col gap-1 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs">
+          <p className="font-medium text-rose-900">Remove this step and keep what follows…</p>
+          {continuations.map(({ outcome, target }) => (
+            <button
+              key={outcome}
+              type="button"
+              onClick={() => remove(outcome)}
+              className="self-start rounded px-1.5 py-0.5 text-left text-zinc-800 hover:bg-rose-100"
+            >
+              …on {outcome}: {target}
+            </button>
+          ))}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => remove()}
+              className="rounded px-1.5 py-0.5 font-medium text-rose-800 hover:bg-rose-100"
+            >
+              Remove it and everything after it
+            </button>
+            <button
+              type="button"
+              onClick={() => setChoosing(false)}
+              className="rounded px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
+}
+
+/** Linked outcomes with distinct targets, labelled by what they lead to. */
+function distinctContinuations(
+  step: Step,
+  attempt: Attempt,
+): { outcome: string; target: string }[] {
+  if (step.type === "respond") return [];
+  const flow = attempt.flows.find((f) => Object.values(f.steps).includes(step));
+  const seen = new Set<string>();
+  const result: { outcome: string; target: string }[] = [];
+  for (const outcome of feasibleOutcomes(step, attempt)) {
+    const target = step.next[outcome];
+    if (target === undefined || seen.has(target)) continue;
+    seen.add(target);
+    const next = flow?.steps[target];
+    result.push({ outcome, target: next ? stepTitle(next, attempt) : target });
+  }
+  return result;
 }
 
 function SlotControl({ slot, flow, label }: { slot: Slot; flow: Flow; label: string }) {

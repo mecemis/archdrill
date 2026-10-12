@@ -73,6 +73,7 @@ export function Header() {
               onClick={() => {
                 replace(starterAttempt(activePack.problem.id, activePack.problem.version));
                 useUi.getState().select(null);
+                useUi.getState().armSlot(null);
                 setConfirmReset(false);
               }}
             >

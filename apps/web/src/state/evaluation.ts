@@ -1,17 +1,28 @@
 import type { Analysis, OperationAnalysis } from "@archdrill/engine";
 import { type AttemptEvaluation, type Evidence, evaluateAttempt } from "@archdrill/evaluator";
-import { useMemo } from "react";
+import type { Attempt } from "@archdrill/model";
 import { activePack, catalogIndex } from "./content";
 import { useAttemptStore } from "./store";
 import type { Highlight } from "./ui-store";
 
-/** Evaluates every scenario of the active problem whenever the attempt changes. */
+let cached: { readonly attempt: Attempt; readonly evaluation: AttemptEvaluation } | undefined;
+
+/**
+ * Evaluates every scenario once per attempt version. Attempts are immutable,
+ * so identity is a safe cache key and every component sees the same result.
+ */
+export function evaluate(attempt: Attempt): AttemptEvaluation {
+  if (cached?.attempt !== attempt) {
+    cached = {
+      attempt,
+      evaluation: evaluateAttempt(attempt, { ...activePack, catalog: catalogIndex }),
+    };
+  }
+  return cached.evaluation;
+}
+
 export function useEvaluation(): AttemptEvaluation {
-  const attempt = useAttemptStore((s) => s.attempt);
-  return useMemo(
-    () => evaluateAttempt(attempt, { ...activePack, catalog: catalogIndex }),
-    [attempt],
-  );
+  return evaluate(useAttemptStore((s) => s.attempt));
 }
 
 export function highlightFromEvidence(

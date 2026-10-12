@@ -19,12 +19,19 @@ interface HistoryEntry {
   readonly inversePatches: Patch[];
 }
 
+/** Any command with its arguments, for batches. */
+export type AnyCommand = {
+  [N in CommandName]: { readonly name: N; readonly args: CommandArgs<N> };
+}[CommandName];
+
 export interface AttemptState {
   readonly attempt: Attempt;
   readonly past: readonly HistoryEntry[];
   readonly future: readonly HistoryEntry[];
   /** Applies a command; on failure shows the reason and returns undefined. */
   dispatch: <N extends CommandName>(name: N, args: CommandArgs<N>) => CommandReturn<N> | undefined;
+  /** Applies several commands as one undoable step; all or nothing. */
+  dispatchAll: (commands: readonly AnyCommand[]) => boolean;
   undo: () => void;
   redo: () => void;
   /** Replaces the whole attempt (load, reset) and clears history. */
@@ -63,6 +70,30 @@ export function createAttemptStore(initial: Attempt) {
         useToasts.getState().notify(describeError(error), "error");
         return undefined;
       }
+    },
+    dispatchAll(commands) {
+      let attempt = get().attempt;
+      const patches: Patch[] = [];
+      const inversePatches: Patch[] = [];
+      try {
+        for (const command of commands) {
+          const result = applyCommand(attempt, command.name, command.args as never);
+          attempt = result.attempt;
+          patches.push(...result.patches);
+          inversePatches.unshift(...result.inversePatches);
+        }
+      } catch (error) {
+        useToasts.getState().notify(describeError(error), "error");
+        return false;
+      }
+      if (patches.length === 0) return true;
+      const label = commands[0]?.name ?? "addComponent";
+      set({
+        attempt,
+        past: [...get().past, { label, patches, inversePatches }].slice(-MAX_HISTORY),
+        future: [],
+      });
+      return true;
     },
     undo() {
       const past = get().past;

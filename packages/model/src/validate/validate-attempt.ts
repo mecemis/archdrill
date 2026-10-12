@@ -1,6 +1,12 @@
-import type { Attempt, CallStep, Component, Flow } from "../attempt/schema";
-import { findCycle, reachableStepIds, stepOutcomes, unhandledOutcomes } from "../attempt/steps";
-import { ACTIONS } from "../catalog/actions";
+import type { Attempt, CallStep, Component, Flow, Step } from "../attempt/schema";
+import {
+  feasibleOutcomes,
+  findCycle,
+  liveStepIds,
+  stepOutcomes,
+  unhandledOutcomes,
+} from "../attempt/steps";
+import { ACTIONS, CONDITIONAL_OUTCOMES } from "../catalog/actions";
 import type { CatalogIndex } from "../catalog/schema";
 import { findIngressRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -229,15 +235,16 @@ function validateFlowGraph(flow: Flow, attempt: Attempt): Issue[] {
       ),
     );
   }
-  const reachable = new Set(reachableStepIds(flow));
+  const live = new Set(liveStepIds(flow, attempt));
   for (const [stepId, step] of Object.entries(flow.steps)) {
     const loc = { type: "step", operation: flow.operation, stepId } as const;
-    if (!reachable.has(stepId)) {
+    if (!live.has(stepId)) {
       issues.push(
-        warning("step-unreachable", `Step ${stepId} is not reachable from the first step.`, loc),
+        warning("step-unreachable", `Step ${stepId} is never reached by a request.`, loc),
       );
       continue;
     }
+    issues.push(...infeasibleLinks(flow, stepId, step, attempt));
     for (const outcome of unhandledOutcomes(step, attempt)) {
       issues.push(
         warning(
@@ -249,6 +256,25 @@ function validateFlowGraph(flow: Flow, attempt: Attempt): Issue[] {
     }
   }
   return issues;
+}
+
+/** Links on outcomes that this design can never produce, e.g. a negative hit without negative caching. */
+function infeasibleLinks(flow: Flow, stepId: string, step: Step, attempt: Attempt): Issue[] {
+  if (step.type !== "call") return [];
+  const feasible = new Set(feasibleOutcomes(step, attempt));
+  return Object.keys(step.next)
+    .filter((outcome) => stepOutcomes(step).includes(outcome) && !feasible.has(outcome))
+    .map((outcome) => {
+      const enabling = CONDITIONAL_OUTCOMES[step.action]?.[outcome];
+      const reason = enabling
+        ? ` until a reachable step performs ${enabling} on the same component and entity`
+        : "";
+      return warning(
+        "step-infeasible-outcome",
+        `Outcome "${outcome}" of step ${stepId} can never happen${reason}.`,
+        { type: "step", operation: flow.operation, stepId, outcome },
+      );
+    });
 }
 
 function validateCallStep(

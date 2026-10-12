@@ -4,7 +4,7 @@ import {
   type CatalogIndex,
   type Flow,
   type Issue,
-  reachableStepIds,
+  liveStepIds,
 } from "@archdrill/model";
 import type { Edge, Node } from "@xyflow/react";
 import type { Highlight, Selection } from "../state/ui-store";
@@ -49,9 +49,9 @@ export interface ProjectionInput {
  * Step id → 1-based number in depth-first order from the root. Respond steps
  * are leaves shown inline, so they are not numbered.
  */
-export function stepNumbers(flow: Flow | undefined): Map<string, number> {
+export function stepNumbers(flow: Flow | undefined, attempt: Attempt): Map<string, number> {
   if (!flow) return new Map();
-  const numbered = reachableStepIds(flow).filter((id) => flow.steps[id]?.type !== "respond");
+  const numbered = liveStepIds(flow, attempt).filter((id) => flow.steps[id]?.type !== "respond");
   return new Map(numbered.map((id, index) => [id, index + 1]));
 }
 
@@ -99,7 +99,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
 export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[] {
   const { attempt, operation, highlight, selection } = input;
   const flow = operation?.flow;
-  const numbers = stepNumbers(flow);
+  const numbers = stepNumbers(flow, attempt);
   const usage = new Map<string, number[]>();
   for (const [stepId, number] of numbers) {
     const step = flow?.steps[stepId];

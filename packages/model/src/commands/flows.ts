@@ -84,8 +84,12 @@ export const addStep = defineCommand(
         throw new CommandError(`The new step has no outcome "${args.continueWith.outcome}".`);
       }
       step.next[args.continueWith.outcome] = previous;
-    } else if (args.attach.to === "root" && previous !== undefined) {
-      throw new CommandError("The flow already has a first step. Insert in front of it instead.");
+    } else if (previous !== undefined) {
+      throw new CommandError(
+        args.attach.to === "root"
+          ? "The flow already has a first step. Insert in front of it instead."
+          : `Outcome "${args.attach.outcome}" of step ${args.attach.stepId} already leads somewhere. Insert in front of that step instead.`,
+      );
     }
     flow.steps[id] = step;
     setAttachment(flow, args.attach, id);
@@ -145,7 +149,7 @@ export const setRoot = defineCommand(
 
 /**
  * Removes a step. References to it are re-pointed to the step behind `bypass`
- * (when given) or unlinked. With `prune`, steps that are no longer reachable
+ * (when given) or unlinked. With `prune`, steps that only this removal cut off
  * from the first step are removed too; otherwise they are left in place and
  * reported by validation, so no work is lost silently.
  */
@@ -159,6 +163,7 @@ export const removeStep = defineCommand(
   (draft, { operation, stepId, bypass, prune }) => {
     const flow = requireFlow(draft, operation);
     const step = requireStep(flow, stepId);
+    const reachableBefore = new Set(reachableStepIds(flow));
     let replacement: string | undefined;
     if (bypass !== undefined) {
       if (!isBranchingStep(step) || !stepOutcomes(step).includes(bypass)) {
@@ -169,9 +174,10 @@ export const removeStep = defineCommand(
     repointReferences(flow, stepId, replacement);
     delete flow.steps[stepId];
     if (prune) {
-      const reachable = new Set(reachableStepIds(flow));
-      for (const id of Object.keys(flow.steps)) {
-        if (!reachable.has(id)) delete flow.steps[id];
+      // Only steps this removal cut off; orphans that were parked before stay.
+      const reachableAfter = new Set(reachableStepIds(flow));
+      for (const id of reachableBefore) {
+        if (!reachableAfter.has(id)) delete flow.steps[id];
       }
     }
   },

@@ -76,16 +76,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
         </p>
       )}
       {kind?.replicable && !flavor?.managedRedundancy && (
-        <Field label={`Replicas (${component.replicas})`}>
-          <input
-            type="range"
-            min={1}
-            max={MAX_REPLICAS}
-            value={component.replicas}
-            onChange={(e) => update({ replicas: Number(e.target.value) })}
-            aria-label="Replicas"
-          />
-        </Field>
+        <ReplicasSlider value={component.replicas} onCommit={(replicas) => update({ replicas })} />
       )}
       {flavor?.managedRedundancy && (
         <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600">
@@ -101,18 +92,79 @@ function ComponentInspector({ component }: { readonly component: Component }) {
         ))}
       </div>
       {flavor?.notes && <p className="text-xs text-zinc-500">{flavor.notes}</p>}
-      <Button
-        variant="danger"
-        className="self-start"
-        onClick={() => {
-          dispatch("removeComponent", { id: component.id });
-          useUi.getState().select(null);
-        }}
-      >
-        <Trash2 className="h-4 w-4" />
-        Remove component
-      </Button>
+      <RemoveComponentButton component={component} />
     </div>
+  );
+}
+
+/** Edits locally while dragging and commits once on release, so a drag is one undo step. */
+function ReplicasSlider({
+  value,
+  onCommit,
+}: {
+  readonly value: number;
+  readonly onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <Field label={`Replicas (${draft})`}>
+      <input
+        type="range"
+        min={1}
+        max={MAX_REPLICAS}
+        value={draft}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        aria-label="Replicas"
+      />
+    </Field>
+  );
+}
+
+/** Removing a service also removes the flows it handles, so that case asks first. */
+function RemoveComponentButton({ component }: { readonly component: Component }) {
+  const dispatch = useAttemptStore((s) => s.dispatch);
+  const handled = useAttemptStore(
+    (s) => s.attempt.flows.filter((f) => f.handler === component.id).length,
+  );
+  const [confirming, setConfirming] = useState(false);
+  const remove = () => {
+    dispatch("removeComponent", { id: component.id });
+    useUi.getState().select(null);
+  };
+  if (confirming) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-rose-200 bg-rose-50 p-2.5 text-sm">
+        <p className="text-rose-900">
+          {component.label} handles {handled} flow{handled === 1 ? "" : "s"}. Removing it removes{" "}
+          {handled === 1 ? "that flow" : "those flows"} too.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="danger" onClick={remove}>
+            Remove both
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <Button
+      variant="danger"
+      className="self-start"
+      onClick={() => (handled > 0 ? setConfirming(true) : remove())}
+    >
+      <Trash2 className="h-4 w-4" />
+      Remove component
+    </Button>
   );
 }
 

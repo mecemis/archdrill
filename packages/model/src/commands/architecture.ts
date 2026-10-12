@@ -121,9 +121,13 @@ export const reverseConnection = defineCommand(z.object({ id: IdSchema }), (draf
   if (!connection) return;
   assertPairFree(draft, connection.to, connection.from);
   const { from, to } = connection;
+  const newId = connectionId(to, from);
+  if (draft.architecture.connections.some((c) => c.id === newId)) {
+    throw new CommandError(`Connection "${newId}" already exists.`);
+  }
   connection.from = to;
   connection.to = from;
-  connection.id = connectionId(to, from);
+  connection.id = newId;
 });
 
 export const setConnectionMode = defineCommand(

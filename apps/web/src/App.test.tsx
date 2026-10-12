@@ -1,4 +1,5 @@
 import { AttemptSchema } from "@archdrill/model";
+import { cacheAsideAttempt } from "@archdrill/model/testing";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -112,5 +113,19 @@ describe("App", () => {
 
     expect(screen.getByText("Not passing")).toBeDefined();
     expect(screen.getByText("Unknown codes answer 404")).toBeDefined();
+  });
+
+  it("asks which branch to keep when removing a step with several continuations", () => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+    renderApp();
+    const tree = within(screen.getByTestId("step-tree"));
+
+    fireEvent.click(tree.getAllByRole("button", { name: "Remove step" })[0] as HTMLElement);
+    fireEvent.click(tree.getByRole("button", { name: /on miss: Postgres · read Link/ }));
+
+    const flow = useAttemptStore.getState().attempt.flows[0];
+    expect(flow?.root).toBe("read");
+    expect(flow?.steps.get).toBeUndefined();
+    expect(flow?.steps.expiryHit).toBeUndefined();
   });
 });

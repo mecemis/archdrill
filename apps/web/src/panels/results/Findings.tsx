@@ -106,6 +106,8 @@ function FindingCard({
       className={`rounded-md border bg-white ${pinned ? "border-amber-400" : "border-zinc-200"}`}
       onMouseEnter={() => highlight && setHover(highlight)}
       onMouseLeave={() => setHover(null)}
+      onFocus={() => highlight && setHover(highlight)}
+      onBlur={() => setHover(null)}
     >
       <header className="flex items-start gap-2 px-3 py-2">
         <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${tone}`} aria-hidden="true" />

@@ -41,7 +41,10 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const dispatch = useAttemptStore((s) => s.dispatch);
   const canvasTarget = useUi((s) => s.canvasTarget);
   const targets = useMemo(() => callableTargets(attempt, flow), [attempt, flow]);
-  const [mode, setMode] = useState<Mode>(targets.length > 0 ? "call" : "respond");
+  const inserting = slot.before !== undefined;
+  const [mode, setMode] = useState<Mode>(
+    targets.length > 0 ? "call" : inserting ? "logic" : "respond",
+  );
   const [target, setTarget] = useState(targets[0] ?? "");
   const actions = useMemo(() => actionsFor(attempt, target), [attempt, target]);
   const [action, setAction] = useState<ActionId | "">(actions[0] ?? "");
@@ -65,7 +68,6 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
     if (action) setTtl(DEFAULT_TTL[action] ?? 3600);
   }, [action]);
 
-  const inserting = slot.before !== undefined;
   const draft = buildStep(mode, { target, action, entity, ttl, logic, status });
   const outcomes = useMemo(() => draftOutcomes(draft), [draft]);
   useEffect(() => {

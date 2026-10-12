@@ -41,6 +41,34 @@ describe("attempt store", () => {
     });
   });
 
+  it("applies a batch as one undoable step", () => {
+    const store = createAttemptStore(cacheAsideAttempt());
+    const original = store.getState().attempt;
+
+    const ok = store.getState().dispatchAll([
+      { name: "moveComponent", args: { id: "api", position: { x: 1, y: 1 } } },
+      { name: "moveComponent", args: { id: "db", position: { x: 2, y: 2 } } },
+    ]);
+    store.getState().undo();
+
+    expect(ok).toBe(true);
+    expect(store.getState().attempt).toEqual(original);
+    expect(store.getState().past).toEqual([]);
+  });
+
+  it("rejects a whole batch when one command fails", () => {
+    const store = createAttemptStore(cacheAsideAttempt());
+    const before = store.getState().attempt;
+
+    const ok = store.getState().dispatchAll([
+      { name: "removeConnection", args: { id: "api--redis" } },
+      { name: "removeConnection", args: { id: "does-not-exist" } },
+    ]);
+
+    expect(ok).toBe(false);
+    expect(store.getState().attempt).toBe(before);
+  });
+
   it("clears history when the attempt is replaced", () => {
     const store = createAttemptStore(cacheAsideAttempt());
     store.getState().dispatch("updateComponent", { id: "api", replicas: 5 });

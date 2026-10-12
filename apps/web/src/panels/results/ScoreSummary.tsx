@@ -1,4 +1,4 @@
-import type { ScenarioResult } from "@archdrill/evaluator";
+import type { Readiness, ScenarioResult } from "@archdrill/evaluator";
 import { activePack } from "../../state/content";
 
 const BAND_STYLES = {
@@ -7,6 +7,14 @@ const BAND_STYLES = {
   strong: { label: "Strong", className: "bg-sky-100 text-sky-900" },
   excellent: { label: "Excellent", className: "bg-emerald-100 text-emerald-900" },
 } as const;
+
+const READINESS_LABELS: Readonly<Record<Readiness, string>> = {
+  missing: "no flow yet",
+  empty: "no steps yet",
+  broken: "flow has errors",
+  ready: "ready",
+  "too-complex": "too many paths to evaluate; simplify the branching",
+};
 
 const CAP_REASONS = {
   gate: "a gate failed",
@@ -39,12 +47,7 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
           const op = activePack.problem.operations.find((o) => o.id === operation);
           return (
             <p key={operation} className="text-sm text-zinc-600">
-              {op?.label ?? operation}:{" "}
-              {status === "missing"
-                ? "no flow yet"
-                : status === "empty"
-                  ? "no steps yet"
-                  : "flow has errors"}
+              {op?.label ?? operation}: {READINESS_LABELS[status]}
             </p>
           );
         })}
