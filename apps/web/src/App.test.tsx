@@ -128,4 +128,18 @@ describe("App", () => {
     expect(flow?.steps.get).toBeUndefined();
     expect(flow?.steps.expiryHit).toBeUndefined();
   });
+
+  it("shows simulated load per environment", () => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+    renderApp();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Load" }));
+
+    expect(screen.getByRole("tab", { name: "Average" })).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Peak (×3)" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Cost at this load")).toBeDefined();
+    expect(screen.getByRole("cell", { name: "Redis · Link" })).toBeDefined();
+  });
 });

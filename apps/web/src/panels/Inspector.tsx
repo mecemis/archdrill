@@ -1,12 +1,15 @@
+import { componentProfile, HOURS_PER_MONTH } from "@archdrill/engine";
 import type { Component, Connection } from "@archdrill/model";
 import { ArrowLeftRight, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { activePack, catalogIndex } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
+import { compact, usd } from "../ui/format";
 import { Button, Field, SectionTitle, Select } from "../ui/primitives";
 
-const MAX_REPLICAS = 50;
+const MAX_REPLICAS = 200;
+const MAX_SHARDS = 64;
 
 export function Inspector() {
   const selection = useUi((s) => s.selection);
@@ -35,7 +38,9 @@ function ComponentInspector({ component }: { readonly component: Component }) {
     flavor?: string;
     size?: string | null;
     replicas?: number;
+    shards?: number;
   }) => dispatch("updateComponent", { id: component.id, ...changes });
+  const profile = componentProfile(component, catalogIndex);
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -69,14 +74,41 @@ function ComponentInspector({ component }: { readonly component: Component }) {
           </Select>
         </Field>
       )}
-      {size && (
-        <p className="text-xs text-zinc-500">
-          ~{size.capacityPerSec.read?.toLocaleString() ?? "?"} reads/s per instance ·{" "}
-          {size.latencyMs.base} ms base latency
-        </p>
+      {kind?.shardable && (
+        <CountSlider
+          label="Shards"
+          max={MAX_SHARDS}
+          value={component.shards}
+          onCommit={(shards) => update({ shards })}
+        />
       )}
       {kind?.replicable && !flavor?.managedRedundancy && (
-        <ReplicasSlider value={component.replicas} onCommit={(replicas) => update({ replicas })} />
+        <CountSlider
+          label="Replicas"
+          max={MAX_REPLICAS}
+          value={component.replicas}
+          onCommit={(replicas) => update({ replicas })}
+        />
+      )}
+      {size && profile && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-zinc-600">
+          <dt>Reads</dt>
+          <dd className="tabular-nums">{compact(profile.readCapacity)}/s</dd>
+          <dt>Writes</dt>
+          <dd className="tabular-nums">{compact(profile.writeCapacity)}/s</dd>
+          {profile.memoryGb > 0 && (
+            <>
+              <dt>Memory</dt>
+              <dd className="tabular-nums">{compact(profile.memoryGb)} GB</dd>
+            </>
+          )}
+          <dt>Base latency</dt>
+          <dd className="tabular-nums">{size.latencyMs.base} ms</dd>
+          <dt>Instances</dt>
+          <dd className="tabular-nums">
+            {profile.instances} · {usd(profile.costPerHour * HOURS_PER_MONTH)} / month
+          </dd>
+        </dl>
       )}
       {flavor?.managedRedundancy && (
         <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600">
@@ -98,10 +130,14 @@ function ComponentInspector({ component }: { readonly component: Component }) {
 }
 
 /** Edits locally while dragging and commits once on release, so a drag is one undo step. */
-function ReplicasSlider({
+function CountSlider({
+  label,
+  max,
   value,
   onCommit,
 }: {
+  readonly label: string;
+  readonly max: number;
   readonly value: number;
   readonly onCommit: (v: number) => void;
 }) {
@@ -111,17 +147,17 @@ function ReplicasSlider({
     if (draft !== value) onCommit(draft);
   };
   return (
-    <Field label={`Replicas (${draft})`}>
+    <Field label={`${label} (${draft})`}>
       <input
         type="range"
         min={1}
-        max={MAX_REPLICAS}
+        max={max}
         value={draft}
         onChange={(e) => setDraft(Number(e.target.value))}
         onPointerUp={commit}
         onKeyUp={commit}
         onBlur={commit}
-        aria-label="Replicas"
+        aria-label={label}
       />
     </Field>
   );

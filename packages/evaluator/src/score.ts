@@ -27,7 +27,10 @@ export interface DimensionResult {
   readonly weight: number;
   /** 0..100, or null when no applicable baseline check covers the dimension yet. */
   readonly score: number | null;
+  /** Scored checks that applied to this design. */
   readonly checkCount: number;
+  /** Scored checks the scenario defines for this dimension, applicable or not. */
+  readonly definedCount: number;
 }
 
 export interface SignalSummary {
@@ -86,6 +89,12 @@ function scoreDimensions(scenario: Scenario, results: readonly CheckResult[]): D
         r.instance.weight > 0 &&
         r.status !== "n/a",
     );
+    const definedCount = results.filter(
+      (r) =>
+        r.instance.dimension === dimension &&
+        r.instance.signal === "baseline" &&
+        r.instance.weight > 0,
+    ).length;
     const totalWeight = scored.reduce((sum, r) => sum + r.instance.weight, 0);
     const earned = scored.reduce((sum, r) => sum + r.instance.weight * r.fraction, 0);
     return {
@@ -93,6 +102,7 @@ function scoreDimensions(scenario: Scenario, results: readonly CheckResult[]): D
       weight: weight ?? 0,
       score: totalWeight === 0 ? null : (100 * earned) / totalWeight,
       checkCount: scored.length,
+      definedCount,
     };
   });
 }

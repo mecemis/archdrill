@@ -74,6 +74,12 @@ describe("simulateEnvironment", () => {
     expect(metrics.operations.get("redirect")?.successRate).toBeCloseTo(9000 / 20_000, 4);
   });
 
+  it("makes the requests an overloaded component still serves wait in its queue", () => {
+    const op = simulate(cacheAsideAttempt(), 20_000).operations.get("redirect");
+
+    expect(op?.latency.p99).toBeGreaterThan(1000);
+  });
+
   it("shifts load to the database when an overloaded cache rejects lookups", () => {
     let attempt = applyCommand(cacheAsideAttempt(), "updateComponent", {
       id: "api",

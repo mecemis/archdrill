@@ -82,11 +82,8 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
           >
             <span className="text-zinc-700">{titleCase(d.dimension)}</span>
             {d.score === null ? (
-              <span
-                className="col-span-2 text-zinc-400"
-                title="Checks for this dimension arrive with the simulation"
-              >
-                not evaluated yet
+              <span className="col-span-2 text-zinc-400">
+                {d.definedCount > 0 ? "not applicable to this design" : "not evaluated yet"}
               </span>
             ) : (
               <>

@@ -1,4 +1,4 @@
-import type { OperationAnalysis } from "@archdrill/engine";
+import type { EnvironmentMetrics, OperationAnalysis } from "@archdrill/engine";
 import {
   type Attempt,
   type CatalogIndex,
@@ -17,6 +17,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly flavorLabel: string;
   readonly sizeLabel: string | null;
   readonly replicas: number;
+  /** Shards for shardable kinds, otherwise null. */
+  readonly shards: number | null;
   readonly replicable: boolean;
   readonly entities: readonly string[];
   readonly isHandler: boolean;
@@ -24,6 +26,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly hasError: boolean;
   /** A step slot is armed and clicking this component would call it. */
   readonly callable: boolean;
+  /** Simulated utilisation in the selected environment, or null without a simulation. */
+  readonly utilization: number | null;
 }
 
 export interface ConnectionEdgeData extends Record<string, unknown> {
@@ -33,6 +37,8 @@ export interface ConnectionEdgeData extends Record<string, unknown> {
   readonly ingress: boolean;
   readonly emphasis: Emphasis;
   readonly hasError: boolean;
+  /** Simulated requests per second over the connection, or null without a simulation. */
+  readonly rate: number | null;
 }
 
 export interface ProjectionInput {
@@ -43,6 +49,7 @@ export interface ProjectionInput {
   readonly highlight: Highlight | null;
   readonly selection: Selection;
   readonly slotArmed: boolean;
+  readonly metrics?: EnvironmentMetrics | undefined;
 }
 
 /**
@@ -85,12 +92,14 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         flavorLabel: flavor?.label ?? component.flavor,
         sizeLabel: size?.label ?? null,
         replicas: component.replicas,
-        replicable: kind?.replicable ?? false,
+        shards: kind?.shardable ? component.shards : null,
+        replicable: (kind?.replicable ?? false) && !(flavor?.managedRedundancy ?? false),
         entities: component.data.map((d) => d.entity),
         isHandler: flow?.handler === component.id,
         emphasis: emphasisOf(highlight, highlight?.components.has(component.id) ?? false),
         hasError: erroneous.has(component.id),
         callable: callable.has(component.id),
+        utilization: input.metrics?.components.get(component.id)?.utilization ?? null,
       },
     };
   });
@@ -127,6 +136,7 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
       ingress: ingress.has(connection.id),
       emphasis: emphasisOf(highlight, highlight?.connections.has(connection.id) ?? false),
       hasError: erroneous.has(connection.id),
+      rate: input.metrics ? (input.metrics.connections.get(connection.id) ?? 0) : null,
     },
   }));
 }

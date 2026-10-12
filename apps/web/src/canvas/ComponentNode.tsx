@@ -1,5 +1,6 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import { memo } from "react";
+import { percent, utilizationTone } from "../ui/format";
 import { KindIcon } from "../ui/icons";
 import type { ComponentNodeData } from "./projection";
 
@@ -26,12 +27,14 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
       <div className="flex items-center gap-2">
         <KindIcon kind={data.kind} className="h-4 w-4 shrink-0 text-zinc-600" />
         <span className="truncate text-sm font-semibold text-zinc-900">{data.label}</span>
-        {data.replicable && (
+        {(data.replicable || (data.shards ?? 1) > 1) && (
           <span
-            className="ml-auto rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700"
-            title="Replicas"
+            className="ml-auto rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700 tabular-nums"
+            title={data.shards !== null ? "shards × replicas" : "replicas"}
           >
-            ×{data.replicas}
+            {data.shards !== null && data.shards > 1
+              ? `${data.shards}×${data.replicas}`
+              : `×${data.replicas}`}
           </span>
         )}
       </div>
@@ -54,6 +57,27 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
               stores {entity}
             </span>
           ))}
+        </div>
+      )}
+      {data.utilization !== null && (
+        <div
+          className="mt-1.5 flex items-center gap-1.5"
+          title="Utilisation in the selected environment"
+        >
+          <span
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200"
+            aria-hidden="true"
+          >
+            <span
+              className={`block h-full rounded-full ${utilizationTone(data.utilization)}`}
+              style={{ width: `${Math.min(100, data.utilization * 100)}%` }}
+            />
+          </span>
+          <span
+            className={`text-[11px] tabular-nums ${data.utilization > 1 ? "font-semibold text-rose-700" : "text-zinc-600"}`}
+          >
+            {percent(data.utilization, 0)}
+          </span>
         </div>
       )}
       <Handle type="source" position={Position.Right} className="!h-3 !w-3 !bg-zinc-400" />

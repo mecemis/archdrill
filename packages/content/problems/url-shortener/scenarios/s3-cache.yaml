@@ -141,6 +141,23 @@ checks:
       Give the cache more memory (shards or a bigger size) and use a TTL as
       long as freshness allows; expiry is checked on read anyway.
 
+  - id: serves-peak
+    use: success-rate-above
+    title: Almost every redirect succeeds at peak (99%)
+    dimension: scalability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: peak, min: 0.99 }
+    why: >-
+      A design that drops a large share of redirects at peak is down for those
+      users, whatever its other qualities. This is the floor; the 99.99%
+      availability target is checked separately.
+    fix: >-
+      Find the component the finding lists as over capacity and give it enough
+      replicas, shards or a bigger size for peak traffic.
+
   - id: no-overload-at-peak
     use: success-rate-above
     title: Redirects keep succeeding at peak (99.99%)

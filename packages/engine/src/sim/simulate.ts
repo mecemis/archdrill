@@ -33,6 +33,12 @@ import type {
 
 /** Round trip of one network hop inside a zone. */
 export const NETWORK_RTT_MS = 0.5;
+/**
+ * Extra wait for requests that an overloaded component does serve: its queue
+ * keeps growing until callers give up. Until timeouts are modelled this is a
+ * fixed, documented assumption of about a second.
+ */
+export const OVERLOAD_WAIT_MS = 1000;
 /** Share of cache memory usable for entries (allocator and metadata overhead). */
 export const CACHE_FILL_FACTOR = 0.7;
 const MAX_ITERATIONS = 80;
@@ -373,7 +379,10 @@ function summarizeComponents(
   for (const [id, profile] of profiles) {
     const load = flow.loads.get(id) ?? { read: 0, write: 0 };
     const utilization = utilizationOf(load, profile);
-    const wait = queueWait(utilization, profile.servers, profile.serviceTimeMs);
+    const wait =
+      utilization > 1
+        ? OVERLOAD_WAIT_MS
+        : queueWait(utilization, profile.servers, profile.serviceTimeMs);
     const service = profile.serviceTimeMs;
     const requestCost = profile.requestCost
       ? ((load.read * profile.requestCost.readPerMillion +

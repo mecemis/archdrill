@@ -24,7 +24,7 @@ export interface Highlight {
   readonly steps: ReadonlySet<string>;
 }
 
-export type ResultsTab = "findings" | "paths" | "issues";
+export type ResultsTab = "findings" | "paths" | "load" | "issues";
 
 interface UiState {
   readonly scenarioId: string;
@@ -36,7 +36,10 @@ interface UiState {
   readonly hover: Highlight | null;
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
+  /** Simulated environment shown on the canvas and in the results; null means the scenario's last (heaviest). */
+  readonly environmentId: string | null;
   setScenario: (id: string) => void;
+  setEnvironment: (id: string | null) => void;
   setOperation: (id: string) => void;
   select: (selection: Selection) => void;
   armSlot: (slot: Slot | null) => void;
@@ -58,10 +61,17 @@ export const useUi = create<UiState>((set, get) => ({
   hover: null,
   pinned: null,
   resultsTab: "findings",
+  environmentId: null,
   setScenario: (scenarioId) => {
     const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
-    set({ scenarioId, operation: scenario?.focusOperations[0] ?? get().operation, slot: null });
+    set({
+      scenarioId,
+      operation: scenario?.focusOperations[0] ?? get().operation,
+      slot: null,
+      environmentId: null,
+    });
   },
+  setEnvironment: (environmentId) => set({ environmentId }),
   setOperation: (operation) => set({ operation, slot: null, canvasTarget: null }),
   select: (selection) => set({ selection }),
   armSlot: (slot) => set({ slot, canvasTarget: null }),

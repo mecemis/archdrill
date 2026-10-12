@@ -115,7 +115,8 @@ mutants:
       - updateComponent: { id: link-api, replicas: 10 }
     expect:
       scenario: s2-redirect
-      fails: [no-overload-at-peak, headroom-at-peak]
+      fails: [serves-peak, no-overload-at-peak, headroom-at-peak, redirect-p99]
+      band: not-passing
 
   - id: tiny-cache
     base: postgres-redis-cache-aside
@@ -124,16 +125,18 @@ mutants:
       - updateComponent: { id: redis, size: s, shards: 1, replicas: 1 }
     expect:
       scenario: s3-cache
-      fails: [hit-ratio, no-overload-at-peak]
+      fails: [hit-ratio, serves-peak, no-overload-at-peak]
+      band: not-passing
 
   - id: short-ttl
     base: postgres-redis-cache-aside
-    description: Cache entries live for 30 seconds.
+    description: Cache entries live for 30 seconds; the hit ratio drops and the misses overload the database.
     apply:
       - updateStep: { operation: redirect, stepId: populate, ttlSec: 30 }
     expect:
       scenario: s3-cache
-      fails: [hit-ratio]
+      fails: [hit-ratio, serves-peak]
+      band: not-passing
 
   - id: cache-never-populated
     base: postgres-redis-cache-aside
@@ -152,7 +155,8 @@ mutants:
       - updateComponent: { id: links-db, shards: 1, replicas: 1 }
     expect:
       scenario: s3-cache
-      fails: [no-overload-at-peak, headroom-at-peak]
+      fails: [serves-peak, no-overload-at-peak, headroom-at-peak]
+      band: not-passing
 
   - id: replica-sprawl
     base: postgres-redis-cache-aside
