@@ -1,6 +1,12 @@
 import { type ConnectionPolicy, DEFAULT_POLICY } from "@archdrill/model";
 import { describe, expect, it } from "vitest";
-import { type AttemptRisks, callModel, NETWORK_RTT_MS, NO_TIMEOUT_WAIT_MS } from "./calls";
+import {
+  type AttemptRisks,
+  bulkheadShed,
+  callModel,
+  NETWORK_RTT_MS,
+  NO_TIMEOUT_WAIT_MS,
+} from "./calls";
 
 const NO_RISK: AttemptRisks = { shed: 0, fault: 0, faultHangs: false, overload: 0, timeout: 0 };
 const policy = (overrides: Partial<ConnectionPolicy>): ConnectionPolicy => ({
@@ -58,10 +64,39 @@ describe("callModel", () => {
     expect(call.failure).toBeCloseTo(0.2, 12);
   });
 
+  it("does not open the breaker for the caller's own bulkhead rejections", () => {
+    const call = callModel({ ...NO_RISK, shed: 0.9 }, policy({ circuitBreaker: true }));
+
+    expect(call.shortCircuit).toBe(0);
+    expect(call.failure).toBeCloseTo(0.9, 12);
+  });
+
   it("does not send shed or faulted attempts to the target", () => {
     const call = callModel({ ...NO_RISK, shed: 0.5, fault: 0.2 }, policy({}));
 
     expect(call.reach).toBeCloseTo(0.4, 12);
     expect(call.failure).toBeCloseTo(1 - 0.5 * 0.8, 12);
+  });
+});
+
+describe("bulkheadShed", () => {
+  const healthy = { fault: 0, faultHangs: false, overload: 0, timeout: 0 };
+
+  it("rejects what exceeds the limit", () => {
+    expect(bulkheadShed(healthy, policy({ maxRps: 1000 }), 4000)).toBeCloseTo(0.75, 12);
+    expect(bulkheadShed(healthy, policy({ maxRps: 1000 }), 800)).toBe(0);
+  });
+
+  it("counts the retries its own rejections cause", () => {
+    // Retried rejections raise the offered rate: shed s solves 4000 × (1 + s) × (1 − s) = 1000.
+    const shed = bulkheadShed(healthy, policy({ maxRps: 1000, retries: 1 }), 4000);
+
+    expect(4000 * (1 + shed) * (1 - shed)).toBeCloseTo(1000, 6);
+  });
+
+  it("only limits calls that pass an open breaker", () => {
+    const failing = { ...healthy, fault: 1 };
+
+    expect(bulkheadShed(failing, policy({ maxRps: 1000, circuitBreaker: true }), 4000)).toBe(0);
   });
 });

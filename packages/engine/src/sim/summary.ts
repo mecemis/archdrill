@@ -4,7 +4,13 @@ import type { CallModel } from "./calls";
 import { NETWORK_RTT_MS } from "./calls";
 import { type ComponentProfile, HOURS_PER_MONTH, SECONDS_PER_MONTH } from "./capacity";
 import type { ComponentFault } from "./faults";
-import { type Moments, mixtureQuantile, momentGammaCdf, type WeightedMoments } from "./math/gamma";
+import {
+  type Moments,
+  mixtureQuantile,
+  momentGammaCdf,
+  truncatedMoments,
+  type WeightedMoments,
+} from "./math/gamma";
 import { queueWait } from "./math/queueing";
 import { callShare, type OutcomeState, outcomeProbability } from "./outcomes";
 import type { CacheSpec, OperationModel } from "./setup";
@@ -63,12 +69,27 @@ export function dropFor(load: Load | undefined, profile: ComponentProfile): numb
 /** Latency a component adds per visit: service plus queueing (excluding the network). */
 export function componentLatency(load: Load | undefined, profile: ComponentProfile): Moments {
   const utilization = utilizationOf(load, profile);
-  const wait =
-    utilization > 1
-      ? OVERLOAD_WAIT_MS
-      : queueWait(utilization, profile.servers, profile.serviceTimeMs);
+  const wait = overloadAwareWait(utilization, profile);
   const service = profile.serviceTimeMs;
   return { mean: service + wait, variance: (profile.cv * service) ** 2 + wait ** 2 };
+}
+
+/**
+ * Utilisation band over which the queueing wait ramps up to the overload
+ * wait. A jump at exactly 1 would make timeouts, and with them circuit
+ * breakers, flip back and forth between iterations.
+ */
+const SATURATION_START = 0.98;
+const SATURATION_END = 1.02;
+
+function overloadAwareWait(utilization: number, profile: ComponentProfile): number {
+  if (utilization <= SATURATION_START) {
+    return queueWait(utilization, profile.servers, profile.serviceTimeMs);
+  }
+  if (utilization >= SATURATION_END) return OVERLOAD_WAIT_MS;
+  const near = queueWait(SATURATION_START, profile.servers, profile.serviceTimeMs);
+  const t = (utilization - SATURATION_START) / (SATURATION_END - SATURATION_START);
+  return near + t * (OVERLOAD_WAIT_MS - near);
 }
 
 /** Share of served attempts that come back after the caller's timeout. */
@@ -116,7 +137,7 @@ export function summarizeComponents(
 
 export function summarizeCalls(
   flow: Propagation,
-  shed: ReadonlyMap<string, number>,
+  shedOf: (connectionId: string) => number,
   timedOut: ReadonlyMap<string, number>,
 ): Map<string, ConnectionCallMetrics> {
   const result = new Map<string, ConnectionCallMetrics>();
@@ -128,7 +149,7 @@ export function summarizeCalls(
       attempts: tally.attempts,
       failure: share(tally.failed),
       shortCircuit: share(tally.shortCircuited),
-      shed: shed.get(connectionId) ?? 0,
+      shed: shedOf(connectionId),
       timedOut: timedOut.get(connectionId) ?? 0,
     });
   }
@@ -163,12 +184,20 @@ export interface LatencyInputs {
   readonly callFor: (step: CallPathStep) => CallModel;
   /** Milliseconds writes to a component wait for its replicas. */
   readonly replicaAck: ReadonlyMap<string, number>;
+  /** The caller's timeout for a call, if it set one. */
+  readonly timeoutOf: (step: CallPathStep) => number | undefined;
 }
 
 function callLatency(step: CallPathStep, inputs: LatencyInputs): Moments {
   const call = inputs.callFor(step);
   if (step.outcome === "error") return call.failureLatency;
-  const service = inputs.components.get(step.target)?.latency;
+  const timeout = inputs.timeoutOf(step);
+  const measured = inputs.components.get(step.target)?.latency;
+  // A call that succeeded came back before the caller's timeout.
+  const service =
+    measured && timeout !== undefined
+      ? truncatedMoments(measured, Math.max(0, timeout - NETWORK_RTT_MS))
+      : measured;
   let total = addMoments(
     service ? addMoments(NETWORK_HOP, service) : NETWORK_HOP,
     call.successExtra,

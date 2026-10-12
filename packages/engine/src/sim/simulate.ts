@@ -7,7 +7,7 @@ import {
 } from "@archdrill/model";
 import type { CallPathStep } from "../paths/types";
 import { cacheHitRatio } from "./cache-model";
-import { type CallModel, callModel } from "./calls";
+import { bulkheadShed, type CallModel, callModel } from "./calls";
 import type { ComponentProfile } from "./capacity";
 import { type ComponentFault, NO_FAULT, resolveFaults } from "./faults";
 import { callShare, type OutcomeState } from "./outcomes";
@@ -42,9 +42,14 @@ export { NETWORK_RTT_MS } from "./calls";
 export { CACHE_FILL_FACTOR, type SimulationContext } from "./setup";
 export { OVERLOAD_WAIT_MS } from "./summary";
 
-const MAX_ITERATIONS = 100;
+const MAX_ITERATIONS = 200;
 const TOLERANCE = 1e-7;
-const DAMPING = 0.5;
+
+/** Damping per iteration: strong feedback (breakers, overload) needs smaller steps if it has not settled. */
+function dampingAt(iteration: number): number {
+  if (iteration <= 40) return 0.5;
+  return iteration <= 120 ? 0.25 : 0.1;
+}
 
 /** Quantities the fixed point iterates on, each relaxed with damping. */
 interface LoopState {
@@ -52,8 +57,8 @@ interface LoopState {
   readonly drop: Map<string, number>;
   /** Per connection: share of served attempts that exceed the caller's timeout. */
   readonly timedOut: Map<string, number>;
-  /** Per connection: share of attempts the caller's bulkhead rejects. */
-  readonly shed: Map<string, number>;
+  /** Per connection with a bulkhead: calls per second that flow steps make (first attempts). */
+  readonly callRates: Map<string, number>;
   readonly hit: Map<string, number>;
   readonly negativeHit: Map<string, number>;
 }
@@ -79,7 +84,7 @@ export function simulateEnvironment(
   const loop: LoopState = {
     drop: new Map(),
     timedOut: new Map(),
-    shed: new Map(),
+    callRates: new Map(),
     hit: new Map(),
     negativeHit: new Map(),
   };
@@ -99,11 +104,12 @@ export function simulateEnvironment(
   while (iterations < MAX_ITERATIONS) {
     iterations++;
     calls.reset();
-    const flow = propagate(operations, state, calls.get, ingress, loop.shed);
+    const flow = propagate(operations, state, calls.get, ingress, calls.shedOf);
+    const damping = dampingAt(iterations);
     const delta = Math.max(
-      relaxComponents(profiles, flow, loop),
-      relaxConnections(connections, profiles, flow, loop),
-      relaxCaches(caches, flow, loop),
+      relaxComponents(profiles, flow, loop, damping),
+      relaxConnections(connections, profiles, flow, loop, damping),
+      relaxCaches(caches, flow, loop, damping),
     );
     if (delta < TOLERANCE) {
       converged = true;
@@ -112,7 +118,7 @@ export function simulateEnvironment(
   }
 
   calls.reset();
-  const final = propagate(operations, state, calls.get, ingress, loop.shed);
+  const final = propagate(operations, state, calls.get, ingress, calls.shedOf);
   const components = summarizeComponents(
     profiles,
     final,
@@ -126,20 +132,21 @@ export function simulateEnvironment(
       components,
       callFor: calls.get,
       replicaAck: replicaAckMs(workload, ctx),
+      timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,
     }),
     components,
     caches: caches.map((spec) => summarizeCache(spec, final, state)),
     connections: final.traffic,
-    calls: summarizeCalls(final, loop.shed, loop.timedOut),
+    calls: summarizeCalls(final, calls.shedOf, loop.timedOut),
     monthlyCost: [...components.values()].reduce((sum, c) => sum + c.monthlyCost, 0),
     converged,
     iterations,
   };
 }
 
-function relax(values: Map<string, number>, key: string, target: number): number {
+function relax(values: Map<string, number>, key: string, target: number, damping: number): number {
   const current = values.get(key) ?? 0;
-  const next = current + DAMPING * (target - current);
+  const next = current + damping * (target - current);
   values.set(key, next);
   return Math.abs(next - current);
 }
@@ -148,20 +155,23 @@ function relaxComponents(
   profiles: ReadonlyMap<string, ComponentProfile>,
   flow: Propagation,
   loop: LoopState,
+  damping: number,
 ): number {
   let delta = 0;
   for (const [id, profile] of profiles) {
-    delta = Math.max(delta, relax(loop.drop, id, dropFor(flow.loads.get(id), profile)));
+    const target = dropFor(flow.loads.get(id), profile);
+    delta = Math.max(delta, relax(loop.drop, id, target, damping));
   }
   return delta;
 }
 
-/** Timeouts follow the target's latency; the bulkhead sheds what exceeds its rate. */
+/** Timeouts follow the target's latency; bulkheads follow the call rate. */
 function relaxConnections(
   connections: readonly Connection[],
   profiles: ReadonlyMap<string, ComponentProfile>,
   flow: Propagation,
   loop: LoopState,
+  damping: number,
 ): number {
   let delta = 0;
   for (const connection of connections) {
@@ -171,36 +181,45 @@ function relaxConnections(
       const latency = componentLatency(flow.loads.get(connection.to), profile);
       delta = Math.max(
         delta,
-        relax(loop.timedOut, connection.id, timeoutShare(latency, timeoutMs)),
+        relax(loop.timedOut, connection.id, timeoutShare(latency, timeoutMs), damping),
       );
     }
     if (maxRps !== undefined) {
-      const offered = flow.calls.get(connection.id)?.attempts ?? 0;
-      const target = offered > maxRps ? 1 - maxRps / offered : 0;
-      delta = Math.max(delta, relax(loop.shed, connection.id, target));
+      const rate = flow.calls.get(connection.id)?.calls ?? 0;
+      // Relative change, so the tolerance means the same for any traffic level.
+      const before = loop.callRates.get(connection.id) ?? 0;
+      relax(loop.callRates, connection.id, rate, damping);
+      const after = loop.callRates.get(connection.id) ?? 0;
+      delta = Math.max(delta, Math.abs(after - before) / Math.max(1, rate));
     }
   }
   return delta;
 }
 
-function relaxCaches(caches: readonly CacheSpec[], flow: Propagation, loop: LoopState): number {
+function relaxCaches(
+  caches: readonly CacheSpec[],
+  flow: Propagation,
+  loop: LoopState,
+  damping: number,
+): number {
   let delta = 0;
   for (const spec of caches) {
     const key = cacheKey(spec.componentId, spec.entity);
     const lookups = flow.lookups.get(key) ?? { existing: 0, absent: 0 };
     const [positiveItems, negativeItems] = splitCapacity(spec, lookups);
-    delta = Math.max(delta, relax(loop.hit, key, hitFor(spec, lookups.existing, positiveItems)));
-    delta = Math.max(
-      delta,
-      relax(loop.negativeHit, key, negativeHitFor(spec, lookups.absent, negativeItems)),
-    );
+    const positive = hitFor(spec, lookups.existing, positiveItems);
+    const negative = negativeHitFor(spec, lookups.absent, negativeItems);
+    delta = Math.max(delta, relax(loop.hit, key, positive, damping));
+    delta = Math.max(delta, relax(loop.negativeHit, key, negative, damping));
   }
   return delta;
 }
 
 /**
  * Call models per (connection, reads or writes), rebuilt once per iteration
- * from the current overload, timeout and shedding shares.
+ * from the current overload and timeout shares. A bulkhead limits the whole
+ * connection; its shedding share is computed once per iteration, from the
+ * risks of the first kind of call that asks.
  */
 function callModels(
   connections: readonly Connection[],
@@ -209,6 +228,7 @@ function callModels(
 ) {
   const policies = new Map(connections.map((c) => [c.id, c.policy]));
   const memo = new Map<string, CallModel>();
+  const shedding = new Map<string, number>();
   const get = (step: CallPathStep): CallModel => {
     const write = ACTIONS[step.action].effect !== "read";
     const connection = step.connectionId ?? `-${step.target}`;
@@ -216,20 +236,27 @@ function callModels(
     const cached = memo.get(key);
     if (cached) return cached;
     const fault = faults.get(step.target) ?? NO_FAULT;
-    const model = callModel(
-      {
-        shed: loop.shed.get(connection) ?? 0,
-        fault: write ? fault.failWrite : fault.failRead,
-        faultHangs: fault.hang,
-        overload: loop.drop.get(step.target) ?? 0,
-        timeout: loop.timedOut.get(connection) ?? 0,
-      },
-      policies.get(connection) ?? DEFAULT_POLICY,
-    );
+    const policy = policies.get(connection) ?? DEFAULT_POLICY;
+    const risks = {
+      fault: write ? fault.failWrite : fault.failRead,
+      faultHangs: fault.hang,
+      overload: loop.drop.get(step.target) ?? 0,
+      timeout: loop.timedOut.get(connection) ?? 0,
+    };
+    const shed =
+      shedding.get(connection) ?? bulkheadShed(risks, policy, loop.callRates.get(connection) ?? 0);
+    shedding.set(connection, shed);
+    const model = callModel({ ...risks, shed }, policy);
     memo.set(key, model);
     return model;
   };
-  return { get, reset: () => memo.clear() };
+  const shedOf = (connectionId: string | null) =>
+    connectionId === null ? 0 : (shedding.get(connectionId) ?? 0);
+  const reset = () => {
+    memo.clear();
+    shedding.clear();
+  };
+  return { get, shedOf, reset };
 }
 
 /** How ingress hops lose requests: overload and faults on the components along the route. */
@@ -284,7 +311,7 @@ function propagate(
   state: OutcomeState,
   callFor: (step: CallPathStep) => CallModel,
   ingress: IngressModel,
-  shed: ReadonlyMap<string, number>,
+  shedOf: (connectionId: string | null) => number,
 ): Propagation {
   const loads = new Map<string, Load>();
   const retries = new Map<string, number>();
@@ -343,7 +370,7 @@ function propagate(
             step.target,
             (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * call.reach,
           );
-          addTraffic(step.connectionId, attempts * (1 - (shed.get(step.connectionId ?? "") ?? 0)));
+          addTraffic(step.connectionId, attempts * (1 - shedOf(step.connectionId)));
           tally(step.connectionId, {
             calls: callRate,
             attempts,

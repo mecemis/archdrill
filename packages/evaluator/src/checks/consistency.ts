@@ -13,9 +13,11 @@ const isStoreWrite = (step: PathStep, entity: string) =>
   step.entity === entity &&
   STORE_WRITES.has(ACTIONS[step.action].effect);
 
+/** A delete that succeeded: a failed one leaves the old version in place. */
 const isCacheDelete = (step: PathStep, entity: string, cache: string) =>
   step.kind === "call" &&
   step.action === "cache.delete" &&
+  step.outcome === "ok" &&
   step.entity === entity &&
   step.target === cache;
 

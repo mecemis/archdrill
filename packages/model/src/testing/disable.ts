@@ -46,17 +46,20 @@ export function disableLinkAttempt(invalidation: Invalidation): Attempt {
     if (invalidation === "delete-after-update") {
       add("del", del, at("update", "ok"));
       add("r204", { type: "respond", status: 204 }, at("del", "ok"));
-      a = applyCommand(a, "linkOutcome", {
-        operation: "disable-link",
-        stepId: "del",
-        outcome: "error",
-        target: "r204",
-      }).attempt;
     } else {
       add("r204", { type: "respond", status: 204 }, at("update", "ok"));
     }
   }
   add("r404", { type: "respond", status: 404 }, at("update", "notFound"));
   add("r503", { type: "respond", status: 503 }, at("update", "error"));
+  if (invalidation === "delete-after-update") {
+    // A failed delete leaves the old version cached, so the caller must retry.
+    a = applyCommand(a, "linkOutcome", {
+      operation: "disable-link",
+      stepId: "del",
+      outcome: "error",
+      target: "r503",
+    }).attempt;
+  }
   return a;
 }

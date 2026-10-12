@@ -106,11 +106,48 @@ function backoffBefore(failures: number, policy: ConnectionPolicy): Moments {
   return { mean, variance };
 }
 
-/** Share of calls an open breaker fails at once, from the attempt failure rate. */
-function breakerOpenShare(attemptFailure: number, policy: ConnectionPolicy): number {
+/**
+ * Share of calls an open breaker fails at once. A breaker counts failures
+ * that come back from the dependency; the caller's own bulkhead rejections
+ * say nothing about the dependency's health. It is one breaker per
+ * connection, so a failure of one shard counts against all of them.
+ */
+function breakerOpenShare(risks: AttemptRisks, policy: ConnectionPolicy): number {
   if (!policy.circuitBreaker) return 0;
-  const ramp = (attemptFailure - BREAKER_THRESHOLD) / (BREAKER_FULL_OPEN - BREAKER_THRESHOLD);
+  const downstream = 1 - (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
+  const ramp = (downstream - BREAKER_THRESHOLD) / (BREAKER_FULL_OPEN - BREAKER_THRESHOLD);
   return Math.min(1, Math.max(0, ramp));
+}
+
+/** Rounds of the inner fixed point between shedding and the retries it causes. */
+const SHED_ROUNDS = 30;
+
+/**
+ * Share of attempts a bulkhead rejects. It is a hard limit on what passes
+ * the circuit breaker, so it is computed from the current call rate rather
+ * than relaxed over iterations; rejected attempts are retried like any
+ * failure, which raises the offered rate, hence the small fixed point.
+ */
+export function bulkheadShed(
+  risks: Omit<AttemptRisks, "shed">,
+  policy: ConnectionPolicy,
+  callsPerSec: number,
+): number {
+  const limit = policy.maxRps;
+  if (limit === undefined || callsPerSec <= 0) return 0;
+  const passing = callsPerSec * (1 - breakerOpenShare({ ...risks, shed: 0 }, policy));
+  const downstream = 1 - (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
+  let shed = 0;
+  for (let round = 0; round < SHED_ROUNDS; round++) {
+    const e = 1 - (1 - shed) * (1 - downstream);
+    let attempts = 0;
+    for (let k = 0; k <= policy.retries; k++) attempts += e ** k;
+    const offered = passing * attempts;
+    const next = offered > limit ? 1 - limit / offered : 0;
+    if (Math.abs(next - shed) < 1e-12) return next;
+    shed = next;
+  }
+  return shed;
 }
 
 /**
@@ -147,7 +184,7 @@ export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallMo
     variance: attempts * cost.variance + backoffAll.variance,
   };
 
-  const open = breakerOpenShare(e, policy);
+  const open = breakerOpenShare(risks, policy);
   const failure = open + (1 - open) * failsAll;
   return {
     attemptFailure: e,
