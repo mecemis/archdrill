@@ -9,7 +9,7 @@ const KEY_PREFIX = "archdrill:attempt:";
  */
 export function loadAttempt(
   problemId: string,
-  storage: Storage | undefined = safeStorage(),
+  storage: Storage | null = safeStorage(),
 ): Attempt | null {
   try {
     const raw = storage?.getItem(KEY_PREFIX + problemId);
@@ -21,22 +21,20 @@ export function loadAttempt(
   }
 }
 
-export function saveAttempt(
-  attempt: Attempt,
-  storage: Storage | undefined = safeStorage(),
-): boolean {
+export function saveAttempt(attempt: Attempt, storage: Storage | null = safeStorage()): boolean {
   try {
     storage?.setItem(KEY_PREFIX + attempt.problemId, JSON.stringify(attempt));
-    return storage !== undefined;
+    return storage !== null;
   } catch {
     return false;
   }
 }
 
-function safeStorage(): Storage | undefined {
+/** The browser's storage, or null when it is missing or blocked. Pass null explicitly to disable storage. */
+function safeStorage(): Storage | null {
   try {
-    return typeof localStorage === "undefined" ? undefined : localStorage;
+    return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
-    return undefined;
+    return null;
   }
 }

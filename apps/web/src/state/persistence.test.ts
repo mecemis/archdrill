@@ -34,7 +34,7 @@ describe("persistence", () => {
   });
 
   it("works without storage", () => {
-    expect(saveAttempt(cacheAsideAttempt(), undefined)).toBe(false);
-    expect(loadAttempt("url-shortener", undefined)).toBeNull();
+    expect(saveAttempt(cacheAsideAttempt(), null)).toBe(false);
+    expect(loadAttempt("url-shortener", null)).toBeNull();
   });
 });
