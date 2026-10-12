@@ -140,7 +140,7 @@ function errorCauses(
   const causes = new Map<string, { share: number; pathIds: string[] }>();
   for (const metrics of op.paths) {
     const path = byId.get(metrics.pathId);
-    if (!path || path.terminal.kind !== "respond" || metrics.probability <= 0) continue;
+    if (path?.terminal.kind !== "respond" || metrics.probability <= 0) continue;
     if (isSuccessPath(path, analysed.operation)) continue;
     const last = path.steps.at(-1);
     const where = last?.kind === "call" ? `${label(ctx, last.target)} · ` : "";
