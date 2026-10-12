@@ -173,6 +173,16 @@ export const testProblem: Problem = ProblemSchema.parse({
       successStatuses: [201, 400, 409],
       requirements: ["FR-1"],
     },
+    {
+      id: "disable-link",
+      label: "Disable link",
+      method: "POST",
+      path: "/links/{code}/disable",
+      class: "write",
+      idempotent: true,
+      successStatuses: [200, 204, 404],
+      requirements: ["FR-3"],
+    },
   ],
   decisionPoints: [
     {

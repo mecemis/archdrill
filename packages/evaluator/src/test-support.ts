@@ -1,4 +1,4 @@
-import { analyzeAttempt } from "@archdrill/engine";
+import { analyzeAttempt, simulateEnvironment } from "@archdrill/engine";
 import {
   type Attempt,
   applyCommand,
@@ -6,6 +6,7 @@ import {
   type CommandName,
   type Scenario,
   ScenarioSchema,
+  type Workload,
 } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { CHECKS } from "./checks/registry";
@@ -20,6 +21,30 @@ export function runCheck(id: string, params: unknown, attempt: Attempt): CheckOu
   const check = CHECKS.get(id);
   if (!check) throw new Error(`unknown check ${id}`);
   return check.run(check.params.parse(params), contextFor(attempt));
+}
+
+/** Runs a check with every environment of the workload simulated. */
+export function runCheckWithLoad(
+  id: string,
+  params: unknown,
+  attempt: Attempt,
+  workload: Workload,
+): CheckOutcome {
+  const check = CHECKS.get(id);
+  if (!check) throw new Error(`unknown check ${id}`);
+  const ctx = contextFor(attempt);
+  const metrics = new Map(
+    workload.environments.map((env) => [
+      env.id,
+      simulateEnvironment(workload, env, {
+        attempt,
+        catalog: testCatalogIndex,
+        problem: testProblem,
+        analysis: ctx.analysis,
+      }),
+    ]),
+  );
+  return check.run(check.params.parse(params), { ...ctx, metrics });
 }
 
 export function mutated<N extends CommandName>(
