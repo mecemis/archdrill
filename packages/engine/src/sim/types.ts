@@ -10,6 +10,10 @@ export interface ComponentMetrics {
   readonly writeCapacity: number;
   /** Combined utilisation (read share + write share); above 1 means overloaded. */
   readonly utilization: number;
+  /** Utilisation of the shard that holds the hot key; equals `utilization` without one. */
+  readonly hottestShardUtilization: number;
+  /** Instances it runs in this environment, after autoscaling. */
+  readonly instances: number;
   /** Share of arriving requests rejected because the component is overloaded. */
   readonly dropRate: number;
   /** Requests per second that are retries of failed attempts (included in the loads). */

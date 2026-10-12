@@ -27,6 +27,16 @@ export const ComponentSchema = z.object({
   shards: z.number().int().min(1).max(MAX_SHARDS).default(1),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
+  /**
+   * Scale out with load: `replicas` is the minimum, `max` the most instances,
+   * and instances are added to keep utilisation near `targetUtilization`.
+   */
+  autoscale: z
+    .object({
+      max: z.number().int().min(1).max(MAX_REPLICAS),
+      targetUtilization: z.number().min(0.2).max(0.95).default(0.7),
+    })
+    .optional(),
 });
 export type Component = z.infer<typeof ComponentSchema>;
 

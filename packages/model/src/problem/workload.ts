@@ -30,6 +30,8 @@ export const RequestClassSchema = z
     customAlias: z.boolean().default(false),
     /** The requested alias is already taken. */
     aliasTaken: z.boolean().default(false),
+    /** Every request of this class asks for the same key, such as a link that went viral. */
+    hotKey: z.boolean().default(false),
   })
   .refine((cls) => cls.customAlias || !cls.aliasTaken, {
     message: "aliasTaken only applies to requests with customAlias",

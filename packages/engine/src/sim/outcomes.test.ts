@@ -23,6 +23,7 @@ const generated: RequestClass = {
   invalidInput: false,
   customAlias: false,
   aliasTaken: false,
+  hotKey: false,
 };
 
 const logic = (name: LogicPathStep["logic"], outcome = "ok"): LogicPathStep => ({

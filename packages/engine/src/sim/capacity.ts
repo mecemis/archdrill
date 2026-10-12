@@ -8,6 +8,12 @@ const MAX_SERVERS = 1_000_000;
 /** What one component can do, derived from its catalog size and counts. */
 export interface ComponentProfile {
   readonly instances: number;
+  /** Shards the keys are split over (1 for kinds that are not sharded). */
+  readonly shards: number;
+  /** Keys map to shards, so one hot key loads one shard. */
+  readonly sharded: boolean;
+  /** Runs inside its caller: no network hop, one copy per caller instance. */
+  readonly inProcess: boolean;
   readonly readCapacity: number;
   readonly writeCapacity: number;
   /** Mean service time per request, milliseconds. */
@@ -36,6 +42,8 @@ export interface ComponentProfile {
 export function componentProfile(
   component: Component,
   catalog: CatalogIndex,
+  /** Replicas to assume instead of the component's own, e.g. after autoscaling. */
+  scaledReplicas?: number,
 ): ComponentProfile | null {
   const kind = catalog.kind(component.kind);
   const flavor = catalog.flavor(component.kind, component.flavor);
@@ -43,7 +51,7 @@ export function componentProfile(
   const size = flavor.sizes[component.size ?? flavor.defaultSize ?? ""];
   if (!size) return null;
   const managed = flavor.managedRedundancy;
-  const replicas = managed || !kind.replicable ? 1 : component.replicas;
+  const replicas = managed || !kind.replicable ? 1 : (scaledReplicas ?? component.replicas);
   const shards = kind.shardable ? component.shards : 1;
   const instances = shards * replicas;
   const readCapacity = (size.capacityPerSec.read ?? Number.POSITIVE_INFINITY) * instances;
@@ -55,6 +63,9 @@ export function componentProfile(
     : MAX_SERVERS;
   return {
     instances,
+    shards,
+    sharded: kind.shardable,
+    inProcess: kind.inProcess,
     readCapacity,
     writeCapacity,
     serviceTimeMs,

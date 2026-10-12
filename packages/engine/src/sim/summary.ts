@@ -37,9 +37,11 @@ export type Load = { readonly read: number; readonly write: number };
 export interface Propagation {
   /** Requests per second reaching each component, retries included. */
   readonly loads: ReadonlyMap<string, Load>;
+  /** The part of those loads that asks for the hot key. */
+  readonly hotLoads: ReadonlyMap<string, Load>;
   /** Retries per second reaching each component. */
   readonly retries: ReadonlyMap<string, number>;
-  readonly lookups: ReadonlyMap<string, { existing: number; absent: number }>;
+  readonly lookups: ReadonlyMap<string, { existing: number; absent: number; hot: number }>;
   /** Requests per second crossing each connection, retries included. */
   readonly traffic: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: calls, attempts and failures per second. */
@@ -67,11 +69,58 @@ export function dropFor(load: Load | undefined, profile: ComponentProfile): numb
 }
 
 /** Latency a component adds per visit: service plus queueing (excluding the network). */
-export function componentLatency(load: Load | undefined, profile: ComponentProfile): Moments {
-  const utilization = utilizationOf(load, profile);
+function latencyAt(utilization: number, profile: ComponentProfile): Moments {
   const wait = overloadAwareWait(utilization, profile);
   const service = profile.serviceTimeMs;
   return { mean: service + wait, variance: (profile.cv * service) ** 2 + wait ** 2 };
+}
+
+const total = (load: Load | undefined) => (load ? load.read + load.write : 0);
+
+/**
+ * Utilisation of an ordinary shard and of the shard that holds the hot key.
+ * Ordinary keys spread evenly; the hot key's whole load lands on one shard,
+ * which has a 1/shards share of the capacity. Components that are not
+ * sharded balance every request, so a hot key changes nothing there.
+ */
+export function shardUtilizations(
+  load: Load | undefined,
+  hotLoad: Load | undefined,
+  profile: ComponentProfile,
+): { readonly normal: number; readonly hottest: number } {
+  const all = utilizationOf(load, profile);
+  if (!profile.sharded || total(hotLoad) <= 0) return { normal: all, hottest: all };
+  const hot = utilizationOf(hotLoad, profile);
+  const normal = all - hot;
+  return { normal, hottest: profile.shards * hot + normal };
+}
+
+/** Share of arrivals rejected at a utilisation. */
+export function dropAt(utilization: number): number {
+  return utilization > 1 ? 1 - 1 / utilization : 0;
+}
+
+/**
+ * Latency a component adds per visit: service plus queueing (excluding the
+ * network). With a hot key, calls served by its shard queue at that shard's
+ * utilisation, the others at an ordinary shard's.
+ */
+export function componentLatency(
+  load: Load | undefined,
+  profile: ComponentProfile,
+  hotLoad?: Load,
+): Moments {
+  const { normal, hottest } = shardUtilizations(load, hotLoad, profile);
+  if (hottest === normal) return latencyAt(normal, profile);
+  const calls = total(load);
+  const hot = total(hotLoad);
+  const onHotShard = calls > 0 ? (hot + (calls - hot) / profile.shards) / calls : 0;
+  const a = latencyAt(hottest, profile);
+  const b = latencyAt(normal, profile);
+  const mean = onHotShard * a.mean + (1 - onHotShard) * b.mean;
+  const second =
+    onHotShard * (a.variance + a.mean ** 2) + (1 - onHotShard) * (b.variance + b.mean ** 2);
+  return { mean, variance: Math.max(0, second - mean ** 2) };
 }
 
 /**
@@ -107,6 +156,7 @@ export function summarizeComponents(
   const metrics = new Map<string, ComponentMetrics>();
   for (const [id, profile] of profiles) {
     const load = flow.loads.get(id) ?? { read: 0, write: 0 };
+    const hotLoad = flow.hotLoads.get(id);
     const requestCost = profile.requestCost
       ? ((load.read * profile.requestCost.readPerMillion +
           load.write * profile.requestCost.writePerMillion) *
@@ -123,10 +173,12 @@ export function summarizeComponents(
       readCapacity: profile.readCapacity,
       writeCapacity: profile.writeCapacity,
       utilization: utilizationOf(load, profile),
+      hottestShardUtilization: shardUtilizations(load, hotLoad, profile).hottest,
+      instances: profile.instances,
       dropRate: drop.get(id) ?? 0,
       retryLoad: flow.retries.get(id) ?? 0,
       faults: faults.get(id)?.labels ?? [],
-      latency: componentLatency(load, profile),
+      latency: componentLatency(load, profile, hotLoad),
       storageGb,
       monthlyCost: instanceCost + requestCost + storageCost,
       costBreakdown: { instances: instanceCost, requests: requestCost, storage: storageCost },
@@ -181,7 +233,9 @@ export const NETWORK_HOP: Moments = {
 /** Everything path latency depends on. */
 export interface LatencyInputs {
   readonly components: ReadonlyMap<string, ComponentMetrics>;
-  readonly callFor: (step: CallPathStep) => CallModel;
+  readonly callFor: (step: CallPathStep, hotKey: boolean) => CallModel;
+  /** Components that run inside their caller, reached without a network hop. */
+  readonly inProcess: ReadonlySet<string>;
   /** Milliseconds writes to a component wait for its replicas. */
   readonly replicaAck: ReadonlyMap<string, number>;
   /** The caller's timeout for a call, if it set one. */
@@ -189,8 +243,9 @@ export interface LatencyInputs {
 }
 
 function callLatency(step: CallPathStep, inputs: LatencyInputs): Moments {
-  const call = inputs.callFor(step);
+  const call = inputs.callFor(step, false);
   if (step.outcome === "error") return call.failureLatency;
+  const hop = inputs.inProcess.has(step.target) ? { mean: 0, variance: 0 } : NETWORK_HOP;
   const timeout = inputs.timeoutOf(step);
   const measured = inputs.components.get(step.target)?.latency;
   // A call that succeeded came back before the caller's timeout.
@@ -198,10 +253,7 @@ function callLatency(step: CallPathStep, inputs: LatencyInputs): Moments {
     measured && timeout !== undefined
       ? truncatedMoments(measured, Math.max(0, timeout - NETWORK_RTT_MS))
       : measured;
-  let total = addMoments(
-    service ? addMoments(NETWORK_HOP, service) : NETWORK_HOP,
-    call.successExtra,
-  );
+  let total = addMoments(service ? addMoments(hop, service) : hop, call.successExtra);
   const ack = inputs.replicaAck.get(step.target) ?? 0;
   if (ack > 0 && ACTIONS[step.action].effect !== "read") {
     total = addMoments(total, { mean: ack, variance: (0.2 * ack) ** 2 });
@@ -302,14 +354,21 @@ export function summarizeCache(
   flow: Propagation,
   state: OutcomeState,
 ): CacheMetrics {
+  const lookups = flow.lookups.get(cacheKey(spec.componentId, spec.entity));
+  const ordinary = lookups?.existing ?? 0;
+  const hot = lookups?.hot ?? 0;
+  const ordinaryHit = state.hitRatio(spec.componentId, spec.entity, false);
+  const hotHit = state.hitRatio(spec.componentId, spec.entity, true);
   return {
     componentId: spec.componentId,
     entity: spec.entity,
-    hitRatio: state.hitRatio(spec.componentId, spec.entity),
+    // Over every lookup for a key that exists, the hot key's included.
+    hitRatio:
+      ordinary + hot > 0 ? (ordinary * ordinaryHit + hot * hotHit) / (ordinary + hot) : ordinaryHit,
     negativeHitRatio: state.negativeHitRatio(spec.componentId, spec.entity),
     capacityItems: spec.capacityItems,
     ttlSec: spec.ttlSec,
     populated: spec.populated,
-    lookupRate: flow.lookups.get(cacheKey(spec.componentId, spec.entity))?.existing ?? 0,
+    lookupRate: ordinary + hot,
   };
 }
