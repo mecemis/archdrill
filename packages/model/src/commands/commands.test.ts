@@ -155,6 +155,21 @@ describe("commands", () => {
     expect(attempt.flows[0]?.steps.expiryDb).toMatchObject({ next: { valid: "r302" } });
   });
 
+  it("prunes the steps a removal leaves unreachable when asked to", () => {
+    const { attempt } = applyCommand(cacheAsideAttempt(), "removeStep", {
+      operation: "redirect",
+      stepId: "read",
+      prune: true,
+    });
+
+    expect(Object.keys(attempt.flows[0]?.steps ?? {}).sort()).toEqual([
+      "expiryHit",
+      "get",
+      "r302",
+      "r410",
+    ]);
+  });
+
   it("rejects links to outcomes a step does not have", () => {
     expect(() =>
       applyCommand(cacheAsideAttempt(), "linkOutcome", {

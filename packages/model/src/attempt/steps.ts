@@ -37,9 +37,12 @@ function isPerformed(
   entity: string | undefined,
 ): boolean {
   return attempt.flows.some((flow) =>
-    Object.values(flow.steps).some(
-      (s) => s.type === "call" && s.action === action && s.target === target && s.entity === entity,
-    ),
+    reachableStepIds(flow).some((id) => {
+      const s = flow.steps[id];
+      return (
+        s?.type === "call" && s.action === action && s.target === target && s.entity === entity
+      );
+    }),
   );
 }
 

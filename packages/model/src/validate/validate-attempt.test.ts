@@ -86,6 +86,33 @@ describe("validateAttempt", () => {
     });
   });
 
+  it("does not let an unreachable negative-cache step enable negative hits", () => {
+    const orphan = mutate("addStep", {
+      operation: "redirect",
+      step: {
+        type: "call",
+        target: "redis",
+        action: "cache.setNegative",
+        entity: "Link",
+        ttlSec: 60,
+      },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "ok" },
+    });
+    const detached = mutate(
+      "linkOutcome",
+      { operation: "redirect", stepId: "read", outcome: "notFound", target: "r404" },
+      orphan,
+    );
+
+    const codes = validateAttempt(detached, ctx).map(
+      (i) => `${i.code}:${"outcome" in i.location ? i.location.outcome : ""}`,
+    );
+
+    expect(codes).toContain("step-unreachable:");
+    expect(codes).not.toContain("step-unhandled-outcome:negativeHit");
+  });
+
   it("rejects durable-store actions on a store that does not hold the entity", () => {
     const attempt = mutate("setComponentData", { id: "db", entities: [] });
 

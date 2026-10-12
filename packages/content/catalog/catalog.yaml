@@ -28,7 +28,7 @@ kinds:
     holdsData: false
     flavors:
       - id: alb
-        label: Managed L7 load balancer
+        label: Managed LB
         description: Cloud-managed HTTP load balancer, redundant across zones (e.g. AWS ALB, Azure Application Gateway).
         managedRedundancy: true
         sizes:

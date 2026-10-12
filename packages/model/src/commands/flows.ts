@@ -1,7 +1,7 @@
 import type { Draft } from "immer";
 import { z } from "zod";
 import { type Flow, isBranchingStep, type Step } from "../attempt/schema";
-import { stepOutcomes } from "../attempt/steps";
+import { reachableStepIds, stepOutcomes } from "../attempt/steps";
 import { ActionIdSchema } from "../catalog/actions";
 import { LogicIdSchema } from "../catalog/logic";
 import { IdSchema } from "../catalog/schema";
@@ -145,12 +145,18 @@ export const setRoot = defineCommand(
 
 /**
  * Removes a step. References to it are re-pointed to the step behind `bypass`
- * (when given) or unlinked. Steps that become unreachable are left in place and
+ * (when given) or unlinked. With `prune`, steps that are no longer reachable
+ * from the first step are removed too; otherwise they are left in place and
  * reported by validation, so no work is lost silently.
  */
 export const removeStep = defineCommand(
-  z.object({ operation: IdSchema, stepId: IdSchema, bypass: z.string().min(1).optional() }),
-  (draft, { operation, stepId, bypass }) => {
+  z.object({
+    operation: IdSchema,
+    stepId: IdSchema,
+    bypass: z.string().min(1).optional(),
+    prune: z.boolean().optional(),
+  }),
+  (draft, { operation, stepId, bypass, prune }) => {
     const flow = requireFlow(draft, operation);
     const step = requireStep(flow, stepId);
     let replacement: string | undefined;
@@ -162,6 +168,12 @@ export const removeStep = defineCommand(
     }
     repointReferences(flow, stepId, replacement);
     delete flow.steps[stepId];
+    if (prune) {
+      const reachable = new Set(reachableStepIds(flow));
+      for (const id of Object.keys(flow.steps)) {
+        if (!reachable.has(id)) delete flow.steps[id];
+      }
+    }
   },
 );
 
