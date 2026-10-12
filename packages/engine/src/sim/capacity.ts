@@ -22,6 +22,9 @@ export interface ComponentProfile {
     readonly readPerMillion: number;
     readonly writePerMillion: number;
   } | null;
+  /** Full copies of the stored data: each replica of a shard holds that shard's data. */
+  readonly storageCopies: number;
+  readonly storagePricePerGbMonth: number;
 }
 
 /**
@@ -60,5 +63,7 @@ export function componentProfile(
     memoryGb: (size.memoryGb ?? 0) * shards,
     costPerHour: size.costPerHour * instances,
     requestCost: flavor.requestCost ?? null,
+    storageCopies: replicas,
+    storagePricePerGbMonth: flavor.storagePricePerGbMonth ?? 0,
   };
 }

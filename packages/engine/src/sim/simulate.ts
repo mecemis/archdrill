@@ -140,7 +140,7 @@ export function simulateEnvironment(
   }
 
   const final = propagate(operations, state);
-  const components = summarizeComponents(profiles, final, drop);
+  const components = summarizeComponents(profiles, final, drop, storedGb(workload, ctx));
   return {
     environment,
     operations: summarizeOperations(operations, state, components),
@@ -349,10 +349,25 @@ function propagate(operations: readonly OperationModel[], state: OutcomeState): 
   return { loads, lookups, connections };
 }
 
+/** Gigabytes of entity data each component holds (one copy), from the workload's dataset sizes. */
+function storedGb(workload: Workload, ctx: SimulationContext): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const component of ctx.attempt.architecture.components) {
+    const gb = component.data.reduce((sum, binding) => {
+      const entity = ctx.problem.entities.find((e) => e.name === binding.entity);
+      const count = workload.dataset[binding.entity] ?? 0;
+      return sum + (entity ? (count * entity.avgBytes) / 1e9 : 0);
+    }, 0);
+    if (gb > 0) result.set(component.id, gb);
+  }
+  return result;
+}
+
 function summarizeComponents(
   profiles: ReadonlyMap<string, ComponentProfile>,
   flow: Propagation,
   drop: ReadonlyMap<string, number>,
+  stored: ReadonlyMap<string, number>,
 ): Map<string, ComponentMetrics> {
   const metrics = new Map<string, ComponentMetrics>();
   for (const [id, profile] of profiles) {
@@ -366,6 +381,9 @@ function summarizeComponents(
           SECONDS_PER_MONTH) /
         1e6
       : 0;
+    const storageGb = (stored.get(id) ?? 0) * profile.storageCopies;
+    const instanceCost = profile.costPerHour * HOURS_PER_MONTH;
+    const storageCost = storageGb * profile.storagePricePerGbMonth;
     metrics.set(id, {
       componentId: id,
       readLoad: load.read,
@@ -375,7 +393,9 @@ function summarizeComponents(
       utilization,
       dropRate: drop.get(id) ?? 0,
       latency: { mean: service + wait, variance: (profile.cv * service) ** 2 + wait ** 2 },
-      monthlyCost: profile.costPerHour * HOURS_PER_MONTH + requestCost,
+      storageGb,
+      monthlyCost: instanceCost + requestCost + storageCost,
+      costBreakdown: { instances: instanceCost, requests: requestCost, storage: storageCost },
     });
   }
   return metrics;

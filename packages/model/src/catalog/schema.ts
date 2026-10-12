@@ -35,6 +35,8 @@ export const FlavorSchema = z
     managedRedundancy: z.boolean().default(false),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
+    /** Durable storage price per GB-month, in USD, charged per stored copy. */
+    storagePricePerGbMonth: z.number().nonnegative().optional(),
     /** Pay-per-request pricing (e.g. on-demand key-value stores), in USD. */
     requestCost: z
       .object({

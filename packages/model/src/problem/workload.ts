@@ -59,6 +59,8 @@ export type Environment = z.infer<typeof EnvironmentSchema>;
 export const WorkloadSchema = z.object({
   operations: z.record(IdSchema, OperationWorkloadSchema),
   keys: z.record(z.string().min(1), KeyPopularitySchema),
+  /** Number of stored entities per entity type, for storage cost and capacity. */
+  dataset: z.record(z.string().min(1), z.number().nonnegative()).default({}),
   environments: z.array(EnvironmentSchema).min(1),
 });
 export type Workload = z.infer<typeof WorkloadSchema>;

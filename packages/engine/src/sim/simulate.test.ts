@@ -108,6 +108,25 @@ describe("simulateEnvironment", () => {
     );
   });
 
+  it("charges storage for every copy of the data", () => {
+    const withData = WorkloadSchema.parse({ ...workload, dataset: { Link: 1e9 } });
+    const attempt = cacheAsideAttempt();
+    const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
+    const metrics = simulateEnvironment(
+      withData,
+      { id: "steady", label: "Steady", rates: { redirect: 6000 } },
+      {
+        attempt,
+        catalog: testCatalogIndex,
+        problem: testProblem,
+        analysis,
+      },
+    );
+
+    // 1e9 links × 500 B = 500 GB per copy; the fixture's Postgres has 2 replicas.
+    expect(metrics.components.get("db")?.storageGb).toBeCloseTo(1000, 6);
+  });
+
   it("is deterministic", () => {
     expect(simulate(cacheAsideAttempt())).toEqual(simulate(cacheAsideAttempt()));
   });

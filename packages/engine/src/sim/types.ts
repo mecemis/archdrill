@@ -14,7 +14,14 @@ export interface ComponentMetrics {
   readonly dropRate: number;
   /** Latency added per visit (service + queueing), excluding the network. */
   readonly latency: Moments;
+  /** Data stored, counting every copy. */
+  readonly storageGb: number;
   readonly monthlyCost: number;
+  readonly costBreakdown: {
+    readonly instances: number;
+    readonly requests: number;
+    readonly storage: number;
+  };
 }
 
 export interface CacheMetrics {
