@@ -1,5 +1,12 @@
 import type { Problem, Scenario } from "@archdrill/model";
 import { populateAfterMiss } from "./dataflow";
+import {
+  costWithinBudget,
+  hitRatioAbove,
+  latencyBelow,
+  successRateAbove,
+  utilizationBelow,
+} from "./metrics";
 import { allSuccessPathsContain, noPath, outcomeHandled, statusForCondition } from "./paths";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
@@ -13,6 +20,11 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     populateAfterMiss,
     noSinglePointOfFailure,
     unusedComponents,
+    latencyBelow,
+    utilizationBelow,
+    successRateAbove,
+    hitRatioAbove,
+    costWithinBudget,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -47,6 +59,13 @@ export function validateScenarioConfig(
     if (!parsed.success) {
       issues.push({ checkId: instance.id, message: parsed.error.message });
       continue;
+    }
+    const environment = (parsed.data as { environment?: unknown }).environment;
+    if (
+      typeof environment === "string" &&
+      !scenario.workload?.environments.some((e) => e.id === environment)
+    ) {
+      issues.push({ checkId: instance.id, message: `unknown environment "${environment}"` });
     }
     const op = (parsed.data as { operation?: unknown }).operation;
     if (typeof op === "string" && !operations.has(op)) {

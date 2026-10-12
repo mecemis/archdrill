@@ -1,4 +1,10 @@
-import { type Analysis, analyzeAttempt, type OperationStatus } from "@archdrill/engine";
+import {
+  type Analysis,
+  analyzeAttempt,
+  type EnvironmentMetrics,
+  type OperationStatus,
+  simulateEnvironment,
+} from "@archdrill/engine";
 import type { Attempt, CatalogIndex, Issue, Problem, Scenario } from "@archdrill/model";
 import { CHECKS } from "./checks/registry";
 import type { CheckContext } from "./checks/types";
@@ -21,6 +27,8 @@ export type ScenarioResult =
       readonly status: "evaluated";
       readonly checks: readonly CheckResult[];
       readonly scorecard: Scorecard;
+      /** Simulated metrics per environment; empty when the scenario has no workload. */
+      readonly metrics: ReadonlyMap<string, EnvironmentMetrics>;
     };
 
 /**
@@ -51,10 +59,12 @@ export interface EvaluationInput {
 /** Analyses once and evaluates every scenario against the shared analysis. */
 export function evaluateAttempt(attempt: Attempt, input: EvaluationInput): AttemptEvaluation {
   const analysis = analyzeAttempt(attempt, { catalog: input.catalog, problem: input.problem });
-  const ctx: CheckContext = { attempt, problem: input.problem, catalog: input.catalog, analysis };
+  const base = { attempt, problem: input.problem, catalog: input.catalog, analysis };
   return {
     analysis,
-    scenarios: input.scenarios.map((scenario) => evaluateScenario(scenario, ctx)),
+    scenarios: input.scenarios.map((scenario) =>
+      evaluateScenario(scenario, { ...base, metrics: new Map() }),
+    ),
   };
 }
 
@@ -68,18 +78,30 @@ export function evaluateScenario(scenario: Scenario, ctx: CheckContext): Scenari
   if (notReady.length > 0)
     return { scenarioId: scenario.id, status: "incomplete", operations: notReady };
 
+  const scenarioCtx: CheckContext = { ...ctx, metrics: simulateScenario(scenario, ctx) };
   const checks = scenario.checks.map((instance) => {
     const check = CHECKS.get(instance.use);
     if (!check) throw new Error(`Scenario "${scenario.id}" uses unknown check "${instance.use}".`);
     const params = check.params.parse(instance.params);
-    return toCheckResult(instance, check.run(params, ctx));
+    return toCheckResult(instance, check.run(params, scenarioCtx));
   });
   return {
     scenarioId: scenario.id,
     status: "evaluated",
     checks,
     scorecard: scoreScenario(scenario, checks),
+    metrics: scenarioCtx.metrics,
   };
+}
+
+function simulateScenario(scenario: Scenario, ctx: CheckContext): Map<string, EnvironmentMetrics> {
+  const metrics = new Map<string, EnvironmentMetrics>();
+  const workload = scenario.workload;
+  if (!workload) return metrics;
+  for (const environment of workload.environments) {
+    metrics.set(environment.id, simulateEnvironment(workload, environment, ctx));
+  }
+  return metrics;
 }
 
 /**

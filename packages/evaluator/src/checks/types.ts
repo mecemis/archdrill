@@ -1,4 +1,4 @@
-import type { Analysis, OperationAnalysis } from "@archdrill/engine";
+import type { Analysis, EnvironmentMetrics, OperationAnalysis } from "@archdrill/engine";
 import type { Attempt, CatalogIndex, Problem } from "@archdrill/model";
 import type { z } from "zod";
 import type { Evidence } from "../evidence";
@@ -8,6 +8,8 @@ export interface CheckContext {
   readonly problem: Problem;
   readonly catalog: CatalogIndex;
   readonly analysis: Analysis;
+  /** Simulated metrics per environment of the scenario being evaluated; empty without a workload. */
+  readonly metrics: ReadonlyMap<string, EnvironmentMetrics>;
 }
 
 export type CheckStatus = "pass" | "partial" | "fail" | "n/a";

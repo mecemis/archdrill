@@ -28,6 +28,7 @@ describe("commands", () => {
       flavor: "redis",
       label: "Redis",
       replicas: 1,
+      shards: 1,
       data: [],
     });
   });

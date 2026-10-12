@@ -80,6 +80,9 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
       error("unknown-size", `Unknown size "${component.size}" for ${flavor.label}.`, location),
     );
   }
+  if (!kind.shardable && component.shards > 1) {
+    issues.push(error("shards-not-supported", `${kind.label} cannot be sharded.`, location));
+  }
   if (!kind.replicable && component.replicas > 1) {
     issues.push(error("replicas-not-supported", `${kind.label} does not take replicas.`, location));
   }

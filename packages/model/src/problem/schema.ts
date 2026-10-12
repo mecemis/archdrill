@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema } from "../catalog/schema";
+import { WorkloadSchema } from "./workload";
 
 export const HttpStatusSchema = z.number().int().min(100).max(599);
 
@@ -128,6 +129,8 @@ export const ScenarioSchema = z
     checks: z.array(CheckInstanceSchema).min(1),
     hints: z.array(z.string().min(1)).default([]),
     debrief: z.string().optional(),
+    /** Traffic the scenario simulates; required by metric checks. */
+    workload: WorkloadSchema.optional(),
   })
   .superRefine((scenario, ctx) => {
     const weights = Object.values(scenario.dimensions);

@@ -6,6 +6,7 @@ export const ISSUE_CODES = [
   "unknown-flavor",
   "unknown-size",
   "replicas-not-supported",
+  "shards-not-supported",
   "connection-unknown-endpoint",
   "connection-self-loop",
   "connection-duplicate",

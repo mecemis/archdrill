@@ -2,3 +2,8 @@ export * from "./analyze";
 export * from "./paths/describe";
 export * from "./paths/enumerate";
 export * from "./paths/types";
+export * from "./sim/cache-model";
+export * from "./sim/capacity";
+export type { Moments, WeightedMoments } from "./sim/math/gamma";
+export * from "./sim/simulate";
+export * from "./sim/types";

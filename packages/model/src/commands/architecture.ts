@@ -26,6 +26,7 @@ export const addComponent = defineCommand(
       label: args.label,
       ...(args.size === undefined ? {} : { size: args.size }),
       replicas: args.replicas ?? 1,
+      shards: 1,
       data: [],
     });
     draft.layout[id] = { ...args.position };
@@ -56,6 +57,7 @@ export const updateComponent = defineCommand(
     flavor: IdSchema.optional(),
     size: IdSchema.nullable().optional(),
     replicas: z.number().int().min(1).optional(),
+    shards: z.number().int().min(1).optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -65,6 +67,7 @@ export const updateComponent = defineCommand(
     if (args.size === null) delete component.size;
     else if (args.size !== undefined) component.size = args.size;
     if (args.replicas !== undefined) component.replicas = args.replicas;
+    if (args.shards !== undefined) component.shards = args.shards;
   },
 );
 

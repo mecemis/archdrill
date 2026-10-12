@@ -18,6 +18,8 @@ export const ComponentSchema = z.object({
   label: z.string().min(1),
   size: IdSchema.optional(),
   replicas: z.number().int().min(1).default(1),
+  /** Number of shards for shardable kinds; each shard holds part of the data. */
+  shards: z.number().int().min(1).default(1),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
 });
