@@ -206,10 +206,15 @@ Attempt
 
 ```yaml
 policy:
-  timeoutMs: 50
-  retry: { max: 2, backoff: exponential, baseMs: 10, jitter: full, onlyIdempotent: true }
-  circuitBreaker: { failureRateThreshold: 0.5, windowSec: 10, openSec: 5 }   # optional
+  timeoutMs: 50            # optional; without it a hung call waits for the 30 s client default
+  retries: 2               # extra attempts after a failed one, 0–10
+  backoff: exponential     # or none; 10 ms doubling
+  jitter: true             # full jitter
+  circuitBreaker: true     # opens between 50% and 75% failing attempts
+  maxRps: 60000            # optional bulkhead: calls beyond this rate are rejected locally
 ```
+
+Only calls that flow steps make follow a policy; ingress hops do not. Actions can declare why they are unsafe to retry: a conditional insert that timed out may still have written its row, so a retry reports a conflict for the caller's own write.
 
 ### Flows
 

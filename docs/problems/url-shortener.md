@@ -228,6 +228,13 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | Staff | Versioned or CAS invalidation |
 | Staff | Explicit blast-radius reasoning (a separate database pool for writes) |
 
+**As built (M4)** (`s4-cache-outage`)
+- Environments: `peak` (healthy), `node-down` (one cache node crashes) and `cluster-down` (every cache node hangs), all at 300,000 redirects, 3,000 creates and 5 disables a second.
+- Gates: `cache-failure-falls-back`, `disabled-never-redirected` (every 3xx path checks the status) and `invalidated-within-60s`.
+- Baseline: `disabled-answer`, `disable-errors-handled`, `survives-node-loss` (99.99%, critical), `node-loss-p99`, `no-cascade` (creates at 99.9% while the cache is gone, critical), `cache-timeout` (50 ms, major), `stable-under-retries` (critical), `retries-bounded` and `revocable-redirects` (301 and 308 are forbidden).
+- Signals: a circuit breaker on the cache (senior); redirects that keep working without any cache (staff).
+- Surviving the miss storm: the Postgres golden handles redirects in their own service with a 60,000 calls/s bulkhead to the database, so redirects degrade to 20% while creates stay at 100%; on-demand DynamoDB absorbs the whole peak; a database sized for the full read peak keeps redirects at 100% and breaks the S3 budget. An unreplicated Memcached tier fails node loss and cascades.
+
 ---
 
 ## S5: Peak traffic and hot keys
@@ -297,6 +304,12 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | Staff | Multi-zone survival |
 | Staff | Explicit RPO/RTO statement through decisions |
 
+**As built (M4)** (`s6-dependency-failure`)
+- Environments: `failover` (a primary of the link store is lost and connections to it hang) and `instance-crash` (one instance of the redirect handler crashes), at the S4 peak. The zone outage is left for later.
+- Gates: `no-acknowledged-loss` (from the `replication-mode` decision: asynchronous replication loses about one second of creates) and `creates-fail-fast` (store calls time out within a second).
+- Baseline: `redirects-survive-failover` (99.9%, critical), `failover-p99`, `survives-instance-loss` (99.99%, critical; N+1 sizing), `instance-loss-p99`, `no-unsafe-retries` (the conditional insert is not retried, major), `create-errors-handled`, `redirect-errors-handled` and `stable-under-retries`.
+- Signals: a circuit breaker on the store (senior).
+
 ---
 
 ## S7: Edge cases
@@ -346,15 +359,16 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
-**As built (M3).** The corpus in `packages/content/problems/url-shortener/corpus/` holds five golden designs, covering all four code strategies, and 32 mutants:
+**As built (M4).** The corpus in `packages/content/problems/url-shortener/corpus/` holds six golden designs, covering all four code strategies, and 46 mutants:
 
 | ID | Create path | Read path |
 |---|---|---|
-| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry | Redis cache-aside with negative caching → Postgres |
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry | a separate Redirect API → Redis cache-aside with negative caching → Postgres behind a bulkhead |
 | `dynamodb-redis-cache-aside` | random 8-character codes, one retry | Redis cache-aside → DynamoDB |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
 | `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |
+| `postgres-sized-for-cache-loss` | random 8-character codes, one retry | Redis → Postgres sized for the full read peak (expected not to pass S3) |
 
 ## Mutant expectations (excerpt)
 
