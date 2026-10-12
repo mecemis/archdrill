@@ -3,8 +3,10 @@ description: >-
   ALB → stateless Link API (25 × 8 vCPU) → DynamoDB, no cache. A valid
   answer to the read path: correct, redundant and simple. It does not pass
   S3, where paying per request for 300,000 redirects a second breaks the
-  budget.
+  budget. With no cache there is nothing to invalidate or lose.
 expect:
+  s4-cache-outage: { minScore: 90 }
+  s6-dependency-failure: { minScore: 90 }
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
 notPassing: [s3-cache]
@@ -26,7 +28,7 @@ attempt:
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--link-api, from: lb, to: link-api }
-      - { id: link-api--links, from: link-api, to: links }
+      - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
   flows:
     - operation: redirect
       handler: link-api
@@ -37,7 +39,11 @@ attempt:
           target: links
           action: store.read
           entity: Link
-          next: { found: expiry, notFound: r404, error: r503 }
+          next: { found: status, notFound: r404, error: r503 }
+        status:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry, disabled: r410 }
         expiry:
           type: logic
           logic: checkExpiry
@@ -98,7 +104,20 @@ attempt:
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
         c503: { type: respond, status: 503 }
-  decisions: { code-strategy: random-conditional }
+    - operation: disable-link
+      handler: link-api
+      root: update
+      steps:
+        update:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: d204, notFound: d404, error: d503 }
+        d204: { type: respond, status: 204 }
+        d404: { type: respond, status: 404 }
+        d503: { type: respond, status: 503 }
+  decisions: { code-strategy: random-conditional, redirect-status: "302" }
   layout:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }

@@ -14,6 +14,8 @@ import urlShortenerProblem from "../problems/url-shortener/problem.yaml";
 import urlShortenerS1 from "../problems/url-shortener/scenarios/s1-create.yaml";
 import urlShortenerS2 from "../problems/url-shortener/scenarios/s2-redirect.yaml";
 import urlShortenerS3 from "../problems/url-shortener/scenarios/s3-cache.yaml";
+import urlShortenerS4 from "../problems/url-shortener/scenarios/s4-cache-outage.yaml";
+import urlShortenerS6 from "../problems/url-shortener/scenarios/s6-dependency-failure.yaml";
 
 export interface ProblemPack {
   readonly problem: Problem;
@@ -69,7 +71,13 @@ export const catalog: Catalog = parse(CatalogSchema, catalogData, "catalog.yaml"
 export const catalogIndex = createCatalogIndex(catalog);
 
 export const problemPacks: readonly ProblemPack[] = [
-  loadProblemPack(urlShortenerProblem, [urlShortenerS1, urlShortenerS2, urlShortenerS3]),
+  loadProblemPack(urlShortenerProblem, [
+    urlShortenerS1,
+    urlShortenerS2,
+    urlShortenerS3,
+    urlShortenerS4,
+    urlShortenerS6,
+  ]),
 ];
 
 export function getProblemPack(problemId: string): ProblemPack | undefined {

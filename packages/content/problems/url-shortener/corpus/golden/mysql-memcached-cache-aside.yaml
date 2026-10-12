@@ -1,10 +1,11 @@
 id: mysql-memcached-cache-aside
 description: >-
-  NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (3 nodes, no replication)
+  NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (6 nodes, no replication)
   → MySQL (2 shards × 2 replicas). A cache node that fails only costs its
   share of hits, because cache errors fall through to the database. A day-long
-  TTL keeps the hot set cached; expiry is checked on every hit.
+  TTL keeps the hot set cached; expiry is checked on every hit. Losing a Memcached node, or all of them, overloads MySQL (see S4).
 expect:
+  s6-dependency-failure: { minScore: 90 }
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
@@ -17,7 +18,7 @@ attempt:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: proxy, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 8 }
       - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
-      - { id: memcached, kind: cache, flavor: memcached, label: Memcached, size: m, shards: 3 }
+      - { id: memcached, kind: cache, flavor: memcached, label: Memcached, size: m, shards: 6 }
       - id: links-db
         kind: relational-db
         flavor: mysql
@@ -30,9 +31,9 @@ attempt:
     connections:
       - { id: visitors--proxy, from: visitors, to: proxy }
       - { id: proxy--link-api, from: proxy, to: link-api }
-      - { id: link-api--memcached, from: link-api, to: memcached }
-      - { id: link-api--links-db, from: link-api, to: links-db }
-      - { id: link-api--etcd, from: link-api, to: etcd }
+      - { id: link-api--memcached, from: link-api, to: memcached, policy: { timeoutMs: 20, circuitBreaker: true } }
+      - { id: link-api--links-db, from: link-api, to: links-db, policy: { timeoutMs: 500 } }
+      - { id: link-api--etcd, from: link-api, to: etcd, policy: { timeoutMs: 200 } }
   flows:
     - operation: redirect
       handler: link-api
@@ -43,7 +44,11 @@ attempt:
           target: memcached
           action: cache.get
           entity: Link
-          next: { hit: expiry-hit, negativeHit: r404, miss: read, error: read }
+          next: { hit: status-hit, negativeHit: r404, miss: read, error: read }
+        status-hit:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-hit, disabled: r410 }
         expiry-hit:
           type: logic
           logic: checkExpiry
@@ -53,7 +58,11 @@ attempt:
           target: links-db
           action: store.read
           entity: Link
-          next: { found: expiry-db, notFound: negative, error: r503 }
+          next: { found: status-db, notFound: negative, error: r503 }
+        status-db:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-db, disabled: r410 }
         expiry-db:
           type: logic
           logic: checkExpiry
@@ -138,7 +147,26 @@ attempt:
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
         c503: { type: respond, status: 503 }
-  decisions: { code-strategy: counter-range }
+    - operation: disable-link
+      handler: link-api
+      root: update
+      steps:
+        update:
+          type: call
+          target: links-db
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: d404, error: d503 }
+        evict:
+          type: call
+          target: memcached
+          action: cache.delete
+          entity: Link
+          next: { ok: d204, error: d503 }
+        d204: { type: respond, status: 204 }
+        d404: { type: respond, status: 404 }
+        d503: { type: respond, status: 503 }
+  decisions: { code-strategy: counter-range, redirect-status: "302", replication-mode: semi-sync }
   layout:
     visitors: { x: 0, y: 120 }
     proxy: { x: 220, y: 120 }

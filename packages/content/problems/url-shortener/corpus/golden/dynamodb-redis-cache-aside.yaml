@@ -2,8 +2,10 @@ id: dynamodb-redis-cache-aside
 description: >-
   ALB → Link API (25 × 8 vCPU) → Redis cache-aside (3 shards × 2 replicas)
   → DynamoDB. The cache turns most per-request charges into memory hits; no
-  negative caching, so unknown codes still reach the table.
+  negative caching, so unknown codes still reach the table. On-demand DynamoDB absorbs the full read peak when the cache is gone, at a price.
 expect:
+  s4-cache-outage: { minScore: 90 }
+  s6-dependency-failure: { minScore: 90 }
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
@@ -26,8 +28,8 @@ attempt:
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--link-api, from: lb, to: link-api }
-      - { id: link-api--redis, from: link-api, to: redis }
-      - { id: link-api--links, from: link-api, to: links }
+      - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true } }
+      - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
   flows:
     - operation: redirect
       handler: link-api
@@ -38,7 +40,11 @@ attempt:
           target: redis
           action: cache.get
           entity: Link
-          next: { hit: expiry-hit, miss: read, error: read }
+          next: { hit: status-hit, miss: read, error: read }
+        status-hit:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-hit, disabled: r410 }
         expiry-hit:
           type: logic
           logic: checkExpiry
@@ -48,7 +54,11 @@ attempt:
           target: links
           action: store.read
           entity: Link
-          next: { found: expiry-db, notFound: r404, error: r503 }
+          next: { found: status-db, notFound: r404, error: r503 }
+        status-db:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-db, disabled: r410 }
         expiry-db:
           type: logic
           logic: checkExpiry
@@ -106,7 +116,26 @@ attempt:
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
         c503: { type: respond, status: 503 }
-  decisions: { code-strategy: random-conditional, code-length: "8" }
+    - operation: disable-link
+      handler: link-api
+      root: update
+      steps:
+        update:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: d404, error: d503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: d204, error: d503 }
+        d204: { type: respond, status: 204 }
+        d404: { type: respond, status: 404 }
+        d503: { type: respond, status: 503 }
+  decisions: { code-strategy: random-conditional, code-length: "8", redirect-status: "302" }
   layout:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }

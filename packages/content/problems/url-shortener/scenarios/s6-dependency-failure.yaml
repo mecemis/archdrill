@@ -1,0 +1,219 @@
+id: s6-dependency-failure
+problemId: url-shortener
+title: Dependency failure
+order: 6
+story: |
+  "In the middle of the peak, the primary of your link database dies and a
+  replica is being promoted. Connections to the old primary just hang. What
+  do people creating links see, and can a link someone was just given
+  disappear? Separately, one of your redirect servers crashes. Does anybody
+  notice?"
+focusOperations: [create-link, redirect]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.985 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: unknown, share: 0.01, exists: false }
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.975 }
+        - { id: custom-free, share: 0.019, customAlias: true }
+        - { id: custom-taken, share: 0.001, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.005, invalidInput: true }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: failover
+      label: Peak, database failing over
+      description: >-
+        A primary of the link store is lost and a replica is being promoted.
+        Connections to the old primary hang until the caller gives up.
+      rates: { redirect: 300000, create-link: 3000 }
+      faults:
+        - { kind: failover, target: { capability: durable-store, holds: Link } }
+    - id: instance-crash
+      label: Peak, a redirect server down
+      description: One instance of the service that handles redirects crashes.
+      rates: { redirect: 300000, create-link: 3000 }
+      faults:
+        - { kind: down, target: { handlerOf: redirect }, scope: one-node }
+dimensions:
+  availability: 0.35
+  durability: 0.30
+  correctness: 0.20
+  latency: 0.15
+checks:
+  - id: no-acknowledged-loss
+    use: no-acknowledged-data-loss
+    title: A failover never loses an acknowledged link
+    dimension: durability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-4]
+    params: { operation: create-link, environment: failover, decision: replication-mode }
+    why: >-
+      With asynchronous replication, the primary acknowledges a write before
+      any replica has it. If the primary dies in that window, the promoted
+      replica never saw the link: the user already shared a short link that
+      now leads nowhere.
+    fix: >-
+      Use semi-synchronous replication (wait for one replica; about one
+      cross-zone round trip per write), synchronous replication, or a store
+      that replicates synchronously for you. Record the choice under
+      Decisions.
+
+  - id: creates-fail-fast
+    use: dependency-timeout-bounded
+    title: Calls to the store give up within a second
+    dimension: availability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { capability: durable-store, maxMs: 1000 }
+    why: >-
+      During a failover, connections to the old primary hang. Without a
+      timeout, every create waits for the client default (often 30 s), and
+      the service's workers fill up with requests that will fail anyway.
+    fix: >-
+      Set a timeout on the store connection, well under a second, and answer
+      503 so clients retry once the new primary is up.
+
+  - id: redirects-survive-failover
+    use: success-rate-above
+    title: Redirects keep working during a failover (99.9%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: failover, min: 0.999 }
+    why: >-
+      Losing the primary should only affect writes: reads can come from the
+      cache and the remaining replicas.
+    fix: >-
+      Give the store replicas, and make sure redirects read from the store
+      with a timeout and a cache in front.
+
+  - id: failover-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms during a failover
+    dimension: latency
+    weight: 1
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: failover, percentile: p99, ms: 50 }
+    why: >-
+      A failover on the write side should not show up in the read tail.
+    fix: >-
+      Keep headroom on the replicas for the instance a failover removes.
+
+  - id: survives-instance-loss
+    use: success-rate-above
+    title: Redirects survive losing a server (99.99%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: instance-crash, min: 0.9999 }
+    why: >-
+      Servers crash every day. With exactly enough servers for the peak,
+      losing one overloads the rest (N+1 sizing).
+    fix: >-
+      Run at least two instances, with enough spare capacity to absorb losing
+      one at peak.
+
+  - id: instance-loss-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms with a server down
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: instance-crash, percentile: p99, ms: 50 }
+    why: >-
+      The remaining servers run hotter; queueing shows up in the tail first.
+    fix: >-
+      Keep enough headroom that the peak minus one server stays well below
+      saturation.
+
+  - id: no-unsafe-retries
+    use: retry-only-idempotent
+    title: Creates are not retried blindly
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-1, NFR-4]
+    params: { operation: create-link }
+    why: >-
+      A timed-out conditional insert may have succeeded. Retrying it finds
+      the code taken: a user with a custom alias gets a 409 for their own
+      link, and a generated code is replaced by another one.
+    fix: >-
+      Do not retry the conditional insert on the store connection; let the
+      client retry the whole request with an idempotency key.
+
+  - id: create-errors-handled
+    use: outcome-handled
+    title: Create handles store errors
+    dimension: correctness
+    weight: 1
+    requirements: [NFR-2]
+    params: { operation: create-link, outcome: error }
+    why: >-
+      During a failover writes fail; the user needs a clear 503 they can
+      retry, not an undefined response.
+    fix: >-
+      Route every error outcome on the create path to 503.
+
+  - id: redirect-errors-handled
+    use: outcome-handled
+    title: Redirect handles dependency errors
+    dimension: correctness
+    weight: 1
+    requirements: [NFR-2]
+    params: { operation: redirect, outcome: error }
+    why: >-
+      A failing dependency must produce a defined answer.
+    fix: >-
+      Route every error outcome on the redirect path to a response.
+
+  - id: stable-under-retries
+    use: stable-under-retries
+    title: No retry storm during the failover
+    dimension: availability
+    weight: 1
+    requirements: [NFR-2]
+    params: { environment: failover }
+    why: >-
+      Retries against a store that is failing over multiply its load right
+      when its capacity is down by one instance.
+    fix: >-
+      Retry sparingly, with backoff and jitter, and not at all for unsafe
+      writes.
+
+  - id: breaker-on-store
+    use: circuit-breaker-on-dependency
+    title: A circuit breaker guards the store
+    dimension: availability
+    signal: senior
+    requirements: [NFR-2]
+    params: { capability: durable-store }
+    why: >-
+      A breaker turns a failing store into fast, clear errors instead of a
+      pile of requests waiting for timeouts.
+    fix: >-
+      Put a circuit breaker on the store connection.
+hints:
+  - "When the primary is gone, which requests need it and which do not?"
+  - "When exactly does your create answer 201: before or after a replica has the link?"
+  - "Set a timeout on every call to the store, keep a replica for reads, and record how you replicate under Decisions."
