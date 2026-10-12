@@ -1,5 +1,8 @@
-import type { Problem, Scenario } from "@archdrill/model";
+import { type Problem, REPLICATION_MODES, type Scenario } from "@archdrill/model";
+import { invalidationOnWrite } from "./consistency";
 import { populateAfterMiss } from "./dataflow";
+import { decisionExcludes } from "./decisions";
+import { noAcknowledgedDataLoss } from "./durability";
 import { ingressHasCapability } from "./ingress";
 import {
   costWithinBudget,
@@ -9,6 +12,13 @@ import {
   utilizationBelow,
 } from "./metrics";
 import { allSuccessPathsContain, noPath, outcomeHandled, statusForCondition } from "./paths";
+import {
+  circuitBreakerOnDependency,
+  dependencyTimeoutBounded,
+  retriesBoundedWithJitter,
+  retryOnlyIdempotent,
+  stableUnderRetries,
+} from "./resilience";
 import { recognizeStrategy } from "./strategy";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
@@ -29,6 +39,14 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     costWithinBudget,
     recognizeStrategy,
     ingressHasCapability,
+    dependencyTimeoutBounded,
+    retriesBoundedWithJitter,
+    retryOnlyIdempotent,
+    circuitBreakerOnDependency,
+    stableUnderRetries,
+    noAcknowledgedDataLoss,
+    invalidationOnWrite,
+    decisionExcludes,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -70,6 +88,16 @@ export function validateScenarioConfig(
       !scenario.workload?.environments.some((e) => e.id === environment)
     ) {
       issues.push({ checkId: instance.id, message: `unknown environment "${environment}"` });
+    }
+    const decision = (parsed.data as { decision?: unknown }).decision;
+    if (
+      instance.use === "no-acknowledged-data-loss" &&
+      decision !== scenario.workload?.replication?.decision
+    ) {
+      issues.push({
+        checkId: instance.id,
+        message: `decision "${String(decision)}" must be the workload's replication decision, so the simulated latency and the durability verdict agree`,
+      });
     }
     const op = (parsed.data as { operation?: unknown }).operation;
     if (typeof op === "string" && !operations.has(op)) {
@@ -127,6 +155,14 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
           `decision "${lengthDecision}" has options that are not code lengths: ${lengths.join(", ")}`,
         ),
       );
+  }
+  const replication = workload.replication?.decision;
+  if (replication) {
+    const point = problem.decisionPoints.find((d) => d.id === replication);
+    const modes: readonly string[] = REPLICATION_MODES;
+    if (!point) issues.push(issue(`replication uses unknown decision "${replication}"`));
+    else if (point.options.some((o) => !modes.includes(o.id)))
+      issues.push(issue(`decision "${replication}" must offer only ${modes.join(", ")}`));
   }
   return issues;
 }

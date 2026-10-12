@@ -1,0 +1,300 @@
+id: s4-cache-outage
+problemId: url-shortener
+title: Cache outage and invalidation
+order: 4
+story: |
+  "It is the peak hour and one of your cache nodes dies. An hour later the
+  whole cache cluster starts hanging: connections open, but nothing comes
+  back. What do visitors see? And what happens to people creating links at the
+  same time? The same week, trust & safety asks that a phishing link stops
+  redirecting within 60 seconds of being disabled. How does that work with
+  your cache in the way?"
+focusOperations: [redirect, disable-link]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.984 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: disabled, share: 0.001, disabled: true }
+        - { id: unknown, share: 0.01, exists: false }
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.975 }
+        - { id: custom-free, share: 0.019, customAlias: true }
+        - { id: custom-taken, share: 0.001, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.005, invalidInput: true }
+    disable-link:
+      entity: Link
+      classes:
+        - { id: existing, share: 0.95 }
+        - { id: unknown, share: 0.05, exists: false }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: peak
+      label: Peak
+      description: The peak hour with everything healthy.
+      rates: { redirect: 300000, create-link: 3000, disable-link: 5 }
+    - id: node-down
+      label: Peak, one cache node down
+      description: One cache node crashes during the peak hour.
+      rates: { redirect: 300000, create-link: 3000, disable-link: 5 }
+      faults:
+        - { kind: down, target: { capability: volatile-kv }, scope: one-node }
+    - id: cluster-down
+      label: Peak, cache cluster hanging
+      description: Every cache node stops answering; connections open but hang.
+      rates: { redirect: 300000, create-link: 3000, disable-link: 5 }
+      faults:
+        - { kind: down, target: { capability: volatile-kv }, mode: hang }
+dimensions:
+  availability: 0.35
+  correctness: 0.30
+  consistency: 0.20
+  latency: 0.15
+checks:
+  - id: cache-failure-falls-back
+    use: no-path
+    title: A cache failure falls back to the store
+    dimension: availability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params:
+      operation: redirect
+      where:
+        all:
+          - hasStep: { action: cache.get, outcome: error }
+          - not: { hasStep: { action: store.read, entity: Link } }
+          - statusClass: 5xx
+    why: >-
+      A cache is an optimisation, not the source of truth. If a cache error
+      turns straight into a 5xx, losing one cache node takes redirects down
+      with it.
+    fix: >-
+      Route the error outcome of the cache lookup to the store read, exactly
+      like a miss.
+
+  - id: disabled-never-redirected
+    use: all-success-paths-contain
+    title: A disabled link never redirects
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-4]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { logic: checkStatus, outcome: active }
+    why: >-
+      Disabling a phishing link is pointless if the redirect path never looks
+      at its status, whether the link comes from the cache or from the store.
+    fix: >-
+      Add a status check on every path that redirects: after a cache hit and
+      after a store read.
+
+  - id: invalidated-within-60s
+    use: invalidation-on-write
+    title: A disabled link stops redirecting within 60 seconds
+    dimension: consistency
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-4]
+    params: { operation: disable-link, readOperation: redirect, entity: Link, maxStalenessSec: 60 }
+    why: >-
+      The cache holds the link as it was. Unless the disable removes the
+      cached copy after storing the change, or cached copies expire within the
+      budget, the cache keeps redirecting to the phishing site.
+    fix: >-
+      In disable-link, update the store and then delete the cache entry. Do it
+      in that order: deleting first lets a concurrent redirect cache the old
+      link again.
+
+  - id: disabled-answer
+    use: status-for-condition
+    title: A disabled link answers 404 or 410
+    dimension: correctness
+    weight: 1
+    requirements: [FR-4]
+    params:
+      operation: redirect
+      when: { hasStep: { logic: checkStatus, outcome: disabled } }
+      statuses: [404, 410]
+    why: >-
+      Visitors of a disabled link should get a clear "gone", not an error page
+      that invites retries.
+    fix: >-
+      Route the disabled outcome of the status check to 404 or 410.
+
+  - id: disable-errors-handled
+    use: outcome-handled
+    title: Disable-link handles dependency errors
+    dimension: availability
+    weight: 1
+    requirements: [FR-4]
+    params: { operation: disable-link, outcome: error }
+    why: >-
+      Trust & safety needs to know whether a disable took effect; an undefined
+      response leaves them guessing.
+    fix: >-
+      Route every error outcome in disable-link to a response, typically 503
+      so the tool retries.
+
+  - id: survives-node-loss
+    use: success-rate-above
+    title: Redirects survive losing a cache node (99.99%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: node-down, min: 0.9999 }
+    why: >-
+      Nodes die every day at this scale. Without replicas, a lost node's keys
+      all miss at once, and the store has to absorb that share of the peak.
+    fix: >-
+      Give the cache replicas (so a node's keys survive), or size the store
+      for the extra misses.
+
+  - id: node-loss-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms with a cache node down
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: node-down, percentile: p99, ms: 50 }
+    why: >-
+      Losing a node should be invisible to visitors, including in the tail.
+    fix: >-
+      Replicate the cache and keep headroom on the store for the misses a
+      failover causes.
+
+  - id: no-cascade
+    use: success-rate-above
+    title: Link creation survives a cache outage (99.9%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, environment: cluster-down, min: 0.999 }
+    why: >-
+      When the whole cache is gone, every redirect becomes a database read: a
+      miss storm of the full peak. If creates share that database and nothing
+      limits the storm, an outage of an optimisation takes down a different
+      product feature.
+    fix: >-
+      Isolate the write path: handle redirects in their own service and cap
+      its database calls with a bulkhead, shed load in front of the store, or
+      size the store for the full read peak (the simulation shows the cost).
+
+  - id: cache-timeout
+    use: dependency-timeout-bounded
+    title: Calls to the cache time out within 50 ms
+    dimension: latency
+    weight: 2
+    severity: major
+    requirements: [NFR-1]
+    params: { capability: volatile-kv, maxMs: 50 }
+    why: >-
+      A hanging cache is worse than a dead one: without a timeout, every
+      request waits for the client default (often 30 s) before falling back,
+      and the service's threads pile up.
+    fix: >-
+      Set a timeout on the cache connection (a few tens of milliseconds; cache
+      calls take under one).
+
+  - id: stable-under-retries
+    use: stable-under-retries
+    title: No retry storm when the cache is gone
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params: { environment: cluster-down }
+    why: >-
+      Retries help with blips and hurt in outages: they multiply the load on
+      whatever is already struggling, so it never recovers.
+    fix: >-
+      Retry at most once or twice with backoff and jitter, and stop retrying
+      a dependency that is down (a circuit breaker).
+
+  - id: retries-bounded
+    use: retries-bounded-with-jitter
+    title: Retries are bounded, with backoff and jitter
+    dimension: availability
+    weight: 1
+    requirements: [NFR-2]
+    params: {}
+    why: >-
+      Many callers retrying immediately and in lockstep hit a recovering
+      dependency with synchronised waves of load.
+    fix: >-
+      Keep retries to three or fewer, with exponential backoff and jitter.
+
+  - id: revocable-redirects
+    use: decision-excludes
+    title: Redirects stay revocable
+    dimension: consistency
+    weight: 2
+    requirements: [FR-4]
+    params:
+      decision: redirect-status
+      forbidden:
+        - option: "301"
+          reason: >-
+            browsers cache permanent redirects indefinitely, so a disabled
+            link keeps redirecting for everyone who visited it before.
+        - option: "308"
+          reason: >-
+            browsers cache permanent redirects indefinitely, so a disabled
+            link keeps redirecting for everyone who visited it before.
+    why: >-
+      Whatever the server does, a browser that cached a permanent redirect
+      never asks again. Revocation needs a temporary redirect, or a permanent
+      one with a short max-age.
+    fix: >-
+      Choose 302 or 307, or 301 with a short Cache-Control max-age, under
+      Decisions.
+
+  - id: breaker-on-cache
+    use: circuit-breaker-on-dependency
+    title: A circuit breaker guards the cache
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params: { capability: volatile-kv }
+    why: >-
+      Even with a short timeout, every request still waits it out once the
+      cache hangs. A breaker notices and skips the cache entirely.
+    fix: >-
+      Put a circuit breaker on the cache connection.
+
+  - id: redirects-survive-cache-outage
+    use: success-rate-above
+    title: Redirects keep working without any cache (99%)
+    dimension: availability
+    signal: staff
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: cluster-down, min: 0.99 }
+    why: >-
+      Staff-level designs decide in advance what the system does without its
+      cache: a store that can take the full read peak, or a second cache tier.
+    fix: >-
+      Size the store for the full read peak, or add a near cache in the
+      service that keeps the hottest links.
+hints:
+  - "Turn the cache off in your head: where does every redirect go, and who else uses that place?"
+  - What does your service do while it waits for a cache that never answers? How long does it wait?
+  - "Disable-link: update the store first, then delete the cache entry. Redirects must check the status wherever the link comes from."

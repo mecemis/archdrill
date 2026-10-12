@@ -1,6 +1,14 @@
 import type { Draft } from "immer";
 import { z } from "zod";
-import { type Attempt, MAX_REPLICAS, MAX_SHARDS, PositionSchema } from "../attempt/schema";
+import {
+  type Attempt,
+  DEFAULT_POLICY,
+  MAX_REPLICAS,
+  MAX_RETRIES,
+  MAX_SHARDS,
+  MAX_TIMEOUT_MS,
+  PositionSchema,
+} from "../attempt/schema";
 import { IdSchema } from "../catalog/schema";
 import { CommandError, defineCommand, nextNumberedId, requireComponentIndex } from "./define";
 import { detachSteps } from "./flows";
@@ -109,6 +117,7 @@ export const addConnection = defineCommand(
       from: args.from,
       to: args.to,
       mode: args.mode ?? "sync",
+      policy: { ...DEFAULT_POLICY },
     });
     return id;
   },
@@ -138,6 +147,30 @@ export const setConnectionMode = defineCommand(
   (draft, { id, mode }) => {
     const connection = draft.architecture.connections[requireConnectionIndex(draft, id)];
     if (connection) connection.mode = mode;
+  },
+);
+
+export const setConnectionPolicy = defineCommand(
+  z.object({
+    id: IdSchema,
+    timeoutMs: z.number().int().min(1).max(MAX_TIMEOUT_MS).nullable().optional(),
+    retries: z.number().int().min(0).max(MAX_RETRIES).optional(),
+    backoff: z.enum(["none", "exponential"]).optional(),
+    jitter: z.boolean().optional(),
+    circuitBreaker: z.boolean().optional(),
+    maxRps: z.number().positive().max(1e9).nullable().optional(),
+  }),
+  (draft, args) => {
+    const policy = draft.architecture.connections[requireConnectionIndex(draft, args.id)]?.policy;
+    if (!policy) return;
+    if (args.timeoutMs === null) delete policy.timeoutMs;
+    else if (args.timeoutMs !== undefined) policy.timeoutMs = args.timeoutMs;
+    if (args.maxRps === null) delete policy.maxRps;
+    else if (args.maxRps !== undefined) policy.maxRps = args.maxRps;
+    if (args.retries !== undefined) policy.retries = args.retries;
+    if (args.backoff !== undefined) policy.backoff = args.backoff;
+    if (args.jitter !== undefined) policy.jitter = args.jitter;
+    if (args.circuitBreaker !== undefined) policy.circuitBreaker = args.circuitBreaker;
   },
 );
 

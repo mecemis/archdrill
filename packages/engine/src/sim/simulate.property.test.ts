@@ -23,7 +23,7 @@ const workload = WorkloadSchema.parse({
     },
   },
   dataset: { Link: 1e9 },
-  environments: [{ id: "e", label: "E", rates: { redirect: 1 } }],
+  environments: [{ id: "e", label: "E", rates: { redirect: 1 }, faults: [] }],
 });
 
 const stepIds = [
@@ -108,7 +108,7 @@ function simulate(attempt: Attempt, rate: number) {
   if (analysis.operations.get("redirect")?.status !== "ready") return null;
   return simulateEnvironment(
     workload,
-    { id: "e", label: "E", rates: { redirect: rate } },
+    { id: "e", label: "E", rates: { redirect: rate }, faults: [] },
     {
       attempt,
       catalog: testCatalogIndex,
@@ -156,10 +156,14 @@ describe("simulation properties", () => {
     );
   });
 
+  // Only for the intact cache-aside flow: in a broken one, more capacity can
+  // lower success. With the miss unhandled but errors falling back to the
+  // store, an overloaded cache errors into a working fallback, and a bigger
+  // one sends those requests down the broken miss branch instead.
   it("never lowers the success rate when a component gets more replicas", () => {
     fc.assert(
       fc.property(
-        designArb,
+        designArb.map((d) => ({ ...d, relink: null })),
         rateArb,
         fc.constantFrom("api", "redis", "db"),
         (design, rate, component) => {

@@ -137,6 +137,23 @@ repeat until converged (Δ < 1e−4) or 100 iterations:
 - **Diverged**: `L` grows each iteration while `ρ > 1` somewhere. Report **unstable: retry amplification** with the components involved. This is the analytic signature of a retry storm, and `stable-under-retries` fails.
 - **Latency of failed calls.** A failed call costs `timeout` for hangs, or roughly 0 for fast failures such as connection refused (`mode: crash`). Backoff between retries adds to path latency.
 
+**As built (M4).** Every call a flow step makes goes through its connection's policy (`timeoutMs`, `retries`, `backoff`, `jitter`, `circuitBreaker`, `maxRps`). One attempt fails for four independent reasons:
+
+| Reason | Probability | Cost of the failed attempt |
+|---|---|---|
+| shed by the caller's bulkhead | `1 − maxRps / offered`, computed from the current call rate | ≈ 0 (local rejection) |
+| a fault at the target | the fault's share for reads or writes | one round trip if refused, the timeout (or the 30 s client default) if hanging |
+| overload at the target | `1 − 1/ρ` | one round trip |
+| served after the caller's timeout | `P(latency > timeout)` from the target's latency Gamma | the timeout |
+
+A fault is different: it takes out part of the target for good (a dead node's keys), so every attempt of a call whose key lives there fails, and retries do not help. With fault share `f`, attempt failure `e` on the working keys and `R` retries, a call fails with probability `f + (1 − f)·e^(R+1)`; attempts per call are `f·(R+1) + (1 − f)·Σ e^k`, and those that reach a working part load it (timed-out attempts still cost it work). A successful call after `k` failed attempts pays their cost plus the backoff before each retry (10 ms doubling; full jitter halves the mean). A successful call came back before the timeout, so its latency is the target's Gamma truncated at the timeout.
+
+A circuit breaker counts failures that come back from the dependency (faults, overload, timeouts), not the caller's own bulkhead rejections. It opens on a ramp from 50% to 75% failing attempts, which stands for the share of time a real breaker spends open; a hard switch would flap in a steady-state model. While open it fails calls at once and sends nothing to the dependency. It is one breaker per connection, so a failure of one shard counts against all of them.
+
+The fixed point now relaxes overload, timeout shares and call rates, with damping 0.5 that shrinks to 0.25 after 40 iterations and 0.1 after 120 (at most 200). The queueing wait ramps to the overload wait between 98% and 102% utilisation, so timeouts do not jump at exactly 100%.
+
+**Warm start and metastability.** The loop starts from caches warmed at nominal load: starting cold is a shock of its own. Designs with retries are solved a second time from cold caches. Components that stay overloaded there but not in the healthy state are reported as **metastable**: retries keep them overloaded once something tips them over (a cache flush, a deploy), so the healthy numbers only hold while nothing goes wrong.
+
 ### 7. Faults
 
 | Fault | Effect |
@@ -150,6 +167,18 @@ repeat until converged (Δ < 1e−4) or 100 iterations:
 | `failover(sec)` | for primary/replica stores: the primary is unavailable for `failoverSec` (from config), then promoted. Writes acknowledged under async replication within the replication lag window are counted as **potentially lost** (`no-acknowledged-data-loss`). |
 
 Each scenario environment is evaluated as its own steady state, for example "during the cache outage". Metric checks name the environment they assert on.
+
+**As built (M4).** Faults pick components by role, not id (`capability`, `kind`, `handlerOf: <operation>`, `holds: <entity>`), so a scenario works with any design:
+
+- `down` with `scope: all` fails every call; `one-node` is absorbed by replicas (capacity drops by one instance), or loses that node's shard of keys without them; `one-shard` loses a shard with all its replicas. `mode: hang` makes calls wait for the caller's timeout instead of being refused.
+- `slow(factor)` multiplies service time (capacity divides by it); `degraded(capacity)` multiplies capacity.
+- `failover` loses one primary of a store with primaries: writes to that shard fail, reads continue on replicas if there are any, and managed stores fail over transparently.
+
+Faults on ingress components (a crashed service instance) reduce capacity or reject requests before the handler runs.
+
+Read and write capacity scale separately: for stores whose writes go to primaries, losing a replica costs reads only, and a failover removes one primary's write capacity. Two faults on one component are assumed to hit the same part, so the larger failed share wins and capacity losses compound.
+
+Replication: writes to self-managed stores with a primary and replicas wait for them under semi-synchronous replication (one cross-zone round trip, 1 ms) or synchronous replication (2 ms), from the decision the workload names. Asynchronous replication adds no latency and is assumed until the candidate decides; what it risks is checked by `no-acknowledged-data-loss`.
 
 ### 8. Availability
 

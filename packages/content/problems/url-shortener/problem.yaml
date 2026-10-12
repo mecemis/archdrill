@@ -54,7 +54,7 @@ operations:
     idempotent: true
     successStatuses: [200, 204, 404]
     requirements: [FR-4]
-    introducedIn: s4-cache-failure-invalidation
+    introducedIn: s4-cache-outage
 decisionPoints:
   - id: code-strategy
     question: How are short codes generated?
@@ -94,4 +94,4 @@ decisionPoints:
       - { id: "404", label: 404 Not Found }
       - { id: "410", label: 410 Gone }
     requirements: [FR-3]
-scenarios: [s1-create, s2-redirect, s3-cache]
+scenarios: [s1-create, s2-redirect, s3-cache, s4-cache-outage, s6-dependency-failure]

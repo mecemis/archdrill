@@ -12,6 +12,10 @@ export interface ComponentMetrics {
   readonly utilization: number;
   /** Share of arriving requests rejected because the component is overloaded. */
   readonly dropRate: number;
+  /** Requests per second that are retries of failed attempts (included in the loads). */
+  readonly retryLoad: number;
+  /** The environment's faults on this component, for people; empty when healthy. */
+  readonly faults: readonly string[];
   /** Latency added per visit (service + queueing), excluding the network. */
   readonly latency: Moments;
   /** Data stored, counting every copy. */
@@ -74,15 +78,46 @@ export interface OperationMetrics {
   readonly paths: readonly PathMetrics[];
 }
 
+/** What flow steps' calls over one connection experience, after the caller's policy. */
+export interface ConnectionCallMetrics {
+  readonly connectionId: string;
+  /** Calls per second that flow steps make (first attempts). */
+  readonly calls: number;
+  /** Attempts per second leaving the caller, retries included. */
+  readonly attempts: number;
+  /** Share of calls that fail after retries and the circuit breaker. */
+  readonly failure: number;
+  /** Share of calls an open circuit breaker fails without calling. */
+  readonly shortCircuit: number;
+  /** Share of attempts the caller's bulkhead rejects. */
+  readonly shed: number;
+  /** Share of served attempts that come back after the caller's timeout. */
+  readonly timedOut: number;
+}
+
+/** A component that a shock leaves overloaded for good, although it is healthy in steady state. */
+export interface MetastableComponent {
+  readonly componentId: string;
+  /** Utilisation in the overloaded state the shock leads to. */
+  readonly utilization: number;
+  /** Requests per second reaching it there, and how many of them are retries. */
+  readonly load: number;
+  readonly retryLoad: number;
+}
+
 export interface EnvironmentMetrics {
   readonly environment: Environment;
   readonly operations: ReadonlyMap<string, OperationMetrics>;
   readonly components: ReadonlyMap<string, ComponentMetrics>;
   readonly caches: readonly CacheMetrics[];
-  /** Requests per second over each connection. */
+  /** Requests per second over each connection, retries included. */
   readonly connections: ReadonlyMap<string, number>;
+  /** Per connection that flow steps call over: failures, retries, timeouts, shedding. */
+  readonly calls: ReadonlyMap<string, ConnectionCallMetrics>;
   readonly monthlyCost: number;
   /** False if the overload feedback loop did not settle; metrics are then the last iterate. */
   readonly converged: boolean;
   readonly iterations: number;
+  /** Components a shock (cold caches) tips into lasting overload that retries sustain; empty when none. */
+  readonly metastable: readonly MetastableComponent[];
 }

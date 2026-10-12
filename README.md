@@ -4,7 +4,7 @@ Scenario-based system design practice with deterministic simulation and evaluati
 
 You design **one architecture** for a problem, then drive it through **scenarios**: write path, read path, caching, peak traffic, failures, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. The analysis covers paths, data flow, configuration, and simulated load and faults, and every finding points at the part of the canvas that caused it.
 
-> **Status:** milestones M1 (walking skeleton), M2 (analytic simulation) and M3 (write path and strategies) are complete. The URL Shortener's write path (S1), read path (S2) and caching scenario (S3) run end to end: design, record, analyse, simulate, score, explain. See the [roadmap](docs/design/07-roadmap.md).
+> **Status:** milestones M1 to M4 are complete: walking skeleton, analytic simulation, write path and strategies, and faults, timeouts and retries. Five URL Shortener scenarios run end to end (write path, read path, caching, cache outage and invalidation, dependency failure): design, record, analyse, simulate, score, explain. See the [roadmap](docs/design/07-roadmap.md).
 
 ![A gate finding: the cache-miss path answers 302 without reading the store; the offending path is highlighted on the canvas and in the step tree](docs/media/m1-gate-finding.png)
 
@@ -22,11 +22,13 @@ Most system design practice tools reward placing familiar components (a cache, a
 - **Topology editor:** components from a catalog (clients, load balancers, API gateways, services, Redis/Memcached, PostgreSQL/MySQL, DynamoDB, key generation services, etcd/ZooKeeper), connections, sizes, replicas, shards and entity bindings.
 - **Flow recorder:** each operation's request flow is recorded step by step, with every outcome (hit, negativeHit, miss, found, notFound, expired, conflict, error) as an explicit branch.
 - **Several valid write paths:** a key generation service, random codes with conditional inserts, counter ranges with obfuscation, or URL hashes. The evaluator names the approach a flow implements and checks it against the declared decision, and catches the check-then-insert race.
-- **Decisions:** interview trade-offs such as code strategy, code length and redirect status. Some feed the simulation: code length sets the keyspace, and with it the collision rate.
+- **Decisions:** interview trade-offs such as code strategy, code length, redirect status and replication mode. Some feed the simulation: code length sets the keyspace, and with it the collision rate; replication mode sets write latency and what a failover loses.
+- **Faults and call policies:** environments break components by role (a cache node down, the whole cache hanging, a database failing over, a server crashing). Every call a service makes follows its connection's policy (timeout, retries with backoff and jitter, circuit breaker, bulkhead), so the simulation shows miss storms, cascades through shared databases, retry storms and the latency a hanging dependency costs.
 - **Path explorer:** every path a request can take, with its outcome sequence and final status. Hovering a path highlights it on the canvas.
 - **Analytic simulation:**
   - cache hit ratios from memory, TTL and Zipf-skewed popularity;
   - code collisions from keyspace occupancy, and the retries needed to absorb them;
+  - faults, timeouts, retries, circuit breakers and bulkheads, including retry storms that a cache flush leaves the design stuck in;
   - exact M/M/c queueing and latency percentiles over every path;
   - overload that cascades through fallbacks;
   - monthly cost, including storage for every replica's copy.
@@ -35,11 +37,13 @@ Most system design practice tools reward placing familiar components (a cache, a
   - utilisation on the canvas and request rates on connections.
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Tests:**
-  - over 250 unit and integration tests;
-  - a golden corpus of five valid designs and thirty-two mutants that CI must catch;
+  - over 330 unit, integration and property tests;
+  - a golden corpus of six valid designs and forty-six mutants that CI must catch;
   - Playwright tests that walk the core loop in a real browser.
 
 ![Load view at peak: utilisation on every component, request rates on connections, and the cost breakdown](docs/media/m2-load.png)
+
+![Cache outage: Redis hangs, the redirect service sheds load at its 60,000 calls/s bulkhead, so redirects degrade to 20% while link creation on the same database stays at 100%](docs/media/m4-cache-outage.png)
 
 ![Write path: with 7-character random codes and a single retry, 0.2% of creates collide twice at 5-year occupancy; the finding names the conflict step, and the Decisions panel shows the recognised approach](docs/media/m3-write-path.png)
 

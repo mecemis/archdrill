@@ -173,6 +173,16 @@ export const testProblem: Problem = ProblemSchema.parse({
       successStatuses: [201, 400, 409],
       requirements: ["FR-1"],
     },
+    {
+      id: "disable-link",
+      label: "Disable link",
+      method: "POST",
+      path: "/links/{code}/disable",
+      class: "write",
+      idempotent: true,
+      successStatuses: [200, 204, 404],
+      requirements: ["FR-3"],
+    },
   ],
   decisionPoints: [
     {
@@ -192,6 +202,15 @@ export const testProblem: Problem = ProblemSchema.parse({
         { id: "8", label: "8 characters" },
       ],
       default: "7",
+    },
+    {
+      id: "replication-mode",
+      question: "How does the link store replicate writes?",
+      options: [
+        { id: "async", label: "Asynchronous" },
+        { id: "semi-sync", label: "Semi-synchronous" },
+        { id: "sync", label: "Synchronous" },
+      ],
     },
   ],
   scenarios: ["s2-redirect"],

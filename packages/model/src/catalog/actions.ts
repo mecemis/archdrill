@@ -26,6 +26,11 @@ export interface ActionDef {
   readonly params: readonly ActionParam[];
   readonly optionalParams?: readonly OptionalActionParam[];
   readonly description: string;
+  /**
+   * Why retrying this action after an ambiguous failure (a timeout) can
+   * change what the caller sees. Absent for actions that are safe to retry.
+   */
+  readonly unsafeToRetry?: string;
 }
 
 export const ACTIONS = {
@@ -86,6 +91,8 @@ export const ACTIONS = {
     outcomes: ["ok", "conflict", "error"],
     params: [],
     description: "Atomic insert that fails with a conflict when the key already exists.",
+    unsafeToRetry:
+      "A timed-out insert may still have written the row. The retry then finds the key taken and reports a conflict for the caller's own write.",
   },
   "store.update": {
     label: "update",

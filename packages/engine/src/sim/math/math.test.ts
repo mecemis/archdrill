@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mixtureQuantile, momentGammaCdf, regularizedGammaP } from "./gamma";
+import { mixtureQuantile, momentGammaCdf, regularizedGammaP, truncatedMoments } from "./gamma";
 import { harmonic } from "./harmonic";
 import { erlangCWait, queueWait, sakasegawaWait } from "./queueing";
 import { zipfBuckets } from "./zipf";
@@ -118,5 +118,25 @@ describe("gamma and mixtures", () => {
   it("treats zero variance as a fixed latency", () => {
     expect(momentGammaCdf(2.9, { mean: 3, variance: 0 })).toBe(0);
     expect(momentGammaCdf(3, { mean: 3, variance: 0 })).toBe(1);
+  });
+});
+
+describe("truncatedMoments", () => {
+  it("leaves a distribution well inside the limit alone", () => {
+    const m = truncatedMoments({ mean: 2, variance: 1 }, 1000);
+
+    expect(m.mean).toBeCloseTo(2, 6);
+    expect(m.variance).toBeCloseTo(1, 4);
+  });
+
+  it("keeps calls that came back before the limit", () => {
+    // Exponential with mean 10, cut at 10: E[X | X ≤ 10] = 10 (1 − 2/e) / (1 − 1/e).
+    const m = truncatedMoments({ mean: 10, variance: 100 }, 10);
+
+    expect(m.mean).toBeCloseTo((10 * (1 - 2 / Math.E)) / (1 - 1 / Math.E), 6);
+  });
+
+  it("puts the rare survivor at the limit when nearly everything times out", () => {
+    expect(truncatedMoments({ mean: 1000, variance: 1 }, 50)).toEqual({ mean: 50, variance: 0 });
   });
 });

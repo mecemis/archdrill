@@ -4,18 +4,18 @@
 mutants:
   - id: reverse-ingress
     base: postgres-redis-cache-aside
-    description: The load balancer → API connection points the wrong way.
+    description: The load balancer → redirect service connection points the wrong way.
     apply:
-      - reverseConnection: { id: lb--link-api }
+      - reverseConnection: { id: lb--redirect-api }
     expect:
       scenario: s2-redirect
       invalid: [flow-handler-unreachable]
 
   - id: reverse-cache-connection
     base: postgres-redis-cache-aside
-    description: The API → cache connection points the wrong way, so the API cannot call the cache.
+    description: The redirect service → cache connection points the wrong way, so it cannot call the cache.
     apply:
-      - reverseConnection: { id: link-api--redis }
+      - reverseConnection: { id: redirect-api--redis }
     expect:
       scenario: s2-redirect
       invalid: [step-no-connection]
@@ -71,9 +71,9 @@ mutants:
 
   - id: single-api-replica
     base: postgres-redis-cache-aside
-    description: The API runs as a single instance.
+    description: The redirect service runs as a single instance.
     apply:
-      - updateComponent: { id: link-api, replicas: 1 }
+      - updateComponent: { id: redirect-api, replicas: 1 }
     expect:
       scenario: s2-redirect
       fails: [no-single-point-of-failure]
@@ -110,9 +110,9 @@ mutants:
   # Load, capacity and cost: caught by the simulation, not by the flow shape.
   - id: api-underprovisioned
     base: postgres-redis-cache-aside
-    description: Ten API instances for 300,000 redirects a second.
+    description: Ten redirect service instances for 300,000 redirects a second.
     apply:
-      - updateComponent: { id: link-api, replicas: 10 }
+      - updateComponent: { id: redirect-api, replicas: 10 }
     expect:
       scenario: s2-redirect
       fails: [serves-peak, no-overload-at-peak, headroom-at-peak, redirect-p99]
@@ -315,3 +315,144 @@ mutants:
       scenario: s1-create
       fails: [generated-collision-retried]
 
+
+  # Faults, timeouts, retries and invalidation (S4, S6).
+  - id: cache-without-timeout
+    base: postgres-redis-cache-aside
+    description: The redirect service waits for the cache without a timeout or a circuit breaker.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--redis, timeoutMs: null, circuitBreaker: false }
+    expect:
+      scenario: s4-cache-outage
+      fails: [cache-timeout]
+
+  - id: retry-storm
+    base: postgres-redis-cache-aside
+    description: Database reads are retried ten times without backoff, and nothing caps them.
+    apply:
+      - setConnectionPolicy:
+          { id: redirect-api--links-db, retries: 10, backoff: none, maxRps: null, circuitBreaker: false }
+    expect:
+      scenario: s4-cache-outage
+      fails: [retries-bounded, stable-under-retries, no-cascade]
+
+  - id: no-bulkhead
+    base: postgres-redis-cache-aside
+    description: Redirect misses reach the database without a cap, so a cache outage floods it.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--links-db, maxRps: null }
+    expect:
+      scenario: s4-cache-outage
+      fails: [no-cascade]
+
+  - id: unreplicated-cache
+    base: postgres-redis-cache-aside
+    description: Redis runs without replicas, so a lost node takes its keys with it.
+    apply:
+      - updateComponent: { id: redis, replicas: 1 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [survives-node-loss]
+
+  - id: cache-error-fails-redirect
+    base: postgres-redis-cache-aside
+    description: A cache error answers 503 instead of reading the store.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: get, outcome: error, target: r503 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [cache-failure-falls-back]
+      band: not-passing
+
+  - id: no-status-check
+    base: postgres-redis-cache-aside
+    description: Cache hits redirect without checking whether the link was disabled.
+    apply:
+      - removeStep: { operation: redirect, stepId: status-hit, bypass: active }
+    expect:
+      scenario: s4-cache-outage
+      fails: [disabled-never-redirected]
+      band: not-passing
+
+  - id: no-invalidation
+    base: postgres-redis-cache-aside
+    description: Disabling a link updates the store but leaves the cached copy for its hour-long TTL.
+    apply:
+      - removeStep: { operation: disable-link, stepId: evict, bypass: ok }
+    expect:
+      scenario: s4-cache-outage
+      fails: [invalidated-within-60s]
+      band: not-passing
+
+  - id: delete-before-update
+    base: postgres-redis-cache-aside
+    description: Disabling a link deletes the cache entry first and then updates the store.
+    apply:
+      - removeStep: { operation: disable-link, stepId: evict, bypass: ok }
+      - addStep:
+          operation: disable-link
+          id: evict-first
+          step: { type: call, target: redis, action: cache.delete, entity: Link }
+          attach: { to: root }
+          continueWith: { outcome: ok }
+      - linkOutcome: { operation: disable-link, stepId: evict-first, outcome: error, target: d503 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [invalidated-within-60s]
+      band: not-passing
+
+  - id: permanent-redirect
+    base: postgres-redis-cache-aside
+    description: The service answers 301, which browsers cache forever.
+    apply:
+      - setDecision: { decision: redirect-status, option: "301" }
+    expect:
+      scenario: s4-cache-outage
+      fails: [revocable-redirects]
+
+  - id: async-replication
+    base: postgres-redis-cache-aside
+    description: The database replicates asynchronously, so a failover loses recent links.
+    apply:
+      - setDecision: { decision: replication-mode, option: async }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [no-acknowledged-loss]
+      band: not-passing
+
+  - id: store-without-timeout
+    base: postgres-redis-cache-aside
+    description: Creates wait for the database without a timeout, so a failover hangs them.
+    apply:
+      - setConnectionPolicy: { id: link-api--links-db, timeoutMs: null }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [creates-fail-fast]
+      band: not-passing
+
+  - id: retried-insert
+    base: postgres-redis-cache-aside
+    description: The conditional insert is retried after a timeout.
+    apply:
+      - setConnectionPolicy: { id: link-api--links-db, retries: 2 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [no-unsafe-retries]
+
+  - id: no-spare-redirect-server
+    base: postgres-redis-cache-aside
+    description: Exactly enough redirect servers for the peak; losing one overloads the rest.
+    apply:
+      - updateComponent: { id: redirect-api, replicas: 19 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [survives-instance-loss]
+
+  - id: database-without-replicas
+    base: postgres-redis-cache-aside
+    description: The database has no replicas, so a lost primary takes its reads with it.
+    apply:
+      - updateComponent: { id: links-db, replicas: 1 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [redirects-survive-failover]

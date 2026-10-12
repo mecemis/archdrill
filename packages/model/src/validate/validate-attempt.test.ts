@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Attempt } from "../attempt/schema";
+import { type Attempt, DEFAULT_POLICY } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
 import { createLinkAttempt } from "../testing/write-path";
@@ -231,8 +231,8 @@ describe("validateAttempt", () => {
         ...base.architecture,
         connections: [
           ...base.architecture.connections,
-          { id: "dup", from: "lb", to: "api", mode: "sync" },
-          { id: "loop", from: "api", to: "api", mode: "sync" },
+          { id: "dup", from: "lb", to: "api", mode: "sync", policy: DEFAULT_POLICY },
+          { id: "loop", from: "api", to: "api", mode: "sync", policy: DEFAULT_POLICY },
         ],
       },
     };

@@ -7,7 +7,7 @@ const OCCUPANCY = 0.05;
 const ALIAS_OCCUPANCY = 0.001;
 
 const state: OutcomeState = {
-  dropRate: (id) => (id === "kgs" ? 0.1 : 0),
+  callFailure: (step) => (step.target === "kgs" ? 0.1 : 0),
   hitRatio: () => 0,
   negativeHitRatio: () => 0,
   occupancy: () => OCCUPANCY,

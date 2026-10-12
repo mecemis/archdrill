@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CapabilitySchema } from "../catalog/capabilities";
 import { IdSchema } from "../catalog/schema";
 
 export const ZipfSchema = z.object({
@@ -57,11 +58,69 @@ export const KeyPopularitySchema = z.object({
   absent: ZipfSchema.optional(),
 });
 
+/**
+ * Which components a fault hits, by role rather than by id, so a scenario
+ * works with any design. A component must match every field given.
+ */
+export const ComponentSelectorSchema = z
+  .strictObject({
+    capability: CapabilitySchema.optional(),
+    kind: IdSchema.optional(),
+    /** The service that handles this operation. */
+    handlerOf: IdSchema.optional(),
+    /** Stores bound to this entity. */
+    holds: z.string().min(1).optional(),
+  })
+  .refine((s) => Object.values(s).some((v) => v !== undefined), {
+    message: "a selector needs at least one field",
+  });
+export type ComponentSelector = z.infer<typeof ComponentSelectorSchema>;
+
+/** How calls to a failed component fail: refused at once, or hanging until the caller gives up. */
+const FailureModeSchema = z.enum(["crash", "hang"]);
+
+/**
+ * Something going wrong in an environment.
+ * - `down`: the whole component (`all`), one instance (`one-node`, survived
+ *   by replicas) or one shard with all its replicas (`one-shard`) fails.
+ * - `slow`: service time multiplied by `factor`, so capacity divides by it.
+ * - `degraded`: capacity multiplied by `capacity`.
+ * - `failover`: a store's primary is lost and a replica is being promoted.
+ *   Writes to that shard fail; reads continue on replicas.
+ */
+export const FaultSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("down"),
+    target: ComponentSelectorSchema,
+    mode: FailureModeSchema.default("crash"),
+    scope: z.enum(["all", "one-node", "one-shard"]).default("all"),
+  }),
+  z.strictObject({
+    kind: z.literal("slow"),
+    target: ComponentSelectorSchema,
+    factor: z.number().min(1).max(1000),
+  }),
+  z.strictObject({
+    kind: z.literal("degraded"),
+    target: ComponentSelectorSchema,
+    capacity: z.number().gt(0).max(1),
+  }),
+  z.strictObject({
+    kind: z.literal("failover"),
+    target: ComponentSelectorSchema,
+    mode: FailureModeSchema.default("hang"),
+  }),
+]);
+export type Fault = z.infer<typeof FaultSchema>;
+
 export const EnvironmentSchema = z.object({
   id: IdSchema,
   label: z.string().min(1),
+  /** What the environment represents, shown next to its metrics. */
+  description: z.string().min(1).optional(),
   /** Requests per second per operation. */
   rates: z.record(IdSchema, z.number().nonnegative()),
+  faults: z.array(FaultSchema).default([]),
 });
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
@@ -81,6 +140,15 @@ export const WorkloadSchema = z.object({
       z.object({ alphabet: z.number().int().min(2), lengthDecision: IdSchema }),
     )
     .default({}),
+  /**
+   * The decision that sets how stores with a primary replicate writes:
+   * `async`, `semi-sync` or `sync`. Waiting for replicas adds latency to writes.
+   */
+  replication: z.object({ decision: IdSchema }).optional(),
   environments: z.array(EnvironmentSchema).min(1),
 });
+
+/** Options a replication decision may offer. */
+export const REPLICATION_MODES = ["async", "semi-sync", "sync"] as const;
+export type ReplicationMode = (typeof REPLICATION_MODES)[number];
 export type Workload = z.infer<typeof WorkloadSchema>;

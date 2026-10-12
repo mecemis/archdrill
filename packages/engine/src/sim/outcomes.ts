@@ -1,10 +1,13 @@
 import type { RequestClass } from "@archdrill/model";
-import type { PathStep } from "../paths/types";
+import type { CallPathStep, PathStep } from "../paths/types";
 
 /** Model state the outcome probabilities depend on. */
 export interface OutcomeState {
-  /** Share of calls a component rejects because it is overloaded. */
-  dropRate(componentId: string): number;
+  /**
+   * Chance that a call fails for good: refused by an overloaded or failed
+   * target, timed out, shed or short-circuited, after the caller's retries.
+   */
+  callFailure(step: CallPathStep): number;
   hitRatio(componentId: string, entity: string | undefined): number;
   negativeHitRatio(componentId: string, entity: string | undefined): number;
   /** Chance that a randomly drawn code for this entity is already taken (stored / keyspace, capped at 1). */
@@ -105,10 +108,10 @@ export function outcomeProbability(
   prior: readonly PathStep[] = [],
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
-  // A batched call is only made once per batch, so only then can it be rejected.
-  const drop = state.dropRate(step.target) * batchShare(step);
-  if (step.outcome === "error") return drop;
-  const served = 1 - drop;
+  // A batched call is only made once per batch, so only then can it fail.
+  const failure = state.callFailure(step) * batchShare(step);
+  if (step.outcome === "error") return failure;
+  const served = 1 - failure;
   switch (step.action) {
     case "cache.get": {
       if (cls.exists) {

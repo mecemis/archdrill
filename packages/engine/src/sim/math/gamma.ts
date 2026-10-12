@@ -88,6 +88,28 @@ export function momentGammaCdf(x: number, { mean, variance }: Moments): number {
   return regularizedGammaP(shape, x / scale);
 }
 
+/**
+ * Moments of a moment-matched Gamma conditioned on not exceeding `limit`: the
+ * latency of calls that came back before the caller's timeout. Uses
+ * E[X; X ≤ T] = kθ·P(k+1, T/θ) and E[X²; X ≤ T] = k(k+1)θ²·P(k+2, T/θ).
+ */
+export function truncatedMoments(moments: Moments, limit: number): Moments {
+  const { mean, variance } = moments;
+  if (limit <= 0) return { mean: 0, variance: 0 };
+  const shape = variance > 0 ? (mean * mean) / variance : Number.POSITIVE_INFINITY;
+  if (mean <= 0 || shape > NORMAL_APPROXIMATION_SHAPE) {
+    return mean <= limit ? moments : { mean: limit, variance: 0 };
+  }
+  const scale = variance / mean;
+  const x = limit / scale;
+  const below = regularizedGammaP(shape, x);
+  // Almost every call times out: the few that make it take nearly the whole budget.
+  if (below < 1e-12) return { mean: limit, variance: 0 };
+  const first = (shape * scale * regularizedGammaP(shape + 1, x)) / below;
+  const second = (shape * (shape + 1) * scale * scale * regularizedGammaP(shape + 2, x)) / below;
+  return { mean: first, variance: Math.max(0, second - first * first) };
+}
+
 export interface WeightedMoments extends Moments {
   readonly weight: number;
 }

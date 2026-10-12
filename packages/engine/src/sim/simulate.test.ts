@@ -16,12 +16,12 @@ const workload = WorkloadSchema.parse({
     },
   },
   keys: { Link: { existing: { distribution: "zipf", s: 1.05, population: 2e10 } } },
-  environments: [{ id: "steady", label: "Steady", rates: { redirect: 6000 } }],
+  environments: [{ id: "steady", label: "Steady", rates: { redirect: 6000 }, faults: [] }],
 });
 
 function simulate(attempt: Attempt, rate = 6000) {
   const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
-  const environment = { id: "steady", label: "Steady", rates: { redirect: rate } };
+  const environment = { id: "steady", label: "Steady", rates: { redirect: rate }, faults: [] };
   return simulateEnvironment(workload, environment, {
     attempt,
     catalog: testCatalogIndex,
@@ -120,7 +120,7 @@ describe("simulateEnvironment", () => {
     const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
     const metrics = simulateEnvironment(
       withData,
-      { id: "steady", label: "Steady", rates: { redirect: 6000 } },
+      { id: "steady", label: "Steady", rates: { redirect: 6000 }, faults: [] },
       {
         attempt,
         catalog: testCatalogIndex,
@@ -162,7 +162,7 @@ describe("simulateEnvironment", () => {
     }).attempt;
     const run = (attempt: Attempt) => {
       const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
-      const env = { id: "steady", label: "Steady", rates: { redirect: 200_000 } };
+      const env = { id: "steady", label: "Steady", rates: { redirect: 200_000 }, faults: [] };
       return simulateEnvironment(withAbsent, env, {
         attempt,
         catalog: testCatalogIndex,

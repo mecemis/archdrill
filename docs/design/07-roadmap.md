@@ -102,7 +102,7 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - **Code review caught the simulation contradicting the scenario.** The S1 text said pre-generated keys can meet a custom alias, but the engine treated them as never colliding. Generated keys now collide at the share of the keyspace that aliases hold. The same review found that hashing the same URL again was simulated as a fresh draw; it now collides every time unless salted.
 - **Visual QA still finds real bugs.** The flow panel claimed that no client could reach the handler whenever the design had validation errors, because it read the route from an analysis that is skipped for invalid designs.
 
-### M4: Faults, timeouts, retries (L)
+### M4: Faults, timeouts, retries (L) ✅
 - Fault model (crash, hang, slow, degraded, partition, failover; scopes).
 - Fixed-point iteration with overload, timeouts, and retry amplification, plus divergence detection.
 - Connection policies UI.
@@ -111,6 +111,23 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - Golden: 6. Mutants: 25.
 
 **Done when:** cache-cluster-down shows the miss storm and its mitigations; unbounded retries are flagged as unstable; acknowledged-write loss on async failover is detected.
+
+**Delivered (2026-10-13):**
+- Model: connection policies (timeout, retries with backoff and jitter, circuit breaker, bulkhead), environment faults selected by role, a replication decision in workloads, and actions that are unsafe to retry.
+- Engine: faults (down, one node, one shard, hang, slow, degraded, failover), a per-call model of shedding, faults, overload and timeouts with retries and a breaker, replication latency, a warm start, and detection of metastable retry storms. The simulator is split into setup, the fixed-point loop and summaries.
+- Evaluator: eight checks for timeouts, retries, idempotency, breakers, retry storms, acknowledged data loss, invalidation and decisions; workload validation for replication decisions.
+- Content: S4 (cache outage and invalidation) and S6 (dependency failure); every design with a read path checks link status and invalidates on disable; the Postgres golden isolates redirects behind a bulkhead; a sixth golden sizes the database for losing the whole cache. 14 new mutants (46 in total).
+- Web: a call-policy editor with live call metrics, environment descriptions and faults in the load view, a calls table, and fault badges on the canvas.
+- Partitions and zone outages are left for later.
+
+**Learned along the way:**
+- **Breakers and bulkheads interact.** A breaker that counted the caller's own bulkhead rejections opened and starved the database; real breakers count failures from the dependency. A bulkhead is a hard limit, so its shedding is computed from the current call rate instead of being relaxed.
+- **Discontinuities make the fixed point flap.** The queueing wait jumped to the overload wait at exactly 100% utilisation, so timeouts and breakers flipped between iterations. A ramp between 98% and 102% and shrinking damping fixed it.
+- **The starting point is a shock.** Cold caches at the start pushed a design with ten unspaced retries into a lasting overload that the model reported as the healthy state. Starting warm, and solving a second time from cold, turned the artefact into a feature: the evaluator now reports metastable retry storms.
+- **A hanging cache costs twice.** Lookups and populations both wait out the timeout; the first test assumed only one.
+- **A property test found a real non-monotonicity.** With a broken miss branch, more cache capacity lowered success, because fewer requests errored into the working fallback. The property now holds on the intact flow only.
+- **Successful calls come back before the timeout.** Their latency is the Gamma truncated at the timeout, not the unbounded one.
+- **Code review found that retries "healed" partial faults.** Attempts were independent, so with one of four shards down and two retries a call failed 1.6% of the time instead of 25%. A fault now takes out keys for good. The same review split read and write capacity, which made the MySQL golden's failover headroom honest: it needed a third replica.
 
 ### M5: Scale, edges, polish (M)
 - Shards and hot keys, near cache, autoscaling bounds.
