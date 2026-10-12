@@ -122,6 +122,12 @@ export const EnvironmentSchema = z.object({
   description: z.string().min(1).optional(),
   /** Requests per second per operation. */
   rates: z.record(IdSchema, z.number().nonnegative()),
+  /**
+   * Request-class shares that differ from the workload's in this environment,
+   * per operation (for example no viral link on an average day). Classes left
+   * out keep their workload share; the result must still add up to 1.
+   */
+  classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
   faults: z.array(FaultSchema).default([]),
 });
 export type Environment = z.infer<typeof EnvironmentSchema>;

@@ -3,6 +3,7 @@ import {
   applyCommand,
   type CommandArgs,
   type CommandName,
+  EnvironmentSchema,
   WorkloadSchema,
 } from "@archdrill/model";
 import {
@@ -37,7 +38,7 @@ function simulate(attempt: Attempt, rate: number) {
   const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
   return simulateEnvironment(
     viral,
-    { id: "spike", label: "Spike", rates: { redirect: rate }, faults: [] },
+    EnvironmentSchema.parse({ id: "spike", label: "Spike", rates: { redirect: rate }, faults: [] }),
     { attempt, catalog: testCatalogIndex, problem: testProblem, analysis },
   );
 }
@@ -55,6 +56,28 @@ describe("hot keys", () => {
     // 120,000 hot lookups on one shard of 150,000/s, plus a quarter of the rest.
     expect(redis?.utilization).toBeLessThan(1);
     expect(redis?.hottestShardUtilization).toBeGreaterThan(1.2);
+  });
+
+  it("can be switched off for one environment", () => {
+    const analysis = analyzeAttempt(shardedDesign(), {
+      catalog: testCatalogIndex,
+      problem: testProblem,
+    });
+    const quiet = EnvironmentSchema.parse({
+      id: "avg",
+      label: "Average",
+      rates: { redirect: 400_000 },
+      classShares: { redirect: { viral: 0, live: 1 } },
+    });
+
+    const redis = simulateEnvironment(viral, quiet, {
+      attempt: shardedDesign(),
+      catalog: testCatalogIndex,
+      problem: testProblem,
+      analysis,
+    }).components.get("redis");
+
+    expect(redis?.hottestShardUtilization).toBeCloseTo(redis?.utilization ?? 0, 12);
   });
 
   it("are absorbed by a near cache in the service", () => {

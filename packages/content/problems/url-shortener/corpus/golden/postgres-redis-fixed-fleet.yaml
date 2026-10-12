@@ -1,0 +1,184 @@
+id: postgres-redis-fixed-fleet
+description: >-
+  The same cache-aside design with fixed fleets and no near cache: ALB →
+  Redirect API (25 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis (3 shards × 2
+  replicas) → PostgreSQL (16 vCPU, 2 shards × 2 replicas, semi-synchronous),
+  with the redirect bulkhead and the cache's circuit breaker. Sized for the
+  known peak, it survives outages and failovers but not a viral spike ten
+  times the average day.
+notPassing: [s5-hot-keys]
+expect:
+  s1-create: { minScore: 90 }
+  s2-redirect: { minScore: 90 }
+  s3-cache: { minScore: 90 }
+  s4-cache-outage: { minScore: 90 }
+  s6-dependency-failure: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: url-shortener
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: visitors, kind: client, flavor: browser, label: Visitors }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - { id: redirect-api, kind: service, flavor: generic, label: Redirect API, size: l, replicas: 25 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
+      - id: links-db
+        kind: relational-db
+        flavor: postgres
+        label: Links DB
+        size: l
+        shards: 2
+        replicas: 2
+        data: [{ entity: Link }]
+      - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2 }
+    connections:
+      - { id: visitors--lb, from: visitors, to: lb }
+      - { id: lb--redirect-api, from: lb, to: redirect-api }
+      - { id: lb--link-api, from: lb, to: link-api }
+      - id: redirect-api--redis
+        from: redirect-api
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
+      - id: redirect-api--links-db
+        from: redirect-api
+        to: links-db
+        policy: { timeoutMs: 200, maxRps: 60000, circuitBreaker: true }
+      - id: link-api--links-db
+        from: link-api
+        to: links-db
+        policy: { timeoutMs: 500 }
+      - id: link-api--redis
+        from: link-api
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
+      - id: link-api--kgs
+        from: link-api
+        to: kgs
+        policy: { timeoutMs: 100, retries: 1 }
+  flows:
+    - operation: redirect
+      handler: redirect-api
+      root: get
+      steps:
+        get:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Link
+          next: { hit: status-hit, negativeHit: r404, miss: read, error: read }
+        status-hit:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-hit, disabled: r410 }
+        expiry-hit:
+          type: logic
+          logic: checkExpiry
+          next: { valid: r302, expired: r410 }
+        read:
+          type: call
+          target: links-db
+          action: store.read
+          entity: Link
+          next: { found: status-db, notFound: negative, error: r503 }
+        status-db:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-db, disabled: r410 }
+        expiry-db:
+          type: logic
+          logic: checkExpiry
+          next: { valid: populate, expired: r410 }
+        populate:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: r302, error: r302 }
+        negative:
+          type: call
+          target: redis
+          action: cache.setNegative
+          entity: Link
+          ttlSec: 60
+          next: { ok: r404, error: r404 }
+        r302: { type: respond, status: 302 }
+        r404: { type: respond, status: 404 }
+        r410: { type: respond, status: 410 }
+        r503: { type: respond, status: 503 }
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: allocate }
+        insert-alias:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c409, error: c503 }
+        allocate:
+          type: call
+          target: kgs
+          action: ids.allocate
+          batchSize: 1000
+          next: { ok: insert, error: c503 }
+        insert:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: allocate-retry, error: c503 }
+        allocate-retry:
+          type: call
+          target: kgs
+          action: ids.allocate
+          batchSize: 1000
+          next: { ok: insert-retry, error: c503 }
+        insert-retry:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c503, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+    - operation: disable-link
+      handler: link-api
+      root: update
+      steps:
+        update:
+          type: call
+          target: links-db
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: d404, error: d503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: d204, error: d503 }
+        d204: { type: respond, status: 204 }
+        d404: { type: respond, status: 404 }
+        d503: { type: respond, status: 503 }
+  decisions: { code-strategy: kgs, redirect-status: "302", replication-mode: semi-sync }
+  layout:
+    visitors: { x: 0, y: 160 }
+    lb: { x: 220, y: 160 }
+    redirect-api: { x: 440, y: 60 }
+    link-api: { x: 440, y: 280 }
+    redis: { x: 700, y: 0 }
+    links-db: { x: 700, y: 180 }
+    kgs: { x: 700, y: 360 }

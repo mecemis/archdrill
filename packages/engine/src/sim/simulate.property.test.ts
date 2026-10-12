@@ -1,4 +1,4 @@
-import { type Attempt, applyCommand, WorkloadSchema } from "@archdrill/model";
+import { type Attempt, applyCommand, EnvironmentSchema, WorkloadSchema } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,9 @@ const workload = WorkloadSchema.parse({
     },
   },
   dataset: { Link: 1e9 },
-  environments: [{ id: "e", label: "E", rates: { redirect: 1 }, faults: [] }],
+  environments: [
+    EnvironmentSchema.parse({ id: "e", label: "E", rates: { redirect: 1 }, faults: [] }),
+  ],
 });
 
 const stepIds = [
@@ -108,7 +110,7 @@ function simulate(attempt: Attempt, rate: number) {
   if (analysis.operations.get("redirect")?.status !== "ready") return null;
   return simulateEnvironment(
     workload,
-    { id: "e", label: "E", rates: { redirect: rate }, faults: [] },
+    EnvironmentSchema.parse({ id: "e", label: "E", rates: { redirect: rate }, faults: [] }),
     {
       attempt,
       catalog: testCatalogIndex,

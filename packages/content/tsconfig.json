@@ -1,4 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Vite's native config loader needs explicit extensions on relative imports.
+    "allowImportingTsExtensions": true
+  },
   "include": ["src", "test", "vite-plugin.ts", "vitest.config.ts"]
 }

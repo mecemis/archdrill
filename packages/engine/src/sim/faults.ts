@@ -31,7 +31,11 @@ export const NO_FAULT: ComponentFault = {
   labels: [],
 };
 
-/** Components a selector picks: all fields must match. */
+/**
+ * Components a selector picks: all fields must match. In-process components
+ * live and die with their service, so only a selector naming their kind
+ * picks them on their own.
+ */
 export function selectComponents(
   selector: ComponentSelector,
   attempt: Attempt,
@@ -39,6 +43,7 @@ export function selectComponents(
 ): Component[] {
   return attempt.architecture.components.filter((c) => {
     if (selector.kind && c.kind !== selector.kind) return false;
+    if (!selector.kind && catalog.kind(c.kind)?.inProcess) return false;
     if (selector.capability && !catalog.capabilities(c.kind, c.flavor).has(selector.capability))
       return false;
     if (selector.holds && !c.data.some((d) => d.entity === selector.holds)) return false;

@@ -15,6 +15,7 @@ import urlShortenerS1 from "../problems/url-shortener/scenarios/s1-create.yaml";
 import urlShortenerS2 from "../problems/url-shortener/scenarios/s2-redirect.yaml";
 import urlShortenerS3 from "../problems/url-shortener/scenarios/s3-cache.yaml";
 import urlShortenerS4 from "../problems/url-shortener/scenarios/s4-cache-outage.yaml";
+import urlShortenerS5 from "../problems/url-shortener/scenarios/s5-hot-keys.yaml";
 import urlShortenerS6 from "../problems/url-shortener/scenarios/s6-dependency-failure.yaml";
 
 export interface ProblemPack {
@@ -76,6 +77,7 @@ export const problemPacks: readonly ProblemPack[] = [
     urlShortenerS2,
     urlShortenerS3,
     urlShortenerS4,
+    urlShortenerS5,
     urlShortenerS6,
   ]),
 ];

@@ -98,6 +98,17 @@ export function buildProfiles(
   return profiles;
 }
 
+/** The operation's request classes, with this environment's share overrides. */
+function classesIn(
+  workload: Workload,
+  environment: Environment,
+  operationId: string,
+): RequestClass[] {
+  const classes = workload.operations[operationId]?.classes ?? [DEFAULT_CLASS];
+  const shares = environment.classShares[operationId] ?? {};
+  return classes.map((cls) => ({ ...cls, share: shares[cls.id] ?? cls.share }));
+}
+
 export function buildOperations(
   workload: Workload,
   environment: Environment,
@@ -115,7 +126,7 @@ export function buildOperations(
       operation: analysis.operation,
       rate,
       analysis,
-      classes: workload.operations[operationId]?.classes ?? [DEFAULT_CLASS],
+      classes: classesIn(workload, environment, operationId),
       ingress,
     });
   }

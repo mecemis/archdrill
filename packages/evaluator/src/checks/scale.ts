@@ -22,8 +22,14 @@ export const overprovisioned = defineCheck({
     if (!env) return notApplicable("This scenario does not simulate load.");
     const label = (id: string) =>
       ctx.attempt.architecture.components.find((c) => c.id === id)?.label ?? id;
+    // Services are sized by throughput; caches and stores by memory and data, so not judged here.
+    const isService = (id: string) => {
+      const c = ctx.attempt.architecture.components.find((x) => x.id === id);
+      return c ? ctx.catalog.capabilities(c.kind, c.flavor).has("stateless-compute") : false;
+    };
     const idle = [...env.components.values()].filter(
       (c) =>
+        isService(c.componentId) &&
         c.instances >= params.minInstances &&
         c.readLoad + c.writeLoad > 0 &&
         c.utilization < params.below,

@@ -1,0 +1,203 @@
+id: s5-hot-keys
+problemId: url-shortener
+title: Peak traffic and hot keys
+order: 5
+story: |
+  "A link goes viral during a sports final. Redirects jump to a million a
+  second, ten times an average day, and a single link takes 30% of them.
+  What saturates first? How do you absorb a spike like this without paying
+  for it every day of the year?"
+focusOperations: [redirect]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: viral, share: 0.30, hotKey: true }
+        - { id: live, share: 0.685 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: unknown, share: 0.01, exists: false }
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.975 }
+        - { id: custom-free, share: 0.019, customAlias: true }
+        - { id: custom-taken, share: 0.001, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.005, invalidInput: true }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day, with no viral link.
+      rates: { redirect: 100000, create-link: 1000 }
+      classShares:
+        redirect: { viral: 0, live: 0.985 }
+    - id: spike
+      label: Viral spike
+      description: A million redirects a second; one link takes 30% of them.
+      rates: { redirect: 1000000, create-link: 3000 }
+dimensions:
+  scalability: 0.35
+  availability: 0.25
+  latency: 0.25
+  cost: 0.15
+checks:
+  - id: serves-spike
+    use: success-rate-above
+    title: Almost every redirect succeeds during the spike (99%)
+    dimension: scalability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: spike, min: 0.99 }
+    why: >-
+      A viral link is the moment the product is most visible. A design that
+      sheds most of that traffic fails exactly when it matters.
+    fix: >-
+      Look at what saturates first in the finding: services, the cache's hot
+      shard, or the store behind the misses.
+
+  - id: spike-availability
+    use: success-rate-above
+    title: Redirects keep their 99.99% target during the spike
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: spike, min: 0.9999 }
+    why: >-
+      The availability target does not pause for a traffic spike; this is
+      when users notice.
+    fix: >-
+      Give every tier headroom at the spike: autoscale services, absorb the
+      hot key before it reaches one shard, and keep the store's misses within
+      its capacity.
+
+  - id: hot-shard-headroom
+    use: utilization-below
+    title: No component or shard runs above 85% during the spike
+    dimension: scalability
+    weight: 3
+    severity: major
+    requirements: [NFR-2]
+    params: { environment: spike, max: 0.85 }
+    why: >-
+      Keys map to shards, so one hot key loads one shard, whatever the size of
+      the cluster. A tier can look half idle on average while its hottest
+      shard is saturated.
+    fix: >-
+      Serve the hot key before the shared cache (a near cache in the service,
+      or the edge), add read replicas to the cache's shards, or replicate hot
+      keys across shards.
+
+  - id: spike-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms during the spike
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: spike, percentile: p99, ms: 50 }
+    why: >-
+      A saturated shard or service shows up in the tail long before requests
+      fail.
+    fix: >-
+      Keep every tier, and the hot shard, well below saturation at the spike.
+
+  - id: creates-unaffected
+    use: success-rate-above
+    title: Link creation is unaffected by the spike (99.9%)
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, environment: spike, min: 0.999 }
+    why: >-
+      A viral redirect must not starve link creation through a shared
+      service, cache or store.
+    fix: >-
+      Isolate the write path from the redirect load, or give shared tiers
+      headroom for both.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $40,000 a month
+    dimension: cost
+    weight: 2
+    severity: major
+    params: { environment: avg, monthlyUsd: 40000 }
+    why: >-
+      Sizing every tier for a once-a-year spike and paying for it every day is
+      the expensive way to survive it.
+    fix: >-
+      Autoscale services between an average-day minimum and a spike maximum,
+      and let caches absorb the spike instead of the store.
+
+  - id: idle-fleet
+    use: overprovisioned
+    title: Nothing runs mostly idle on an average day
+    dimension: cost
+    weight: 1
+    severity: minor
+    params: { environment: avg }
+    why: >-
+      Idle instances are spike insurance paid in full every day.
+    fix: >-
+      Autoscale, or size fixed tiers for the average day plus headroom.
+
+  - id: rate-limited-creates
+    use: ingress-has-capability
+    title: Creation is rate-limited per client
+    dimension: availability
+    signal: senior
+    requirements: [NFR-5]
+    params: { operation: create-link, capability: rate-limiting }
+    why: >-
+      Viral moments attract scripts that mint links by the million; without
+      per-client limits they take capacity from everyone.
+    fix: >-
+      Put a gateway or rate limiter with per-client limits in front of link
+      creation.
+
+  - id: near-cache
+    use: all-success-paths-contain
+    title: A near cache serves the hottest links
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { targetKind: near-cache }
+    why: >-
+      An in-process cache with a short TTL answers the hottest links without a
+      network hop and never lets a hot key reach one shard.
+    fix: >-
+      Add a near cache in the redirect service, with a TTL short enough for
+      the disable requirement.
+
+  - id: autoscaling
+    use: autoscaling-configured
+    title: Services scale with load
+    dimension: cost
+    signal: senior
+    requirements: [NFR-2]
+    params: {}
+    why: >-
+      Sizing autoscaling bounds from the average day and the known peak is the
+      senior answer to "a million requests, once a year".
+    fix: >-
+      Give request-handling services autoscaling with a minimum for the
+      average day and a maximum for the spike.
+hints:
+  - "A million requests a second, and one key gets 300,000 of them. Which component sees all 300,000, and how much can one shard of it take?"
+  - What does the spike cost you on the 364 other days of the year?
+  - "Absorb the hot key before the shared cache (a near cache with a short TTL), autoscale the services between an average-day minimum and a spike maximum, and check what the misses do to the store."

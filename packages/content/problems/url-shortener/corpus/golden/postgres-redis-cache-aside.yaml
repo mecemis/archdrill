@@ -1,12 +1,17 @@
 id: postgres-redis-cache-aside
 description: >-
-  ALB → Redirect API (25 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis
+  ALB → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
+  (2 vCPU, 2 to 12 instances) → Redis
   cache-aside with negative caching (3 shards × 2 replicas) → PostgreSQL
   (16 vCPU, 2 shards × 2 replicas, semi-synchronous). Redirects run in their own
   service and cap their database calls with a bulkhead, so a cache outage
-  cannot take link creation down. Cache calls time out after 20 ms behind a
+  cannot take link creation down. A 10-second near cache in the redirect
+  service absorbs viral links, both services autoscale between an
+  average-day minimum and a spike maximum, and a gateway rate-limits
+  creation. Cache calls time out after 20 ms behind a
   circuit breaker; a KGS hands out keys in batches.
 expect:
+  s5-hot-keys: { minScore: 90 }
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
@@ -20,8 +25,22 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: redirect-api, kind: service, flavor: generic, label: Redirect API, size: l, replicas: 25 }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
+      - id: redirect-api
+        kind: service
+        flavor: generic
+        label: Redirect API
+        size: l
+        replicas: 10
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: near, kind: near-cache, flavor: in-process-lru, label: Near cache, size: m }
+      - id: link-api
+        kind: service
+        flavor: generic
+        label: Link API
+        size: s
+        replicas: 2
+        autoscale: { max: 12, targetUtilization: 0.7 }
+      - { id: gateway, kind: api-gateway, flavor: kong, label: Gateway, size: m, replicas: 2 }
       - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
       - id: links-db
         kind: relational-db
@@ -35,7 +54,9 @@ attempt:
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--redirect-api, from: lb, to: redirect-api }
-      - { id: lb--link-api, from: lb, to: link-api }
+      - { id: lb--gateway, from: lb, to: gateway }
+      - { id: gateway--link-api, from: gateway, to: link-api }
+      - { id: redirect-api--near, from: redirect-api, to: near }
       - id: redirect-api--redis
         from: redirect-api
         to: redis
@@ -43,7 +64,7 @@ attempt:
       - id: redirect-api--links-db
         from: redirect-api
         to: links-db
-        policy: { timeoutMs: 200, maxRps: 60000, circuitBreaker: true }
+        policy: { timeoutMs: 200, maxRps: 80000, circuitBreaker: true }
       - id: link-api--links-db
         from: link-api
         to: links-db
@@ -59,14 +80,27 @@ attempt:
   flows:
     - operation: redirect
       handler: redirect-api
-      root: get
+      root: near-get
       steps:
+        near-get:
+          type: call
+          target: near
+          action: cache.get
+          entity: Link
+          next: { hit: status-hit, miss: get, error: get }
         get:
           type: call
           target: redis
           action: cache.get
           entity: Link
-          next: { hit: status-hit, negativeHit: r404, miss: read, error: read }
+          next: { hit: near-set, negativeHit: r404, miss: read, error: read }
+        near-set:
+          type: call
+          target: near
+          action: cache.set
+          entity: Link
+          ttlSec: 10
+          next: { ok: status-hit, error: status-hit }
         status-hit:
           type: logic
           logic: checkStatus
@@ -177,7 +211,9 @@ attempt:
     visitors: { x: 0, y: 160 }
     lb: { x: 220, y: 160 }
     redirect-api: { x: 440, y: 60 }
-    link-api: { x: 440, y: 280 }
+    near: { x: 440, y: -80 }
+    gateway: { x: 440, y: 280 }
+    link-api: { x: 640, y: 380 }
     redis: { x: 700, y: 0 }
     links-db: { x: 700, y: 180 }
     kgs: { x: 700, y: 360 }
