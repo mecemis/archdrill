@@ -33,6 +33,8 @@ export const StepMatcherSchema = z.strictObject({
   outcome: oneOrMany(z.string().min(1)).optional(),
   /** Matches allocation calls made once per batch (batch size above 1). */
   batched: z.boolean().optional(),
+  /** Matches calls to components of these kinds, e.g. an in-process `near-cache`. */
+  targetKind: oneOrMany(z.string().min(1)).optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -70,6 +72,7 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
       matcher.capability ||
       matcher.effect ||
       matcher.entity ||
+      matcher.targetKind ||
       matcher.batched !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
@@ -80,6 +83,7 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   if (matcher.effect && !matcher.effect.includes(action.effect)) return false;
   if (matcher.entity && matcher.entity !== step.entity) return false;
   if (matcher.batched !== undefined && matcher.batched !== (step.batchSize ?? 1) > 1) return false;
+  if (matcher.targetKind && !matcher.targetKind.includes(step.targetKind)) return false;
   return true;
 }
 

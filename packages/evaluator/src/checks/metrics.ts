@@ -97,21 +97,26 @@ export const utilizationBelow = defineCheck({
   run(params, ctx) {
     const env = environmentOf(ctx, params.environment);
     if (!env) return notApplicable("This scenario does not simulate load.");
+    // A hot key concentrates load on one shard; that shard is what saturates.
+    const busiest = (c: { utilization: number; hottestShardUtilization: number }) =>
+      Math.max(c.utilization, c.hottestShardUtilization);
     const hot = [...env.components.values()]
-      .filter((c) => c.utilization > params.max)
-      .sort((a, b) => b.utilization - a.utilization);
+      .filter((c) => busiest(c) > params.max)
+      .sort((a, b) => busiest(b) - busiest(a));
     if (hot.length === 0) {
-      const peak = Math.max(0, ...[...env.components.values()].map((c) => c.utilization));
+      const peak = Math.max(0, ...[...env.components.values()].map(busiest));
       return passed(`The busiest component runs at ${percent(peak)} at ${env.environment.label}.`);
     }
     const evidence: Evidence[] = hot.map((c) => ({
       type: "component",
       componentId: c.componentId,
     }));
-    const details = hot.map(
-      (c) => `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
+    const details = hot.map((c) =>
+      c.hottestShardUtilization > c.utilization + 1e-9
+        ? `${label(ctx, c.componentId)}: its hottest shard at ${percent(c.hottestShardUtilization)} while the tier averages ${percent(c.utilization)}; one hot key lands on one shard`
+        : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
     );
-    const overloaded = hot.some((c) => c.utilization > 1);
+    const overloaded = hot.some((c) => busiest(c) > 1);
     const message = overloaded
       ? `${label(ctx, hot[0]?.componentId ?? "")} is over capacity at ${env.environment.label} and rejects requests.`
       : `${hot.length} component(s) run above ${percent(params.max)} at ${env.environment.label}, leaving no headroom.`;

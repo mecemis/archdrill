@@ -19,6 +19,7 @@ import {
   retryOnlyIdempotent,
   stableUnderRetries,
 } from "./resilience";
+import { autoscalingConfigured, overprovisioned } from "./scale";
 import { recognizeStrategy } from "./strategy";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
@@ -47,6 +48,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     noAcknowledgedDataLoss,
     invalidationOnWrite,
     decisionExcludes,
+    overprovisioned,
+    autoscalingConfigured,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

@@ -60,6 +60,8 @@ export const outcomeHandled = defineCheck({
               kind: "call" as const,
               stepId,
               target: step.target,
+              targetKind:
+                ctx.attempt.architecture.components.find((c) => c.id === step.target)?.kind ?? "",
               connectionId: null,
               action: step.action,
               entity: step.entity,

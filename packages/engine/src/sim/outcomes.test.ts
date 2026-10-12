@@ -41,6 +41,7 @@ const call = (
   kind: "call",
   stepId: action,
   target: action === "store.insertIfAbsent" ? "db" : "kgs",
+  targetKind: action === "store.insertIfAbsent" ? "relational-db" : "id-generator",
   connectionId: null,
   action,
   entity: action === "store.insertIfAbsent" ? "Link" : undefined,

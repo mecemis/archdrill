@@ -4,6 +4,8 @@ export interface CallPathStep {
   readonly kind: "call";
   readonly stepId: string;
   readonly target: string;
+  /** The target's component kind, so predicates can ask for a kind of component. */
+  readonly targetKind: string;
   /** Connection from the handler to the target, or null if the topology lacks one. */
   readonly connectionId: string | null;
   readonly action: ActionId;
