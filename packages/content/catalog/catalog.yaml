@@ -51,6 +51,37 @@ kinds:
             costPerHour: 0.17
         defaultSize: m
 
+  - id: api-gateway
+    label: API gateway
+    description: Single entry point that routes requests, authenticates callers and enforces per-client rate limits.
+    capabilities: [routing, rate-limiting, authn]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: managed-gateway
+        label: Managed API gateway
+        description: Cloud-managed gateway (for example Amazon API Gateway or Azure API Management), redundant across zones.
+        managedRedundancy: true
+        requestCost: { readPerMillion: 1.0, writePerMillion: 1.0 }
+        sizes:
+          managed:
+            label: managed
+            capacityPerSec: { read: 1000000, write: 1000000 }
+            latencyMs: { base: 5, cv: 0.5 }
+            costPerHour: 0
+        defaultSize: managed
+        notes: Billed per request (about $1 per million for HTTP APIs), which gets expensive on very hot paths; account throttling limits must be raised for high traffic.
+      - id: kong
+        label: Kong
+        description: Self-managed gateway with rate-limiting and authentication plugins. Run at least two.
+        sizes:
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 20000, write: 20000 }
+            latencyMs: { base: 1.5, cv: 0.4 }
+            costPerHour: 0.17
+        defaultSize: m
+
   - id: service
     label: Service
     description: Stateless application service that runs request handlers. Scale out with replicas.
@@ -192,3 +223,53 @@ kinds:
             costPerHour: 0
         defaultSize: on-demand
         notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). Per-partition limits matter for hot keys and are modelled with peak-traffic scenarios.
+
+  - id: id-generator
+    label: Id generator
+    description: Service that hands out unique keys, for example a key generation service with a pool of pre-generated random codes.
+    capabilities: [id-generation]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: kgs
+        label: Key generation service
+        description: Pre-generates random unique codes into a key table and hands them out, singly or in batches, with an atomic claim.
+        sizes:
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 20000, write: 20000 }
+            latencyMs: { base: 2, cv: 0.5 }
+            costPerHour: 0.17
+        defaultSize: m
+        notes: Every claim marks keys as used in a durable key table. Claiming in batches keeps the service off the per-request path.
+
+  - id: coordination
+    label: Coordination service
+    description: Strongly consistent store for small coordination data such as leases, counters and leader election.
+    capabilities: [consensus, leases, atomic-increment]
+    replicable: true
+    holdsData: false
+    writeScaling: primaries
+    flavors:
+      - id: etcd
+        label: etcd
+        description: Raft-based key-value store. Run 3 or 5 members.
+        sizes:
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 40000, write: 10000 }
+            latencyMs: { base: 3, cv: 0.6 }
+            costPerHour: 0.17
+        defaultSize: m
+        notes: Every write goes through consensus and costs a quorum round trip, and only the leader takes writes. Keep it off the per-request path.
+      - id: zookeeper
+        label: ZooKeeper
+        description: Consensus-based coordination service (ZAB). Run 3 or 5 servers.
+        sizes:
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 40000, write: 10000 }
+            latencyMs: { base: 3, cv: 0.6 }
+            costPerHour: 0.17
+        defaultSize: m
+        notes: Writes go through the leader and a quorum. Keep it off the per-request path.

@@ -1,5 +1,5 @@
 import type { Path } from "@archdrill/engine";
-import type { Component } from "@archdrill/model";
+import { type Component, LOGIC } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
 import { servesResource } from "../predicates";
@@ -15,6 +15,19 @@ function survivesFailureOf(path: Path, componentId: string, ingress: readonly st
   return path.steps.every(
     (step) => step.kind !== "call" || step.target !== componentId || step.outcome === "error",
   );
+}
+
+/**
+ * The kind of request a path serves, read from the outcomes of branching
+ * logic (custom alias or generated code, valid or expired): those depend on
+ * the request, not on the infrastructure. Paths of the same kind are
+ * alternatives for each other.
+ */
+function requestKind(path: Path): string {
+  return path.steps
+    .filter((step) => step.kind === "logic" && LOGIC[step.logic].outcomes.length > 1)
+    .map((step) => `${step.kind === "logic" ? step.logic : ""}:${step.outcome}`)
+    .join(",");
 }
 
 function isRedundant(component: Component, ctx: CheckContext): boolean {
@@ -39,12 +52,21 @@ export const noSinglePointOfFailure = defineCheck({
     const serving = op?.paths.filter(servesResource) ?? [];
     if (!op || serving.length === 0) return notApplicable("No path serves the resource yet.");
     const ingress = op.ingress?.components ?? [];
-    const touched = new Set(serving.flatMap((p) => p.components));
+    const byKind = new Map<string, Path[]>();
+    for (const path of serving) {
+      const key = requestKind(path);
+      byKind.set(key, [...(byKind.get(key) ?? []), path]);
+    }
+    // A component is critical when some kind of request that succeeds today has
+    // no successful path left without it.
     const critical = ctx.attempt.architecture.components.filter(
       (c) =>
-        touched.has(c.id) &&
         !isTrafficSource(c, ctx) &&
-        !serving.some((p) => survivesFailureOf(p, c.id, ingress)),
+        [...byKind.values()].some(
+          (paths) =>
+            paths.some((p) => p.components.includes(c.id)) &&
+            !paths.some((p) => survivesFailureOf(p, c.id, ingress)),
+        ),
     );
     if (critical.length === 0)
       return passed("The operation survives the loss of any single component.");

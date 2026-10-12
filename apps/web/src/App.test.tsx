@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App";
 import { useAttemptStore } from "./state/store";
+import { useUi } from "./state/ui-store";
 
 /** Visitors → ALB → Link API (25 × 8 vCPU) → DynamoDB holding Link, with no flows yet. */
 function topologyOnly() {
@@ -74,6 +75,8 @@ function respond(status: number) {
 describe("App", () => {
   beforeEach(() => {
     useAttemptStore.getState().replace(topologyOnly());
+    // These tests exercise the redirect read path (S2).
+    useUi.getState().setScenario("s2-redirect");
   });
 
   it("shows the problem and asks for the first flow", () => {

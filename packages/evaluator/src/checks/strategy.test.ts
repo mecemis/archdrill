@@ -95,6 +95,33 @@ describe("hasStepTimes", () => {
   });
 });
 
+describe("hasSequence", () => {
+  it("matches steps in order, not adjacency", () => {
+    const retried = {
+      operation: "create-link",
+      where: {
+        hasSequence: [
+          { action: "store.insertIfAbsent", outcome: "conflict" },
+          { logic: "generateRandomCode" },
+        ],
+      },
+    };
+    const reversed = {
+      ...retried,
+      where: {
+        hasSequence: [
+          { logic: "generateRandomCode" },
+          { action: "store.insertIfAbsent", outcome: "conflict" },
+        ],
+      },
+    };
+
+    expect(runCheck("no-path", retried, createLinkAttempt("random-retry")).status).toBe("fail");
+    expect(runCheck("no-path", retried, createLinkAttempt("random")).status).toBe("pass");
+    expect(runCheck("no-path", reversed, createLinkAttempt("random")).status).toBe("fail");
+  });
+});
+
 describe("ingress-has-capability", () => {
   const params = { operation: "create-link", capability: "rate-limiting" };
 

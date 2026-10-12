@@ -43,6 +43,8 @@ export type PathPredicate =
   | { readonly unhandled: boolean }
   | { readonly hasStep: StepMatcher }
   | { readonly hasStepTimes: { readonly step: StepMatcher; readonly min: number } }
+  /** Steps matching each matcher occur in this order (not necessarily adjacent). */
+  | { readonly hasSequence: readonly StepMatcher[] }
   | { readonly not: PathPredicate }
   | { readonly all: readonly PathPredicate[] }
   | { readonly any: readonly PathPredicate[] };
@@ -57,6 +59,7 @@ export const PathPredicateSchema: z.ZodType<PathPredicate, unknown> = z.lazy(() 
     z.strictObject({
       hasStepTimes: z.strictObject({ step: StepMatcherSchema, min: z.number().int().min(1) }),
     }),
+    z.strictObject({ hasSequence: z.array(StepMatcherSchema).min(2) }),
     z.strictObject({ not: PathPredicateSchema }),
     z.strictObject({ all: z.array(PathPredicateSchema).min(1) }),
     z.strictObject({ any: z.array(PathPredicateSchema).min(1) }),
@@ -113,6 +116,14 @@ export function evalPredicate(path: Path, predicate: PathPredicate, operation: O
   if ("success" in predicate) return isSuccessPath(path, operation) === predicate.success;
   if ("unhandled" in predicate) return (path.terminal.kind === "unhandled") === predicate.unhandled;
   if ("hasStep" in predicate) return path.steps.some((step) => matchStep(step, predicate.hasStep));
+  if ("hasSequence" in predicate) {
+    let next = 0;
+    for (const step of path.steps) {
+      const matcher = predicate.hasSequence[next];
+      if (matcher && matchStep(step, matcher)) next++;
+    }
+    return next === predicate.hasSequence.length;
+  }
   if ("hasStepTimes" in predicate) {
     const { step: matcher, min } = predicate.hasStepTimes;
     return path.steps.filter((step) => matchStep(step, matcher)).length >= min;

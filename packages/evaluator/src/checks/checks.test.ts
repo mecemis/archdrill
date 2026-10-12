@@ -1,4 +1,4 @@
-import { cacheAsideAttempt } from "@archdrill/model/testing";
+import { cacheAsideAttempt, createLinkAttempt } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { mutated, runCheck } from "../test-support";
 
@@ -109,6 +109,18 @@ describe("no-path", () => {
     expect(outcome.evidence).toEqual([
       { type: "path", operation: "redirect", pathId: "redirect#2" },
     ]);
+  });
+});
+
+describe("no-path applicability", () => {
+  it("is not applicable when the design does not use the approach", () => {
+    const params = {
+      operation: "redirect",
+      applicableWhen: { hasStep: { action: "cache.setNegative" } },
+      where: { hasStep: { action: "store.read", outcome: "notFound" } },
+    };
+
+    expect(runCheck("no-path", params, cacheAsideAttempt()).status).toBe("n/a");
   });
 });
 
@@ -242,6 +254,21 @@ describe("no-single-point-of-failure", () => {
     const outcome = runCheck("no-single-point-of-failure", params, attempt);
 
     expect(outcome.evidence).toEqual([{ type: "component", componentId: "redis" }]);
+  });
+});
+
+describe("no-single-point-of-failure per kind of request", () => {
+  it("flags a component that one kind of request cannot do without", () => {
+    // Custom aliases never touch the key generator, but generated codes always do.
+    const attempt = mutated(
+      "updateComponent",
+      { id: "kgs", replicas: 1 },
+      createLinkAttempt("kgs"),
+    );
+
+    const outcome = runCheck("no-single-point-of-failure", { operation: "create-link" }, attempt);
+
+    expect(outcome.evidence).toEqual([{ type: "component", componentId: "kgs" }]);
   });
 });
 

@@ -11,6 +11,7 @@ import {
 import type { z } from "zod";
 import catalogData from "../catalog/catalog.yaml";
 import urlShortenerProblem from "../problems/url-shortener/problem.yaml";
+import urlShortenerS1 from "../problems/url-shortener/scenarios/s1-create.yaml";
 import urlShortenerS2 from "../problems/url-shortener/scenarios/s2-redirect.yaml";
 import urlShortenerS3 from "../problems/url-shortener/scenarios/s3-cache.yaml";
 
@@ -68,7 +69,7 @@ export const catalog: Catalog = parse(CatalogSchema, catalogData, "catalog.yaml"
 export const catalogIndex = createCatalogIndex(catalog);
 
 export const problemPacks: readonly ProblemPack[] = [
-  loadProblemPack(urlShortenerProblem, [urlShortenerS2, urlShortenerS3]),
+  loadProblemPack(urlShortenerProblem, [urlShortenerS1, urlShortenerS2, urlShortenerS3]),
 ];
 
 export function getProblemPack(problemId: string): ProblemPack | undefined {

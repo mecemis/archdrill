@@ -5,6 +5,7 @@ description: >-
   S3, where paying per request for 300,000 redirects a second breaks the
   budget.
 expect:
+  s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
 notPassing: [s3-cache]
 attempt:
@@ -45,7 +46,59 @@ attempt:
         r404: { type: respond, status: 404 }
         r410: { type: respond, status: 410 }
         r503: { type: respond, status: 503 }
-  decisions: {}
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: generate }
+        insert-alias:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c409, error: c503 }
+        generate:
+          type: logic
+          logic: generateRandomCode
+          next: { ok: insert }
+        insert:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: generate-retry, error: c503 }
+        generate-retry:
+          type: logic
+          logic: generateRandomCode
+          next: { ok: insert-retry }
+        insert-retry:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: generate-retry-2, error: c503 }
+        generate-retry-2:
+          type: logic
+          logic: generateRandomCode
+          next: { ok: insert-retry-2 }
+        insert-retry-2:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c503, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+  decisions: { code-strategy: random-conditional }
   layout:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }
