@@ -146,6 +146,20 @@ Example, `NFR-3` (unique, non-enumerable codes) for URL Shortener:
 
 If no strategy matches but the outcome checks for that requirement pass, the requirement is marked **"satisfied — approach not recognised"**. It gets outcome-based credit, and the user is prompted to export the design for review. This turns false negatives into registry improvements instead of silent zeros.
 
+### As built (M3)
+
+Recognition is an ordinary check, `recognize-strategy`, so it is scored, explained and tested like any other:
+
+- The scenario lists the strategies, each with a path predicate, a label and an interviewer's note, plus a **scope** (in S1: paths that answer 201 for a generated code).
+- The first strategy that every in-scope path satisfies is reported, both in the finding and as structured data that the score summary and the Decisions panel show ("Approach: Key generation service").
+- If the candidate declared a different option for the linked decision point, the check fails: the flow and the stated approach disagree.
+- If no strategy matches, the check gives 50% credit and asks for review. The outcome checks (atomic uniqueness, collision retries, success rate) still judge whether the unfamiliar approach works.
+- Hash-based codes are recognised by `hashUrl`. Telling a same-URL conflict from a different-URL conflict is not modelled yet; a salted retry is the expected handling.
+
+Path predicates gained two operators for write paths: `hasStepTimes` (a step occurs at least *n* times) and `hasSequence` (steps occur in order, not necessarily adjacent). "A generated code that collided was retried" is `hasSequence: [insertIfAbsent: conflict, a new code]`. Counting inserts is not enough, because a retry whose new allocation fails has only one insert.
+
+`no-path` takes an optional `applicableWhen` predicate, so checks about an approach the design does not use (batching an allocation call it never makes) are not applicable rather than passed. Signal counts leave such checks out.
+
 ---
 
 ## Stage 6: Scoring

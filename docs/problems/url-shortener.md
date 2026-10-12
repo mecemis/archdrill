@@ -47,7 +47,8 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 
 | ID | Options | Checked against |
 |---|---|---|
-| `code-strategy` | kgs · random-conditional · counter-range · hash-based | create flow shape (`decision-matches-design`) |
+| `code-strategy` | kgs · random-conditional · counter-range · hash-based | create flow shape (`recognize-strategy`) |
+| `code-length` | 6 · 7 · 8 (default 7) | simulated collision rate in S1 |
 | `redirect-status` | 301 · 302 · 301-with-short-max-age · 307 · 308 | FR-4 (revocation), S8 analytics |
 | `replication-mode` | async · semi-sync · sync | NFR-4 (RPO) vs NFR-1 (latency) |
 | `expired-status` | 404 · 410 | consistency with flow |
@@ -57,44 +58,46 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 
 ## S1: Create a link (write path)
 
-**Story.** "Walk me through what happens when a user creates a short link. How do you guarantee two users never get the same code?"
+**Story.** "Walk me through what happens when a user creates a short link. How do you generate the code, and how do you guarantee that two users never get the same one, even when they create links at the same moment? What does a user see if they ask for an alias that is already taken?"
 
 | | |
 |---|---|
-| Focus | `createLink` |
-| Workload | 1,000 /s avg, 3,000 /s peak; 2% custom aliases, of which 5% conflict; 0.5% invalid URLs |
-| Environments | `steady` |
-| Dimensions | correctness 0.35 · durability 0.25 · concurrency 0.20 · scalability 0.10 · latency 0.10 |
+| Focus | `create-link` |
+| Workload | 1,000 /s avg, 3,000 /s peak; 97.5% generated codes, 1.9% free custom aliases, 0.1% taken aliases, 0.5% invalid URLs; 158 B links stored (5 years); keyspace 62^`code-length` |
+| Environments | `avg`, `peak` |
+| Dimensions | correctness 0.30 · concurrency 0.20 · durability 0.15 · availability 0.15 · security 0.10 · latency 0.10 |
 
 **Gates**
-- `all-success-paths-contain(createLink, store.write*(Link))`: a 201 is never returned without persisting the link.
-- `durable-write-before-ack(createLink, Link)`.
-- `atomic-uniqueness(createLink, Link, code)`: catches the check-then-insert race.
+- `validates-before-writing`: every 201 path validates the URL first.
+- `durable-before-ack`: every 201 path stores the link (`insert` or `insertIfAbsent` → ok) first.
+- `atomic-uniqueness`: every 201 path writes with `insertIfAbsent`. A plain put overwrites someone else's link.
+- `no-check-then-insert`: no path reads `notFound` and then puts. That is the classic TOCTOU race.
+- `serves-peak`: at least 99% of creates succeed at peak.
 
 **Baseline checks**
-- `conflict-handled`: random/hash codes retry (bounded); custom aliases return 409.
-- `status-for-condition(validateUrl=invalid → 400)`.
-- `utilization-below(write path, 0.7, peak)`.
-- `p99-below(createLink, 200)`.
-- `decision-matches-design(code-strategy)`.
-- `no-single-point-of-failure(createLink)`.
+- `invalid-url-400`, `custom-aliases-supported`, `taken-alias-409`.
+- `generated-collision-not-409`: a collision on a code the user did not choose is never their problem.
+- `generated-collision-retried`: after a conflict on a generated code, a new code is produced and inserted (`hasSequence`).
+- `non-enumerable` (critical): leased counter values must pass `obfuscateId` before encoding.
+- `code-strategy` (`recognize-strategy`), compared with the `code-strategy` decision.
+- `creates-succeed` (99.9% at peak, critical), `no-single-point-of-failure` (critical), `headroom-at-peak`, `create-p99` (< 200 ms), `errors-handled`, `dead-weight`.
 
-**Strategies (NFR-3):** `kgs`, `random-conditional`, `counter-range` (+ `obfuscateId` for non-enumerability), `hash-based`. The anti-pattern `check-then-insert` fails `atomic-uniqueness`. See [03-evaluation.md](../design/03-evaluation.md#stage-5-strategy-recognition).
+**Strategies (NFR-3):** `kgs`, `random-conditional`, `counter-range` (+ `obfuscateId` for non-enumerability), `hash-based`. The anti-pattern `check-then-insert` fails `no-check-then-insert` and `atomic-uniqueness`. See [03-evaluation.md](../design/03-evaluation.md#stage-5-strategy-recognition).
 
 **Subtle points the evaluator knows about**
-- KGS designs still need a conflict path when custom aliases share the namespace. A pre-generated key can equal an alias someone already chose.
-- Random 7-char codes reach about 4.5% collisions per insert at 5-year occupancy. The engine reports expected attempts per create; 8 chars make this negligible.
-- Counter ranges are collision-free but enumerable unless obfuscated. NFR-3 fails without `obfuscateId`.
+- KGS designs still need a conditional insert and a conflict path, because custom aliases share the namespace with pre-generated keys.
+- A key generator is a single point of failure for generated codes even though custom aliases bypass it. Redundancy is judged per kind of request.
+- Random 7-character codes collide on about 4.5% of inserts at 5-year occupancy. One retry still fails about 0.2% of creates (below the 99.9% target); two retries or 8 characters meet it. 6 characters cannot hold 158 B links at all.
+- Counter ranges are collision-free but enumerable unless obfuscated.
 
 **Signals**
 
-| Level | Signal |
-|---|---|
-| Senior | Idempotency key on create, with a dedupe store |
-| Senior | Rate limiting on create, keyed per client (NFR-5) |
-| Senior | KGS batch leasing to keep it off the hot path |
-| Staff | Obfuscation for counter-based codes |
-| Staff | Explicit RPO reasoning via the `replication-mode` decision |
+| Level | Signal | Status |
+|---|---|---|
+| Senior | Rate limiting on create, on the ingress route (NFR-5) | built |
+| Senior | Allocation calls batched off the hot path | built |
+| Senior | Idempotency key on create, with a dedupe store | later |
+| Staff | Explicit RPO reasoning via the `replication-mode` decision | later (M4) |
 
 **Debrief prompts.** Why not check-then-insert? What happens when the KGS dies? How would you migrate from 7 to 8 characters?
 
@@ -341,6 +344,16 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | `log-first-durability` | Create acks after a Kafka write (`acks=all`); a consumer persists to Postgres; the create path primes the cache for read-your-writes |
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
+
+**As built (M3).** The corpus in `packages/content/problems/url-shortener/corpus/` holds five golden designs, covering all four code strategies, and 30 mutants:
+
+| ID | Create path | Read path |
+|---|---|---|
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry | Redis cache-aside with negative caching → Postgres |
+| `dynamodb-redis-cache-aside` | random 8-character codes, one retry | Redis cache-aside → DynamoDB |
+| `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
+| `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
+| `postgres-hash-based` | 8-character URL hashes, one salted retry | none (write path only) |
 
 ## Mutant expectations (excerpt)
 

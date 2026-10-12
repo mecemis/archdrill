@@ -176,6 +176,18 @@ Prices are order-of-magnitude list prices with a stated date and source. They ar
 - **Random codes.** At horizon `H` years with `W` creates per second, the occupancy is `N = W · H · 3.15e7`. The conflict probability per insert is ≈ `N / K`, and the expected attempts per create are `1 / (1 − N/K)`. Both feed the conflict outcome and the write load.
 - **Counter ranges.** Lease size and lease rate determine coordination load. Leases lost on crash only waste keyspace; the engine reports the fraction wasted.
 
+**As built (M3).** The workload declares the stored dataset (158 B links at 5 years) and a keyspace per entity: an alphabet (62) and the decision point that sets the code length. Occupancy is `min(1, stored / alphabet^length)`; with no decision yet, the decision's default (7) applies. A conditional insert conflicts according to where its key came from, found by walking the path back to the most recent step that produced a key:
+
+| Key origin | Conflict probability |
+|---|---|
+| a custom alias (`hasCustomAlias: custom`) | 1 for the "alias taken" request class, else 0 |
+| `generateRandomCode` or `hashUrl` | occupancy |
+| `ids.allocate` or `coord.leaseRange` | 0 (unique by construction) |
+
+Retries are explicit steps, so a flow with *r* retries fails a share `occupancy^(r+1)` of generated creates. At 7 characters (occupancy ≈ 4.5%) one retry still fails about 0.2% of creates, which misses the 99.9% target; two retries or 8 characters meet it. At 6 characters the keyspace is smaller than the dataset and every generated insert collides.
+
+Batched allocation (`batchSize`) divides the allocator's load, the connection rate and the call's latency by the batch size. Lease waste on crash is not modelled yet.
+
 ---
 
 ## Discrete-event engine (phase 2)
