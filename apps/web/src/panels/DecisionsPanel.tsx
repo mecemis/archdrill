@@ -29,7 +29,6 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
   const chosen = useAttemptStore((s) => s.attempt.decisions[point.id]);
   const dispatch = useAttemptStore((s) => s.dispatch);
   const implemented = useImplementedStrategy(point.id);
-  const effective = chosen ?? point.default;
   const assumed = point.options.find((o) => o.id === point.default);
   return (
     <fieldset className="flex flex-col gap-1.5">
@@ -41,7 +40,7 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
           <input
             type="radio"
             name={point.id}
-            checked={effective === option.id}
+            checked={chosen === option.id}
             onChange={() => dispatch("setDecision", { decision: point.id, option: option.id })}
           />
           {option.label}

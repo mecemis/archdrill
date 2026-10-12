@@ -57,7 +57,9 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
   const { scorecard } = result;
   const band = BAND_STYLES[scorecard.band];
   const strategies = result.checks.flatMap((c) =>
-    c.instance.use === "recognize-strategy" && c.data?.label ? [c.data.label] : [],
+    c.instance.use === "recognize-strategy" && c.data?.label
+      ? [{ id: c.instance.id, label: c.data.label }]
+      : [],
   );
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -77,8 +79,8 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
           Capped at {scorecard.cap.value} by {CAP_REASONS[scorecard.cap.reason]}.
         </p>
       )}
-      {strategies.map((label) => (
-        <p key={label} className="text-xs text-zinc-700">
+      {strategies.map(({ id, label }) => (
+        <p key={id} className="text-xs text-zinc-700">
           Approach: <span className="font-semibold text-zinc-900">{label}</span>
         </p>
       ))}

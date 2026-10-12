@@ -61,7 +61,7 @@ attempt:
           next: { ok: c201, conflict: rehash, error: c503 }
         rehash:
           type: logic
-          logic: hashUrl
+          logic: rehashWithSalt
           next: { ok: encode-retry }
         encode-retry:
           type: logic

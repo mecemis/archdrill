@@ -15,20 +15,25 @@ export type Zipf = z.infer<typeof ZipfSchema>;
  * so correlations hold: a code that does not exist always misses the cache
  * (unless negatively cached) and is never found in the store.
  */
-export const RequestClassSchema = z.object({
-  id: IdSchema,
-  share: z.number().min(0).max(1),
-  /** The entity the request refers to exists. */
-  exists: z.boolean().default(true),
-  expired: z.boolean().default(false),
-  disabled: z.boolean().default(false),
-  /** The request carries invalid input (e.g. a malformed URL). */
-  invalidInput: z.boolean().default(false),
-  /** The request asks for a specific alias instead of a generated code. */
-  customAlias: z.boolean().default(false),
-  /** The requested alias is already taken. */
-  aliasTaken: z.boolean().default(false),
-});
+export const RequestClassSchema = z
+  .object({
+    id: IdSchema,
+    share: z.number().min(0).max(1),
+    /** The entity the request refers to exists. */
+    exists: z.boolean().default(true),
+    expired: z.boolean().default(false),
+    disabled: z.boolean().default(false),
+    /** The request carries invalid input (e.g. a malformed URL). */
+    invalidInput: z.boolean().default(false),
+    /** The request asks for a specific alias instead of a generated code. */
+    customAlias: z.boolean().default(false),
+    /** The requested alias is already taken. */
+    aliasTaken: z.boolean().default(false),
+  })
+  .refine((cls) => cls.customAlias || !cls.aliasTaken, {
+    message: "aliasTaken only applies to requests with customAlias",
+    path: ["aliasTaken"],
+  });
 export type RequestClass = z.infer<typeof RequestClassSchema>;
 
 const SHARE_TOLERANCE = 1e-9;

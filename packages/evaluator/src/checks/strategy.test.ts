@@ -77,21 +77,28 @@ describe("recognize-strategy", () => {
   });
 });
 
-describe("hasStepTimes", () => {
-  const noRetry = {
+describe("batched step matcher", () => {
+  const unbatched = {
     operation: "create-link",
-    where: {
-      all: [
-        { hasStep: { logic: "hasCustomAlias", outcome: "generated" } },
-        { hasStep: { action: "store.insertIfAbsent", outcome: "conflict" } },
-        { not: { hasStepTimes: { step: { action: "store.insertIfAbsent" }, min: 2 } } },
-      ],
-    },
+    where: { hasStep: { action: "ids.allocate", batched: false } },
   };
 
-  it("finds generated collisions that are never retried", () => {
-    expect(runCheck("no-path", noRetry, createLinkAttempt("random")).status).toBe("fail");
-    expect(runCheck("no-path", noRetry, createLinkAttempt("random-retry")).status).toBe("pass");
+  it("tells allocation calls made per request from batched ones", () => {
+    expect(runCheck("no-path", unbatched, createLinkAttempt("kgs")).status).toBe("fail");
+    expect(runCheck("no-path", unbatched, createLinkAttempt("kgs", 1000)).status).toBe("pass");
+  });
+
+  it("never matches logic steps", () => {
+    const params = { operation: "create-link", where: { hasStep: { batched: false } } };
+
+    expect(runCheck("no-path", params, createLinkAttempt("random")).status).toBe("fail"); // the insert call
+    expect(
+      runCheck(
+        "no-path",
+        { ...params, where: { hasStep: { logic: "generateRandomCode", batched: false } } },
+        createLinkAttempt("random"),
+      ).status,
+    ).toBe("pass");
   });
 });
 

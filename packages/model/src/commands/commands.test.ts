@@ -2,6 +2,7 @@ import { applyPatches } from "immer";
 import { describe, expect, it } from "vitest";
 import { emptyAttempt } from "../attempt/schema";
 import { cacheAsideAttempt } from "../testing/fixtures";
+import { createLinkAttempt } from "../testing/write-path";
 import { applyCommand, CommandError } from "./index";
 
 describe("commands", () => {
@@ -255,6 +256,37 @@ describe("commands", () => {
       next: { notFound: "r404", error: "r503" },
     });
     expect(step?.type === "call" && "found" in step.next).toBe(false);
+  });
+
+  it("drops parameters the new action does not take", () => {
+    const toGet = applyCommand(cacheAsideAttempt(), "updateStep", {
+      operation: "redirect",
+      stepId: "populate",
+      action: "cache.get",
+    }).attempt;
+    const toAllocate = applyCommand(createLinkAttempt("kgs"), "updateStep", {
+      operation: "create-link",
+      stepId: "insert",
+      action: "ids.allocate",
+    }).attempt;
+
+    expect(toGet.flows[0]?.steps.populate).not.toHaveProperty("ttlSec");
+    const insert = toAllocate.flows.find((f) => f.operation === "create-link")?.steps.insert;
+    expect(insert).toMatchObject({ action: "ids.allocate", next: { ok: "r201", error: "r503" } });
+    expect(insert).not.toHaveProperty("entity");
+  });
+
+  it("switches a logic step to other logic", () => {
+    const attempt = applyCommand(createLinkAttempt("random"), "updateStep", {
+      operation: "create-link",
+      stepId: "gen",
+      logic: "hashUrl",
+    }).attempt;
+
+    expect(attempt.flows.find((f) => f.operation === "create-link")?.steps.gen).toMatchObject({
+      logic: "hashUrl",
+      next: { ok: "insert" },
+    });
   });
 
   it("sets and clears a batch size on allocation steps", () => {

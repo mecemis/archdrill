@@ -87,7 +87,7 @@ Each capability exposes **actions**. Every action has a closed set of **outcomes
 | `rate-limiting` | `ratelimit.check(scope)` | `allowed`, `limited`, `error` | |
 | `edge-cache` | (configured on the ingress route) | | caches responses by status and `Cache-Control` |
 | `external` | `external.call(name)` | `ok`, `rejected`, `error` | e.g. URL safety scan |
-| *(local)* | `logic(name)` | declared per logic step | runs inside the actor: `validateUrl → valid/invalid`, `hasCustomAlias → custom/generated`, `checkExpiry → valid/expired`, `checkStatus → active/disabled`, `generateRandomCode`, `hashUrl`, `encodeBase62`, `obfuscateId` |
+| *(local)* | `logic(name)` | declared per logic step | runs inside the actor: `validateUrl → valid/invalid`, `hasCustomAlias → custom/generated`, `checkExpiry → valid/expired`, `checkStatus → active/disabled`, `generateRandomCode`, `hashUrl`, `rehashWithSalt`, `encodeBase62`, `obfuscateId` |
 
 Every outcome a step can produce must lead somewhere: another step, a `respond`, or an explicit `fail`. An **unhandled outcome** is a validation warning, and the evaluation reports it as a finding with the exact step highlighted. The default semantics are documented: an unhandled `error` propagates as a failure, and an unhandled `miss` or `notFound` is treated as a bug.
 

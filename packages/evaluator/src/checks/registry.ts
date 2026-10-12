@@ -80,5 +80,53 @@ export function validateScenarioConfig(
         issues.push({ checkId: instance.id, message: `unknown requirement "${req}"` });
     }
   }
+  return [...issues, ...validateWorkload(scenario, problem)];
+}
+
+/** A positive whole number, as code-length options must be. */
+const CODE_LENGTH = /^[1-9]\d*$/;
+
+/**
+ * Cross-checks a workload against its problem. Mistakes here would not fail
+ * loudly: the simulator would quietly leave out an operation or a keyspace.
+ */
+function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigIssue[] {
+  const workload = scenario.workload;
+  if (!workload) return [];
+  const issue = (message: string): ScenarioConfigIssue => ({ checkId: "workload", message });
+  const issues: ScenarioConfigIssue[] = [];
+  const operations = new Set(problem.operations.map((o) => o.id));
+  const entities = new Set(problem.entities.map((e) => e.name));
+  for (const [id, op] of Object.entries(workload.operations)) {
+    if (!operations.has(id)) issues.push(issue(`unknown operation "${id}"`));
+    if (!entities.has(op.entity))
+      issues.push(issue(`operation "${id}" uses unknown entity "${op.entity}"`));
+  }
+  for (const env of workload.environments) {
+    for (const id of Object.keys(env.rates)) {
+      if (!(id in workload.operations))
+        issues.push(
+          issue(`environment "${env.id}" sets a rate for "${id}", which has no workload`),
+        );
+    }
+  }
+  for (const [entity, { lengthDecision }] of Object.entries(workload.keyspace)) {
+    if (workload.dataset[entity] === undefined)
+      issues.push(issue(`keyspace for ${entity} needs a dataset size`));
+    const point = problem.decisionPoints.find((d) => d.id === lengthDecision);
+    if (!point) {
+      issues.push(issue(`keyspace for ${entity} uses unknown decision "${lengthDecision}"`));
+      continue;
+    }
+    if (point.default === undefined)
+      issues.push(issue(`decision "${lengthDecision}" needs a default code length`));
+    const lengths = point.options.filter((o) => !CODE_LENGTH.test(o.id)).map((o) => o.id);
+    if (lengths.length > 0)
+      issues.push(
+        issue(
+          `decision "${lengthDecision}" has options that are not code lengths: ${lengths.join(", ")}`,
+        ),
+      );
+  }
   return issues;
 }

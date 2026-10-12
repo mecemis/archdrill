@@ -2,7 +2,7 @@ import type { Draft } from "immer";
 import { z } from "zod";
 import { type Flow, isBranchingStep, type Step } from "../attempt/schema";
 import { reachableStepIds, stepOutcomes } from "../attempt/steps";
-import { ActionIdSchema } from "../catalog/actions";
+import { ACTIONS, ActionIdSchema, actionTakesParam } from "../catalog/actions";
 import { LogicIdSchema } from "../catalog/logic";
 import { IdSchema } from "../catalog/schema";
 import { HttpStatusSchema } from "../problem/schema";
@@ -102,8 +102,13 @@ export const updateStep = defineCommand(
   z.object({
     operation: IdSchema,
     stepId: IdSchema,
-    /** Switch a call to another action on the same target; links on outcomes the new action lacks are dropped. */
+    /**
+     * Switch a call to another action on the same target. Links on outcomes the
+     * new action lacks, and parameters it does not take, are dropped.
+     */
     action: ActionIdSchema.optional(),
+    /** Switch a logic step to other logic; links on outcomes it lacks are dropped. */
+    logic: LogicIdSchema.optional(),
     entity: z.string().min(1).optional(),
     ttlSec: z.number().int().positive().nullable().optional(),
     batchSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
@@ -114,10 +119,10 @@ export const updateStep = defineCommand(
     if (step.type === "call") {
       if (args.action !== undefined && args.action !== step.action) {
         step.action = args.action;
-        const outcomes = new Set(stepOutcomes(step));
-        for (const outcome of Object.keys(step.next)) {
-          if (!outcomes.has(outcome)) delete step.next[outcome];
-        }
+        dropUnknownLinks(step);
+        if (ACTIONS[args.action].effect === "allocate") delete step.entity;
+        if (!actionTakesParam(args.action, "ttlSec")) delete step.ttlSec;
+        if (!actionTakesParam(args.action, "batchSize")) delete step.batchSize;
       }
       if (args.entity !== undefined) step.entity = args.entity;
       if (args.ttlSec === null) delete step.ttlSec;
@@ -125,9 +130,21 @@ export const updateStep = defineCommand(
       if (args.batchSize === null) delete step.batchSize;
       else if (args.batchSize !== undefined) step.batchSize = args.batchSize;
     }
+    if (step.type === "logic" && args.logic !== undefined && args.logic !== step.logic) {
+      step.logic = args.logic;
+      dropUnknownLinks(step);
+    }
     if (step.type === "respond" && args.status !== undefined) step.status = args.status;
   },
 );
+
+function dropUnknownLinks(step: Draft<Step>): void {
+  if (!isBranchingStep(step)) return;
+  const outcomes = new Set(stepOutcomes(step));
+  for (const outcome of Object.keys(step.next)) {
+    if (!outcomes.has(outcome)) delete step.next[outcome];
+  }
+}
 
 export const linkOutcome = defineCommand(
   z.object({

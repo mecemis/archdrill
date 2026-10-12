@@ -85,7 +85,8 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 **Strategies (NFR-3):** `kgs`, `random-conditional`, `counter-range` (+ `obfuscateId` for non-enumerability), `hash-based`. The anti-pattern `check-then-insert` fails `no-check-then-insert` and `atomic-uniqueness`. See [03-evaluation.md](../design/03-evaluation.md#stage-5-strategy-recognition).
 
 **Subtle points the evaluator knows about**
-- KGS designs still need a conditional insert and a conflict path, because custom aliases share the namespace with pre-generated keys.
+- KGS and counter designs still need a conditional insert and a retry, because custom aliases share the namespace with generated keys. The simulation counts that collision at the share of the keyspace aliases hold.
+- Hash-based designs must salt their retry (`rehashWithSalt`). Hashing the same URL again gives the same code and collides every time.
 - A key generator is a single point of failure for generated codes even though custom aliases bypass it. Redundancy is judged per kind of request.
 - Random 7-character codes collide on about 4.5% of inserts at 5-year occupancy. One retry still fails about 0.2% of creates (below the 99.9% target); two retries or 8 characters meet it. 6 characters cannot hold 158 B links at all.
 - Counter ranges are collision-free but enumerable unless obfuscated.
@@ -345,7 +346,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
-**As built (M3).** The corpus in `packages/content/problems/url-shortener/corpus/` holds five golden designs, covering all four code strategies, and 30 mutants:
+**As built (M3).** The corpus in `packages/content/problems/url-shortener/corpus/` holds five golden designs, covering all four code strategies, and 32 mutants:
 
 | ID | Create path | Read path |
 |---|---|---|
@@ -353,7 +354,7 @@ Each golden design declares the scenario bands it is expected to achieve. CI enf
 | `dynamodb-redis-cache-aside` | random 8-character codes, one retry | Redis cache-aside → DynamoDB |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
-| `postgres-hash-based` | 8-character URL hashes, one salted retry | none (write path only) |
+| `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |
 
 ## Mutant expectations (excerpt)
 

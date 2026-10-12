@@ -9,23 +9,67 @@ export interface OutcomeState {
   negativeHitRatio(componentId: string, entity: string | undefined): number;
   /** Chance that a randomly drawn code for this entity is already taken (stored / keyspace, capped at 1). */
   occupancy(entity: string | undefined): number;
+  /** Share of the keyspace taken by custom aliases, which generated keys can still meet. */
+  aliasOccupancy(entity: string | undefined): number;
+}
+
+/** Share of requests that make a batched allocation call: one per batch. */
+export function batchShare(step: PathStep): number {
+  return step.kind === "call" && step.batchSize ? 1 / step.batchSize : 1;
+}
+
+/**
+ * Calls a path step makes per request on its path. A batched call that failed
+ * was certainly made; otherwise about one request in a batch makes it (exact
+ * when the target does not drop calls).
+ */
+export function callShare(step: PathStep): number {
+  return step.kind === "call" && step.outcome === "error" ? 1 : batchShare(step);
 }
 
 /** Where the code a conditional insert writes came from, judging by the steps before it. */
-type CodeOrigin = "custom" | "random" | "unique" | "unknown";
+type CodeOrigin = "custom" | "random" | "repeated-hash" | "unique" | "unknown";
+
+const isAllocation = (step: PathStep) =>
+  step.kind === "call" && (step.action === "ids.allocate" || step.action === "coord.leaseRange");
 
 function codeOrigin(prior: readonly PathStep[]): CodeOrigin {
   for (let i = prior.length - 1; i >= 0; i--) {
     const step = prior[i];
     if (!step) continue;
-    if (step.kind === "logic") {
-      if (step.logic === "hasCustomAlias" && step.outcome === "custom") return "custom";
-      if (step.logic === "generateRandomCode" || step.logic === "hashUrl") return "random";
-    } else if (step.action === "ids.allocate" || step.action === "coord.leaseRange") {
-      return "unique";
-    }
+    if (isAllocation(step)) return "unique";
+    if (step.kind !== "logic") continue;
+    if (step.logic === "hasCustomAlias" && step.outcome === "custom") return "custom";
+    if (step.logic === "generateRandomCode" || step.logic === "rehashWithSalt") return "random";
+    if (step.logic === "hashUrl") return hashCollidedBefore(prior, i) ? "repeated-hash" : "random";
   }
   return "unknown";
+}
+
+/**
+ * Whether the URL was already hashed earlier on the path and that code
+ * collided: hashing the same URL again without a salt gives the same code.
+ */
+function hashCollidedBefore(prior: readonly PathStep[], hashIndex: number): boolean {
+  let collided = false;
+  for (let i = hashIndex - 1; i >= 0; i--) {
+    const step = prior[i];
+    if (!step) continue;
+    if (
+      step.kind === "call" &&
+      step.action === "store.insertIfAbsent" &&
+      step.outcome === "conflict"
+    )
+      collided = true;
+    if (step.kind === "logic" && step.logic === "hashUrl") return collided;
+    if (
+      step.kind === "logic" &&
+      (step.logic === "generateRandomCode" || step.logic === "rehashWithSalt")
+    )
+      return false;
+    if (isAllocation(step)) return false;
+  }
+  return false;
 }
 
 function conflictProbability(
@@ -39,8 +83,12 @@ function conflictProbability(
       return cls.aliasTaken ? 1 : 0;
     case "random":
       return state.occupancy(entity);
+    case "repeated-hash":
+      return 1;
+    case "unique":
+      // Unique among generated keys, but a custom alias may already hold the code.
+      return state.aliasOccupancy(entity);
     default:
-      // Keys from a generator or a counter range are unique by construction.
       return 0;
   }
 }
@@ -57,7 +105,8 @@ export function outcomeProbability(
   prior: readonly PathStep[] = [],
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
-  const drop = state.dropRate(step.target);
+  // A batched call is only made once per batch, so only then can it be rejected.
+  const drop = state.dropRate(step.target) * batchShare(step);
   if (step.outcome === "error") return drop;
   const served = 1 - drop;
   switch (step.action) {
@@ -103,6 +152,7 @@ function logicProbability(logic: string, outcome: string, cls: RequestClass): nu
       return (outcome === "custom") === cls.customAlias ? 1 : 0;
     case "generateRandomCode":
     case "hashUrl":
+    case "rehashWithSalt":
     case "encodeBase62":
     case "obfuscateId":
       return outcome === "ok" ? 1 : 0;

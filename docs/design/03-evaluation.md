@@ -156,7 +156,7 @@ Recognition is an ordinary check, `recognize-strategy`, so it is scored, explain
 - If no strategy matches, the check gives 50% credit and asks for review. The outcome checks (atomic uniqueness, collision retries, success rate) still judge whether the unfamiliar approach works.
 - Hash-based codes are recognised by `hashUrl`. Telling a same-URL conflict from a different-URL conflict is not modelled yet; a salted retry is the expected handling.
 
-Path predicates gained two operators for write paths: `hasStepTimes` (a step occurs at least *n* times) and `hasSequence` (steps occur in order, not necessarily adjacent). "A generated code that collided was retried" is `hasSequence: [insertIfAbsent: conflict, a new code]`. Counting inserts is not enough, because a retry whose new allocation fails has only one insert.
+Path predicates gained `hasSequence` for write paths: steps occur in order, not necessarily adjacent. "A generated code that collided was retried" is `hasSequence: [insertIfAbsent: conflict, a new code, insertIfAbsent]`, or a conflict followed by a failed allocation (the retry was attempted, and its allocation failed). Counting inserts is not enough for that reason. A new code means drawing again, allocating again or rehashing with a salt: hashing the same URL again gives the same code, so it does not count. Step matchers can also require `batched` allocation calls; `batched: false` matches calls without a batch size.
 
 `no-path` takes an optional `applicableWhen` predicate, so checks about an approach the design does not use (batching an allocation call it never makes) are not applicable rather than passed. Signal counts leave such checks out.
 

@@ -35,8 +35,8 @@ Most system design practice tools reward placing familiar components (a cache, a
   - utilisation on the canvas and request rates on connections.
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Tests:**
-  - over 230 unit and integration tests;
-  - a golden corpus of five valid designs and thirty mutants that CI must catch;
+  - over 250 unit and integration tests;
+  - a golden corpus of five valid designs and thirty-two mutants that CI must catch;
   - Playwright tests that walk the core loop in a real browser.
 
 ![Load view at peak: utilisation on every component, request rates on connections, and the cost breakdown](docs/media/m2-load.png)

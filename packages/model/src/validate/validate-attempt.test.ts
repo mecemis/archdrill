@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attempt } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
+import { createLinkAttempt } from "../testing/write-path";
 import type { IssueCode } from "./issues";
 import { validateAttempt } from "./validate-attempt";
 
@@ -291,6 +292,14 @@ describe("validateAttempt", () => {
 
     const errors = validateAttempt(attempt, ctx).filter((i) => i.severity === "error");
     expect(errors).toEqual([]);
+  });
+
+  it("rejects an entity on id allocation", () => {
+    const raw = JSON.parse(JSON.stringify(createLinkAttempt("kgs")));
+    raw.flows.find((f: { operation: string }) => f.operation === "create-link").steps.gen.entity =
+      "Link";
+
+    expect(codes(raw)).toContain("step-unexpected-param");
   });
 
   it("rejects decisions that the problem does not define", () => {

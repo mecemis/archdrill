@@ -207,18 +207,25 @@ checks:
                 - hasSequence:
                     - { action: store.insertIfAbsent, outcome: conflict }
                     - { action: [ids.allocate, coord.leaseRange] }
+                    - { action: store.insertIfAbsent }
+                # The retry's allocation itself failed: retried, then answered with an error.
                 - hasSequence:
                     - { action: store.insertIfAbsent, outcome: conflict }
-                    - { logic: [generateRandomCode, hashUrl] }
+                    - { action: [ids.allocate, coord.leaseRange], outcome: error }
+                - hasSequence:
+                    - { action: store.insertIfAbsent, outcome: conflict }
+                    - { logic: [generateRandomCode, rehashWithSalt] }
+                    - { action: store.insertIfAbsent }
     why: >-
       With random codes collisions are a matter of time: at 5-year occupancy
       about 4.5% of 7-character codes are taken. Even pre-generated keys can
       meet a custom alias someone chose. A retry with a new code turns that
-      into a non-event.
+      into a non-event, but only with a new code: hashing the same URL again
+      gives the same code.
     fix: >-
-      After a conflict on a generated code, get a new code and insert again
-      (retries are written out as steps; the simulation shows how many you
-      need).
+      After a conflict on a generated code, get a new code (draw again,
+      allocate again, or rehash with a salt) and insert again. Retries are
+      written out as steps; the simulation shows how many you need.
 
   - id: non-enumerable
     use: no-path
@@ -280,7 +287,8 @@ checks:
           note: >-
             The same URL always gets the same code, which deduplicates links
             but ties different users' links together. Different URLs still
-            collide, so the insert stays conditional with a salted retry.
+            collide, so the insert stays conditional, and a retry must add a
+            salt: hashing the same URL again gives the same code.
         - id: random-conditional
           label: Random code with conditional insert
           where:

@@ -62,8 +62,11 @@ describe("write path simulation", () => {
     );
   });
 
-  it("never collides with keys from a generator", () => {
-    expect(statusShare(createLinkAttempt("kgs"), 503)).toBe(0);
+  it("lets generated keys meet only the codes custom aliases took", () => {
+    // 2% of stored links (0.02 of the 0.99 that are stored) are custom aliases.
+    const aliasOccupancy = OCCUPANCY_7 * (0.02 / 0.99);
+
+    expect(statusShare(createLinkAttempt("kgs"), 503)).toBeCloseTo(0.97 * aliasOccupancy, 12);
   });
 
   it("answers 409 exactly for taken aliases", () => {

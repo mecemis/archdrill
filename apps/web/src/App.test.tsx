@@ -200,6 +200,9 @@ describe("App", () => {
     );
     expect(length.getByText(/^Assumed: 7 characters/)).toBeDefined();
     expect(length.getByText("affects the simulation")).toBeDefined();
+    fireEvent.click(length.getByRole("radio", { name: /7 characters/ }));
+    expect(useAttemptStore.getState().attempt.decisions["code-length"]).toBe("7");
+    expect(length.queryByText(/^Assumed:/)).toBeNull();
     fireEvent.click(length.getByRole("radio", { name: /8 characters/ }));
 
     expect(useAttemptStore.getState().attempt.decisions["code-length"]).toBe("8");

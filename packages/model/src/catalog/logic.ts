@@ -40,6 +40,12 @@ export const LOGIC = {
     description:
       "Derive a code from a hash of the long URL. The same URL maps to the same code; different URLs can collide.",
   },
+  rehashWithSalt: {
+    label: "rehash with salt",
+    outcomes: ["ok"],
+    description:
+      "Hash the long URL again with a salt (for example an attempt counter) to get a different code after a collision. Hashing the same URL again without a salt gives the same code.",
+  },
   encodeBase62: {
     label: "encode base62",
     outcomes: ["ok"],

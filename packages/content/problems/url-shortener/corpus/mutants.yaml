@@ -296,3 +296,22 @@ mutants:
     expect:
       scenario: s1-create
       fails: [custom-aliases-supported]
+
+  - id: unsalted-rehash
+    base: postgres-hash-based
+    description: After a collision the same URL is hashed again without a salt, which gives the same code.
+    apply:
+      - updateStep: { operation: create-link, stepId: rehash, logic: hashUrl }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-retried]
+
+  - id: retry-without-insert
+    base: dynamodb-redis-cache-aside
+    description: A colliding code is replaced by a new one, but the request then fails without inserting it.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: generate-retry, outcome: ok, target: c503 }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-retried]
+

@@ -11,7 +11,7 @@ import {
   type Zipf,
 } from "@archdrill/model";
 import type { Analysis, OperationAnalysis } from "../analyze";
-import type { Path, PathStep } from "../paths/types";
+import type { Path } from "../paths/types";
 import { cacheHitRatio } from "./cache-model";
 import {
   type ComponentProfile,
@@ -21,7 +21,7 @@ import {
 } from "./capacity";
 import { type Moments, mixtureQuantile, type WeightedMoments } from "./math/gamma";
 import { queueWait } from "./math/queueing";
-import { type OutcomeState, outcomeProbability } from "./outcomes";
+import { callShare, type OutcomeState, outcomeProbability } from "./outcomes";
 import type {
   CacheMetrics,
   ComponentMetrics,
@@ -112,7 +112,8 @@ export function simulateEnvironment(
   const negativeHit = new Map<string, number>();
   const occupancyByEntity = occupancies(workload, ctx);
   const state: OutcomeState = {
-    occupancy: (entity) => occupancyByEntity.get(entity ?? "") ?? 0,
+    occupancy: (entity) => occupancyByEntity.get(entity ?? "")?.all ?? 0,
+    aliasOccupancy: (entity) => occupancyByEntity.get(entity ?? "")?.aliases ?? 0,
     dropRate: (id) => drop.get(id) ?? 0,
     hitRatio: (id, entity) => hit.get(cacheKey(id, entity)) ?? 0,
     negativeHitRatio: (id, entity) => negativeHit.get(cacheKey(id, entity)) ?? 0,
@@ -310,22 +311,42 @@ function pathProbability(path: Path, cls: RequestClass, state: OutcomeState): nu
   return probability;
 }
 
-/** Share of the keyspace already taken, per entity, from the dataset size and the code-length decision. */
-function occupancies(workload: Workload, ctx: SimulationContext): Map<string, number> {
-  const result = new Map<string, number>();
+interface Occupancy {
+  /** Share of the keyspace taken by stored codes. */
+  readonly all: number;
+  /** Share of the keyspace taken by custom aliases. */
+  readonly aliases: number;
+}
+
+/**
+ * Share of the keyspace already taken, per entity, from the dataset size and
+ * the code-length decision. Custom aliases are assumed to be as long as
+ * generated codes, an upper bound: shorter or longer aliases cannot collide.
+ */
+function occupancies(workload: Workload, ctx: SimulationContext): Map<string, Occupancy> {
+  const result = new Map<string, Occupancy>();
   for (const [entity, { alphabet, lengthDecision }] of Object.entries(workload.keyspace)) {
     const point = ctx.problem.decisionPoints.find((d) => d.id === lengthDecision);
     const length = Number(ctx.attempt.decisions[lengthDecision] ?? point?.default);
     const stored = workload.dataset[entity] ?? 0;
     if (!Number.isFinite(length) || length <= 0) continue;
-    result.set(entity, Math.min(1, stored / alphabet ** length));
+    const all = Math.min(1, stored / alphabet ** length);
+    result.set(entity, { all, aliases: all * customAliasShare(workload, entity) });
   }
   return result;
 }
 
-/** Allocation steps with a batch size call their target once per batch. */
-function callShare(step: PathStep): number {
-  return step.kind === "call" && step.batchSize ? 1 / step.batchSize : 1;
+/** Share of stored codes that are custom aliases, from the classes of operations that create them. */
+function customAliasShare(workload: Workload, entity: string): number {
+  let share = 0;
+  for (const op of Object.values(workload.operations)) {
+    if (op.entity !== entity || !op.classes.some((c) => c.customAlias)) continue;
+    const stored = op.classes.filter((c) => !c.invalidInput && !c.aliasTaken);
+    const total = stored.reduce((sum, c) => sum + c.share, 0);
+    const aliases = stored.filter((c) => c.customAlias).reduce((sum, c) => sum + c.share, 0);
+    if (total > 0) share = Math.max(share, aliases / total);
+  }
+  return share;
 }
 
 /** Share of requests that make it through every ingress hop. */
@@ -443,9 +464,17 @@ function addMoments(a: Moments, b: Moments): Moments {
   return { mean: a.mean + b.mean, variance: a.variance + b.variance };
 }
 
-/** Moments of a cost paid with probability `share` (mean and variance scaled; a documented approximation). */
-function scaleMoments(m: Moments, share: number): Moments {
-  return share === 1 ? m : { mean: m.mean * share, variance: m.variance * share };
+/**
+ * Moments of a cost paid with probability `share` and nothing otherwise (a
+ * Bernoulli mixture). The moments are exact; the Gamma fitted to them is
+ * unimodal, so percentiles of a rare, expensive call are approximate.
+ */
+function mixMoments(m: Moments, share: number): Moments {
+  if (share === 1) return m;
+  return {
+    mean: share * m.mean,
+    variance: share * m.variance + share * (1 - share) * m.mean ** 2,
+  };
 }
 
 const NETWORK_HOP: Moments = { mean: NETWORK_RTT_MS, variance: (0.2 * NETWORK_RTT_MS) ** 2 };
@@ -459,13 +488,12 @@ function pathLatency(
   let total = ingressLatency;
   for (const step of path.steps) {
     if (step.kind !== "call") continue;
-    // Batched allocation: only one request in a batch pays for the call.
-    const share = callShare(step);
-    total = addMoments(total, scaleMoments(NETWORK_HOP, share));
     // A rejected call fails fast: it costs the round trip, not the service time.
     const rejected = step.outcome === "error" && state.dropRate(step.target) > 0;
     const latency = components.get(step.target)?.latency;
-    if (latency && !rejected) total = addMoments(total, scaleMoments(latency, share));
+    const call = latency && !rejected ? addMoments(NETWORK_HOP, latency) : NETWORK_HOP;
+    // Batched allocation: only one request in a batch pays for the call.
+    total = addMoments(total, mixMoments(call, callShare(step)));
   }
   return total;
 }
