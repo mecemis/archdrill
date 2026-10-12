@@ -3,11 +3,13 @@ import { DesignCanvas } from "./canvas/DesignCanvas";
 import { Header } from "./panels/Header";
 import { ResultsDock } from "./panels/results/ResultsDock";
 import { LeftPanel, RightPanel } from "./panels/SidePanels";
+import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
 import { Toasts } from "./ui/Toasts";
 
 export function App() {
   useShortcuts();
+  useRegressionWatch();
   return (
     <ReactFlowProvider>
       <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_17rem] bg-zinc-50 text-zinc-900">

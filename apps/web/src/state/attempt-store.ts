@@ -28,6 +28,8 @@ export interface AttemptState {
   readonly attempt: Attempt;
   readonly past: readonly HistoryEntry[];
   readonly future: readonly HistoryEntry[];
+  /** Increases when the attempt is replaced wholesale, so comparisons with the previous one stop. */
+  readonly generation: number;
   /** Applies a command; on failure shows the reason and returns undefined. */
   dispatch: <N extends CommandName>(name: N, args: CommandArgs<N>) => CommandReturn<N> | undefined;
   /** Applies several commands as one undoable step; all or nothing. */
@@ -55,6 +57,7 @@ export function createAttemptStore(initial: Attempt) {
     attempt: initial,
     past: [],
     future: [],
+    generation: 0,
     dispatch(name, args) {
       try {
         const { attempt, patches, inversePatches, result } = applyCommand(
@@ -115,7 +118,7 @@ export function createAttemptStore(initial: Attempt) {
       });
     },
     replace(attempt) {
-      set({ attempt, past: [], future: [] });
+      set({ attempt, past: [], future: [], generation: get().generation + 1 });
     },
   }));
 }

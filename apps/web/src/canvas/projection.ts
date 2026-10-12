@@ -30,6 +30,12 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly utilization: number | null;
   /** Faults the selected environment injects into this component. */
   readonly faults: readonly string[];
+  /** Autoscaling ceiling, or null for a fixed number of replicas. */
+  readonly autoscaleMax: number | null;
+  /** Instances it runs in the selected environment, or null without a simulation. */
+  readonly running: number | null;
+  /** Utilisation of its hottest shard when a hot key makes it busier than the rest, else null. */
+  readonly hotShard: number | null;
 }
 
 export interface ConnectionEdgeData extends Record<string, unknown> {
@@ -103,9 +109,24 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         callable: callable.has(component.id),
         utilization: input.metrics?.components.get(component.id)?.utilization ?? null,
         faults: input.metrics?.components.get(component.id)?.faults ?? [],
+        autoscaleMax: component.autoscale?.max ?? null,
+        running: input.metrics?.components.get(component.id)?.instances ?? null,
+        hotShard: hotShardOf(input.metrics?.components.get(component.id)),
       },
     };
   });
+}
+
+/** Hot shards worth pointing out: noticeably busier than the tier as a whole. */
+const HOT_SHARD_MARGIN = 0.05;
+
+function hotShardOf(
+  metrics: { utilization: number; hottestShardUtilization: number } | undefined,
+): number | null {
+  if (!metrics) return null;
+  return metrics.hottestShardUtilization > metrics.utilization + HOT_SHARD_MARGIN
+    ? metrics.hottestShardUtilization
+    : null;
 }
 
 export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[] {

@@ -1,6 +1,12 @@
-import { AttemptSchema, applyCommand } from "@archdrill/model";
+import {
+  AttemptSchema,
+  applyCommand,
+  type CommandArgs,
+  type CommandName,
+  exportAttempt,
+} from "@archdrill/model";
 import { cacheAsideAttempt, createLinkAttempt, disableLinkAttempt } from "@archdrill/model/testing";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App";
@@ -40,6 +46,53 @@ function topologyOnly() {
       ],
     },
   });
+}
+
+/** The topology with a complete redirect flow, which scores 100 in S2. */
+function redirectDesign() {
+  let attempt = topologyOnly();
+  const run = <N extends CommandName>(name: N, args: CommandArgs<N>) => {
+    attempt = applyCommand(attempt, name, args).attempt;
+  };
+  const at = (stepId: string, outcome: string) => ({ to: "outcome" as const, stepId, outcome });
+  run("createFlow", { operation: "redirect", handler: "api" });
+  run("addStep", {
+    operation: "redirect",
+    id: "read",
+    step: { type: "call", target: "links", action: "store.read", entity: "Link" },
+    attach: { to: "root" },
+  });
+  run("addStep", {
+    operation: "redirect",
+    id: "expiry",
+    step: { type: "logic", logic: "checkExpiry" },
+    attach: at("read", "found"),
+  });
+  run("addStep", {
+    operation: "redirect",
+    id: "r302",
+    step: { type: "respond", status: 302 },
+    attach: at("expiry", "valid"),
+  });
+  run("addStep", {
+    operation: "redirect",
+    id: "r410",
+    step: { type: "respond", status: 410 },
+    attach: at("expiry", "expired"),
+  });
+  run("addStep", {
+    operation: "redirect",
+    id: "r404",
+    step: { type: "respond", status: 404 },
+    attach: at("read", "notFound"),
+  });
+  run("addStep", {
+    operation: "redirect",
+    id: "r503",
+    step: { type: "respond", status: 503 },
+    attach: at("read", "error"),
+  });
+  return attempt;
 }
 
 function renderApp() {
@@ -232,6 +285,69 @@ describe("App", () => {
     ).toBeDefined();
     expect(screen.getByText("Redis: hanging")).toBeDefined();
     expect(screen.getByRole("cell", { name: "Link API → Redis" })).toBeDefined();
+  });
+
+  it("warns when a change lowers another scenario's score", () => {
+    useAttemptStore.getState().replace(redirectDesign());
+    useUi.getState().setScenario("s1-create");
+    renderApp();
+
+    act(() => {
+      useAttemptStore.getState().dispatch("updateComponent", { id: "api", replicas: 1 });
+    });
+
+    const tab = screen.getByRole("button", { name: /S2 Redirect/ });
+    expect(within(tab).getByText(/^↓\d+/)).toBeDefined();
+    expect(screen.getByText(/^S2 Redirect \(read path\) dropped from \d+ to \d+/)).toBeDefined();
+    fireEvent.click(tab);
+    expect(within(tab).queryByText(/^↓\d+/)).toBeNull();
+  });
+
+  it("imports an exported design and refuses one for another problem", async () => {
+    renderApp();
+    const file = (text: string) => new File([text], "design.json", { type: "application/json" });
+    const input = screen.getByLabelText("Design file");
+
+    fireEvent.change(input, { target: { files: [file(exportAttempt(cacheAsideAttempt()))] } });
+    await screen.findByText("Loaded design.json.");
+    expect(useAttemptStore.getState().attempt.architecture.components).toHaveLength(5);
+
+    const other = { ...cacheAsideAttempt(), problemId: "chat" };
+    fireEvent.change(input, { target: { files: [file(JSON.stringify(other))] } });
+    expect(await screen.findByText("That design is for another problem (chat).")).toBeDefined();
+  });
+
+  it("compares the design with a pinned baseline", () => {
+    useAttemptStore.getState().replace(redirectDesign());
+    useUi.getState().setScenario("s2-redirect");
+    renderApp();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Compare" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pin as baseline" }));
+    act(() => {
+      useAttemptStore.getState().dispatch("updateComponent", { id: "api", replicas: 1 });
+    });
+
+    expect(screen.getByText("Link API: replicas 25 → 1")).toBeDefined();
+    const row = screen.getByRole("row", { name: /S2 Redirect/ });
+    expect(within(row).getByText(/^-\d+$/)).toBeDefined();
+  });
+
+  it("lets a service autoscale between its replicas and a maximum", () => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+    useUi.getState().select({ type: "component", id: "api" });
+    renderApp();
+    const api = () =>
+      useAttemptStore.getState().attempt.architecture.components.find((c) => c.id === "api");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Autoscale with load" }));
+    expect(api()?.autoscale).toEqual({ max: 12, targetUtilization: 0.7 });
+    const max = screen.getByRole("spinbutton", { name: "Maximum instances" });
+    fireEvent.change(max, { target: { value: "40" } });
+    fireEvent.blur(max);
+
+    expect(api()?.autoscale?.max).toBe(40);
+    expect(screen.getByText("Replicas (minimum) (3)")).toBeDefined();
   });
 
   it("records interview decisions and shows the approach the flow implements", () => {

@@ -217,3 +217,9 @@ hints:
   - "When the primary is gone, which requests need it and which do not?"
   - "When exactly does your create answer 201: before or after a replica has the link?"
   - "Set a timeout on every call to the store, keep a replica for reads, and record how you replicate under Decisions."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - What exactly can a failover lose, and what does semi-synchronous replication cost you per write?
+  - Creates fail for a few seconds during the failover. What does the client see, and how does it retry safely?
+  - One server crashes during the peak. Who notices first: the load balancer's health check, or your users?

@@ -3,9 +3,11 @@ import { useState } from "react";
 import { starterAttempt } from "../state/attempt-store";
 import { activePack } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
+import { describeRegression, useRegressions } from "../state/regressions";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { Button } from "../ui/primitives";
+import { ExchangeButtons } from "./ExchangeButtons";
 
 export function Header() {
   const { scenarios } = useEvaluation();
@@ -15,23 +17,26 @@ export function Header() {
   const canRedo = useAttemptStore((s) => s.future.length > 0);
   const { undo, redo, replace } = useAttemptStore.getState();
   const [confirmReset, setConfirmReset] = useState(false);
+  const regressions = useRegressions((s) => s.regressions);
 
   return (
     <header className="flex h-12 items-center gap-4 border-b border-zinc-200 bg-white px-4">
       <h1 className="text-sm font-semibold tracking-tight text-zinc-900">
         ArchDrill <span className="font-normal text-zinc-500">· {activePack.problem.title}</span>
       </h1>
-      <nav aria-label="Scenarios" className="flex gap-1">
+      <nav aria-label="Scenarios" className="flex min-w-0 gap-1 overflow-x-auto">
         {activePack.scenarios.map((scenario) => {
           const result = scenarios.find((r) => r.scenarioId === scenario.id);
           const passing = result?.status === "evaluated" && result.scorecard.band !== "not-passing";
+          const regression = regressions[scenario.id];
           return (
             <button
               key={scenario.id}
               type="button"
               onClick={() => setScenario(scenario.id)}
               aria-current={scenario.id === scenarioId ? "step" : undefined}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm ${
+              title={regression ? describeRegression(scenario.id, regression) : undefined}
+              className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-sm ${
                 scenario.id === scenarioId
                   ? "bg-zinc-900 text-white"
                   : "text-zinc-700 hover:bg-zinc-100"
@@ -43,11 +48,18 @@ export function Header() {
               />
               <span className="sr-only">{passing ? "(passing)" : "(not passing yet)"}</span>S
               {scenario.order} {scenario.title}
+              {regression && (
+                <span className="rounded bg-rose-100 px-1 text-xs font-semibold text-rose-700">
+                  ↓{regression.from - regression.to}
+                  <span className="sr-only"> points since your last change</span>
+                </span>
+              )}
             </button>
           );
         })}
       </nav>
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <ExchangeButtons />
         <Button
           variant="ghost"
           onClick={undo}

@@ -201,3 +201,9 @@ hints:
   - "A million requests a second, and one key gets 300,000 of them. Which component sees all 300,000, and how much can one shard of it take?"
   - What does the spike cost you on the 364 other days of the year?
   - "Absorb the hot key before the shared cache (a near cache with a short TTL), autoscale the services between an average-day minimum and a spike maximum, and check what the misses do to the store."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Why does adding cache shards not help with one hot key? Every lookup for that key lands on the same shard; you need copies (replicas, a near cache, the edge) instead.
+  - How short can the near cache's TTL be and still help? A key requested thousands of times a second per instance is still a hit at one second.
+  - How quickly can your autoscaling react, and what absorbs the spike until it does?

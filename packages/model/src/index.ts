@@ -1,3 +1,5 @@
+export * from "./attempt/diff";
+export * from "./attempt/exchange";
 export * from "./attempt/schema";
 export * from "./attempt/steps";
 export * from "./catalog/actions";

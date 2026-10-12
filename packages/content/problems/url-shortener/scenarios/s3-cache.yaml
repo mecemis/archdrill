@@ -249,3 +249,9 @@ hints:
   - Which part of the bill grows with read traffic, and which part grows with the number of data copies?
   - "Popularity is skewed: what share of requests would the most popular few percent of links serve if they were in memory?"
   - Add a cache-aside read (get, then read the store on a miss and set with a TTL), size the cache for peak lookups, and shrink the store tier to what the misses need.
+debrief: |
+  Questions an interviewer would ask next:
+
+  - How did you size the cache? Link popularity is heavily skewed, so a cache far smaller than the data set catches most reads; the hit ratio, not the data size, decides.
+  - What does the TTL trade? Longer entries mean more hits and staler data; the disable requirement in S4 sets the upper bound.
+  - What happens on a cold start, or after a cache flush? Every request misses at once.

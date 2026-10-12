@@ -1,6 +1,7 @@
 import { Lightbulb } from "lucide-react";
 import { useState } from "react";
 import { activePack } from "../state/content";
+import { useEvaluation } from "../state/evaluation";
 import { useUi } from "../state/ui-store";
 import { Prose } from "../ui/Prose";
 import { Button, SectionTitle } from "../ui/primitives";
@@ -23,6 +24,7 @@ export function BriefPanel() {
           <p className="font-semibold text-zinc-900">{scenario.title}</p>
           <Prose text={scenario.story} className="text-zinc-700" />
           <HintList key={scenario.id} hints={scenario.hints} />
+          {scenario.debrief && <Debrief scenarioId={scenario.id} text={scenario.debrief} />}
         </section>
       )}
       <section className="flex flex-col gap-2">
@@ -54,6 +56,18 @@ export function BriefPanel() {
           ))}
         </ul>
       </section>
+    </div>
+  );
+}
+
+/** Follow-up questions an interviewer would ask, once the scenario passes. */
+function Debrief({ scenarioId, text }: { readonly scenarioId: string; readonly text: string }) {
+  const result = useEvaluation().scenarios.find((s) => s.scenarioId === scenarioId);
+  if (result?.status !== "evaluated" || result.scorecard.band === "not-passing") return null;
+  return (
+    <div className="flex flex-col gap-1 rounded-md bg-sky-50 px-2.5 py-2 text-sky-950">
+      <p className="font-semibold">Debrief</p>
+      <Prose text={text} />
     </div>
   );
 }

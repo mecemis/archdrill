@@ -24,7 +24,7 @@ export interface Highlight {
   readonly steps: ReadonlySet<string>;
 }
 
-export type ResultsTab = "findings" | "paths" | "load" | "issues";
+export type ResultsTab = "findings" | "paths" | "load" | "issues" | "compare";
 
 interface UiState {
   readonly scenarioId: string;

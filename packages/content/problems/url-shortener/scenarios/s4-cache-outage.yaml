@@ -298,3 +298,9 @@ hints:
   - "Turn the cache off in your head: where does every redirect go, and who else uses that place?"
   - What does your service do while it waits for a cache that never answers? How long does it wait?
   - "Disable-link: update the store first, then delete the cache entry. Redirects must check the status wherever the link comes from."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Why update the store before deleting the cache entry? Deleting first lets a concurrent read cache the old link again, and it then lives until its TTL.
+  - The cache is down and every redirect becomes a database read. What do you protect, and what do you let fail? (Shed redirects, keep creation alive, or size for it.)
+  - How would you know the cache is the problem within a minute, not after the database falls over?
