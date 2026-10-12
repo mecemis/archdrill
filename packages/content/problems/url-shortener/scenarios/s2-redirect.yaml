@@ -8,6 +8,23 @@ story: |
   redirect. What does the visitor see when the code does not exist, when the
   link has expired, or when a dependency is having a bad day?"
 focusOperations: [redirect]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.985 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: unknown, share: 0.01, exists: false }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  environments:
+    - { id: avg, label: Average, rates: { redirect: 100000 } }
+    - { id: peak, label: "Peak (×3)", rates: { redirect: 300000 } }
 dimensions:
   correctness: 0.40
   latency: 0.25
@@ -131,6 +148,69 @@ checks:
     fix: >-
       Run at least two replicas of every component the redirect cannot survive
       losing, or use a managed, zone-redundant offering.
+
+  - id: redirect-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: peak, percentile: p99, ms: 50 }
+    why: >-
+      Latency targets are about the tail. A redirect that is usually fast but
+      occasionally waits in a queue behind a saturated component misses the
+      SLO for exactly the users who notice.
+    fix: >-
+      Keep every component on the path well below saturation at peak, and
+      keep slow dependencies off the hot path.
+
+  - id: serves-peak
+    use: success-rate-above
+    title: Almost every redirect succeeds at peak (99%)
+    dimension: availability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: peak, min: 0.99 }
+    why: >-
+      A design that drops a large share of redirects at peak is down for those
+      users, whatever its other qualities. This is the floor; the 99.99%
+      availability target is checked separately.
+    fix: >-
+      Find the component the finding lists as over capacity and give it enough
+      replicas, shards or a bigger size for peak traffic.
+
+  - id: no-overload-at-peak
+    use: success-rate-above
+    title: Redirects keep succeeding at peak (99.99%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: peak, min: 0.9999 }
+    why: >-
+      At three times the average load, any component without enough capacity
+      starts rejecting requests. 99.99% availability leaves no room for a
+      tier that sheds load every evening.
+    fix: >-
+      Size every component on the redirect path for peak traffic: replicas for
+      stateless services, read replicas or shards for stores, nodes for caches.
+
+  - id: headroom-at-peak
+    use: utilization-below
+    title: Every component keeps 20% headroom at peak
+    dimension: scalability
+    weight: 3
+    requirements: [NFR-1, NFR-2]
+    params: { environment: peak, max: 0.8 }
+    why: >-
+      Queueing delay grows sharply as utilisation approaches 100%, and a
+      component at 95% has nothing left for a traffic spike or a lost
+      instance. Interviewers expect capacity numbers with headroom.
+    fix: >-
+      Add replicas or shards (or a bigger size) to the components the finding
+      lists until they run below 80% at peak.
 
   - id: cache-warms
     use: populate-after-miss

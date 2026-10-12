@@ -57,13 +57,15 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       capabilities: ["volatile-kv", "ttl"],
       replicable: true,
       holdsData: false,
+      shardable: true,
+      writeScaling: "primaries",
       flavors: [
         {
           id: "redis",
           label: "Redis",
           description: "Redis.",
           capabilities: ["atomic-increment"],
-          sizes: { m: size(150000, 120000, 0.5, 0.32) },
+          sizes: { m: { ...size(150000, 120000, 0.5, 0.32), memoryGb: 26 } },
           defaultSize: "m",
         },
       ],
@@ -75,6 +77,8 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       capabilities: ["durable-store", "unique-constraint", "conditional-write", "transactions"],
       replicable: true,
       holdsData: true,
+      shardable: true,
+      writeScaling: "primaries",
       flavors: [
         {
           id: "postgres",

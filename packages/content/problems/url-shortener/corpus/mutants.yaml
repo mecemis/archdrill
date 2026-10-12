@@ -106,3 +106,64 @@ mutants:
       scenario: s2-redirect
       fails: [expired-not-redirected, expired-answer]
       band: not-passing
+
+  # Load, capacity and cost: caught by the simulation, not by the flow shape.
+  - id: api-underprovisioned
+    base: postgres-redis-cache-aside
+    description: Ten API instances for 300,000 redirects a second.
+    apply:
+      - updateComponent: { id: link-api, replicas: 10 }
+    expect:
+      scenario: s2-redirect
+      fails: [serves-peak, no-overload-at-peak, headroom-at-peak, redirect-p99]
+      band: not-passing
+
+  - id: tiny-cache
+    base: postgres-redis-cache-aside
+    description: One small Redis node in front of the store.
+    apply:
+      - updateComponent: { id: redis, size: s, shards: 1, replicas: 1 }
+    expect:
+      scenario: s3-cache
+      fails: [hit-ratio, serves-peak, no-overload-at-peak]
+      band: not-passing
+
+  - id: short-ttl
+    base: postgres-redis-cache-aside
+    description: Cache entries live for 30 seconds; the hit ratio drops and the misses overload the database.
+    apply:
+      - updateStep: { operation: redirect, stepId: populate, ttlSec: 30 }
+    expect:
+      scenario: s3-cache
+      fails: [hit-ratio, serves-peak]
+      band: not-passing
+
+  - id: cache-never-populated
+    base: postgres-redis-cache-aside
+    description: Misses never write back, so the cache stays empty.
+    apply:
+      - removeStep: { operation: redirect, stepId: populate, bypass: ok }
+    expect:
+      scenario: s3-cache
+      fails: [cache-warms, hit-ratio]
+      band: not-passing
+
+  - id: undersized-database
+    base: postgres-redis-cache-aside
+    description: A single database node takes every cache miss.
+    apply:
+      - updateComponent: { id: links-db, shards: 1, replicas: 1 }
+    expect:
+      scenario: s3-cache
+      fails: [serves-peak, no-overload-at-peak, headroom-at-peak]
+      band: not-passing
+
+  - id: replica-sprawl
+    base: postgres-redis-cache-aside
+    description: Eight replicas per shard, each storing a full copy of 79 TB.
+    apply:
+      - updateComponent: { id: links-db, replicas: 8 }
+    expect:
+      scenario: s3-cache
+      fails: [within-budget]
+      band: not-passing

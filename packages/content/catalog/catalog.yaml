@@ -3,7 +3,8 @@
 # Every number is an order-of-magnitude ballpark for comparing designs, not a
 # capacity plan or a price quote. Throughput is per replica (or per node) for
 # small requests; latency is server-side processing time; cost is an on-demand
-# list-price ballpark per instance-hour.
+# list-price ballpark per instance-hour (us-east-1, 2026). Storage is priced per
+# GB-month for every stored copy.
 version: 1
 kinds:
   - id: client
@@ -63,21 +64,21 @@ kinds:
         sizes:
           s:
             label: 2 vCPU
-            capacityPerSec: { read: 1500, write: 1000 }
+            capacityPerSec: { read: 4000, write: 2500 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.085
           m:
             label: 4 vCPU
-            capacityPerSec: { read: 3000, write: 2000 }
+            capacityPerSec: { read: 8000, write: 5000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.17
           l:
             label: 8 vCPU
-            capacityPerSec: { read: 6000, write: 4000 }
+            capacityPerSec: { read: 16000, write: 10000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.34
         defaultSize: m
-        notes: Throughput assumes a thin, I/O-bound handler that makes a few network calls per request.
+        notes: Throughput assumes a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime; heavier handlers do far less.
 
   - id: cache
     label: Cache
@@ -85,6 +86,8 @@ kinds:
     capabilities: [volatile-kv, ttl]
     replicable: true
     holdsData: false
+    shardable: true
+    writeScaling: primaries
     flavors:
       - id: redis
         label: Redis
@@ -110,7 +113,7 @@ kinds:
             latencyMs: { base: 0.5, cv: 0.6 }
             costPerHour: 0.87
         defaultSize: m
-        notes: Command execution is single-threaded per node; scale reads with replicas and capacity with shards.
+        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover.
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.
@@ -122,7 +125,7 @@ kinds:
             latencyMs: { base: 0.5, cv: 0.6 }
             costPerHour: 0.44
         defaultSize: m
-        notes: Nodes are independent; losing one loses its share of keys.
+        notes: Nodes are independent; use shards for capacity. Memcached has no replication, so replicas only model extra nodes holding the same keys.
 
   - id: relational-db
     label: Relational database
@@ -130,10 +133,13 @@ kinds:
     capabilities: [durable-store, unique-constraint, conditional-write, transactions, secondary-index, range-scan]
     replicable: true
     holdsData: true
+    shardable: true
+    writeScaling: primaries
     flavors:
       - id: postgres
         label: PostgreSQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
+        storagePricePerGbMonth: 0.115
         sizes:
           s:
             label: 2 vCPU
@@ -151,10 +157,11 @@ kinds:
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 1.4
         defaultSize: m
-        notes: Primary-key lookups and single-row inserts on a well-indexed table.
+        notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
       - id: mysql
         label: MySQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
+        storagePricePerGbMonth: 0.115
         sizes:
           m:
             label: 8 vCPU
@@ -175,11 +182,13 @@ kinds:
         description: Managed key-value and document database, replicated across zones.
         managedRedundancy: true
         capabilities: [atomic-increment]
+        storagePricePerGbMonth: 0.25
+        requestCost: { readPerMillion: 0.125, writePerMillion: 0.625 }
         sizes:
           on-demand:
             label: on-demand
-            capacityPerSec: { read: 40000, write: 40000 }
+            capacityPerSec: { read: 1000000, write: 1000000 }
             latencyMs: { base: 4, cv: 0.5 }
             costPerHour: 0
         defaultSize: on-demand
-        notes: Capacity reflects the default per-table on-demand quota (adjustable). Billed per request; request costs arrive with the cost model.
+        notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). Per-partition limits matter for hot keys and are modelled with peak-traffic scenarios.

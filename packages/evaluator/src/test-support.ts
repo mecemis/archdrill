@@ -13,7 +13,7 @@ import type { CheckContext, CheckOutcome } from "./checks/types";
 
 export function contextFor(attempt: Attempt): CheckContext {
   const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
-  return { attempt, problem: testProblem, catalog: testCatalogIndex, analysis };
+  return { attempt, problem: testProblem, catalog: testCatalogIndex, analysis, metrics: new Map() };
 }
 
 export function runCheck(id: string, params: unknown, attempt: Attempt): CheckOutcome {

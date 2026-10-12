@@ -35,6 +35,15 @@ export const FlavorSchema = z
     managedRedundancy: z.boolean().default(false),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
+    /** Durable storage price per GB-month, in USD, charged per stored copy. */
+    storagePricePerGbMonth: z.number().nonnegative().optional(),
+    /** Pay-per-request pricing (e.g. on-demand key-value stores), in USD. */
+    requestCost: z
+      .object({
+        readPerMillion: z.number().nonnegative(),
+        writePerMillion: z.number().nonnegative(),
+      })
+      .optional(),
     notes: z.string().optional(),
   })
   .refine((f) => f.defaultSize === undefined || f.defaultSize in f.sizes, {
@@ -56,6 +65,13 @@ export const KindSchema = z.object({
   replicable: z.boolean(),
   /** Whether instances can be bound to problem entities (durable stores). */
   holdsData: z.boolean(),
+  /** Whether data can be split across shards (each shard holds part of the keys). */
+  shardable: z.boolean().default(false),
+  /**
+   * Who takes writes: every replica (stateless services) or only each shard's
+   * primary (replicated stores, where replicas add read capacity only).
+   */
+  writeScaling: z.enum(["all-replicas", "primaries"]).default("all-replicas"),
   flavors: z.array(FlavorSchema).min(1),
 });
 export type Kind = z.infer<typeof KindSchema>;

@@ -1,9 +1,11 @@
 id: postgres-redis-cache-aside
 description: >-
-  ALB → stateless Link API (3 replicas) → Redis cache-aside with negative
-  caching → PostgreSQL with a replica. Every outcome is handled.
+  ALB → stateless Link API (25 × 8 vCPU) → Redis cache-aside with negative
+  caching (3 shards × 2 replicas) → PostgreSQL (2 shards × 2 replicas).
+  Sized for 300,000 redirects per second; every outcome is handled.
 expect:
   s2-redirect: { minScore: 90 }
+  s3-cache: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -12,13 +14,14 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
-      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, replicas: 2 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
       - id: links-db
         kind: relational-db
         flavor: postgres
         label: Links DB
         size: m
+        shards: 2
         replicas: 2
         data: [{ entity: Link }]
     connections:

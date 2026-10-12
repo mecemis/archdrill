@@ -1,6 +1,6 @@
 import type { Draft } from "immer";
 import { z } from "zod";
-import { type Attempt, PositionSchema } from "../attempt/schema";
+import { type Attempt, MAX_REPLICAS, MAX_SHARDS, PositionSchema } from "../attempt/schema";
 import { IdSchema } from "../catalog/schema";
 import { CommandError, defineCommand, nextNumberedId, requireComponentIndex } from "./define";
 import { detachSteps } from "./flows";
@@ -26,6 +26,7 @@ export const addComponent = defineCommand(
       label: args.label,
       ...(args.size === undefined ? {} : { size: args.size }),
       replicas: args.replicas ?? 1,
+      shards: 1,
       data: [],
     });
     draft.layout[id] = { ...args.position };
@@ -55,7 +56,8 @@ export const updateComponent = defineCommand(
     label: z.string().min(1).optional(),
     flavor: IdSchema.optional(),
     size: IdSchema.nullable().optional(),
-    replicas: z.number().int().min(1).optional(),
+    replicas: z.number().int().min(1).max(MAX_REPLICAS).optional(),
+    shards: z.number().int().min(1).max(MAX_SHARDS).optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -65,6 +67,7 @@ export const updateComponent = defineCommand(
     if (args.size === null) delete component.size;
     else if (args.size !== undefined) component.size = args.size;
     if (args.replicas !== undefined) component.replicas = args.replicas;
+    if (args.shards !== undefined) component.shards = args.shards;
   },
 );
 

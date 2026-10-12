@@ -8,5 +8,6 @@ export * from "./catalog/schema";
 export * from "./commands/index";
 export * from "./graph/ingress";
 export * from "./problem/schema";
+export * from "./problem/workload";
 export * from "./validate/issues";
 export * from "./validate/validate-attempt";

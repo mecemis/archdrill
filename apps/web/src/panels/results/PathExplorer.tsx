@@ -1,8 +1,9 @@
 import type { Analysis, Path, PathStep } from "@archdrill/engine";
 import { ACTIONS, LOGIC } from "@archdrill/model";
-import { highlightFromPath } from "../../state/evaluation";
+import { highlightFromPath, useScenarioLoad } from "../../state/evaluation";
 import { useAttemptStore } from "../../state/store";
 import { useUi } from "../../state/ui-store";
+import { milliseconds, percent } from "../../ui/format";
 import { OutcomeChip, StatusBadge } from "../../ui/outcome";
 import { componentLabel } from "../flow/step-label";
 
@@ -55,6 +56,9 @@ function PathRow({
   const pinned = useUi((s) => s.pinned?.key === path.id);
   const { setHover, togglePin } = useUi.getState();
   const status = path.terminal.kind === "respond" ? path.terminal.status : null;
+  const load = useScenarioLoad()
+    .metrics?.operations.get(path.operation)
+    ?.paths.find((p) => p.pathId === path.id);
   return (
     <li>
       <button
@@ -80,6 +84,15 @@ function PathRow({
           </span>
         ))}
         <StatusBadge status={status} />
+        {load && (
+          <span
+            className="ml-auto text-xs text-zinc-600 tabular-nums"
+            title="Share of requests and p99 in the selected environment"
+          >
+            {percent(load.probability, load.probability < 0.01 ? 2 : 1)} · p99{" "}
+            {milliseconds(load.latency.p99)}
+          </span>
+        )}
       </button>
     </li>
   );

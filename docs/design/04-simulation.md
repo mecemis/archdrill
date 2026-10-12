@@ -6,7 +6,7 @@ There are two engines:
 
 | Engine | Phase | Use | Speed |
 |---|---|---|---|
-| **Analytic** (steady state) | v0.1 | Every scenario, every edit | < 50 ms typical |
+| **Analytic** (steady state) | v0.1 | Every scenario, every edit | ~1–5 ms per environment (measured) |
 | **Discrete-event (DES)** | v0.2 | Timeline scenarios: cold-cache stampede, retry storms, autoscaling lag, failover timelines | < 2 s in a Web Worker |
 
 Both engines are deterministic. The analytic engine is closed-form plus a fixed-point iteration. The DES uses a seeded PRNG, and every scenario carries a seed.
@@ -23,18 +23,30 @@ Both engines are deterministic. The analytic engine is closed-form plus a fixed-
 - `v(n, p)`: number of times component `n` is visited on path `p`, including ingress hops.
 - `a(n, p)`: expected attempts per visit, after retries.
 
-### 1. Outcome probabilities
+### 1. Request classes and outcome probabilities
 
 Each outcome probability comes from the scenario, never from the candidate.
 
+The workload splits each operation's traffic into **request classes**, each with a share and a set of facts. For redirect these are:
+
+| Class | Share | Facts |
+|---|---|---|
+| `live` | 98.5% | the code exists and is active |
+| `expired` | 0.5% | the code exists but has expired |
+| `unknown` | 1% | the code does not exist |
+
+Path probabilities are computed per class and then mixed by share: `π(p) = Σ_c share_c · Π_steps P(outcome | c)`. Working per class keeps outcomes correlated the way they are in reality. An unknown code always misses the cache unless it is negatively cached, and it is never found in the store. Treating outcomes as independent would get both wrong.
+
 | Outcome | Source |
 |---|---|
-| `cache.get = hit` | cache model (below), from key popularity, capacity, TTL, and shard state |
-| `store.read = found` | `1 − notFoundShare` (workload) |
-| `checkExpiry = expired` | `expiredShare` (workload) |
-| `insertIfAbsent = conflict` | for random codes: occupancy `N / K` at the scenario horizon (`N` links, `K` keyspace); custom aliases: `aliasConflictShare` |
-| `validateUrl = invalid` | `invalidShare` (workload) |
-| `*.error` | fault state of the target, plus overload drops, plus the timeout fraction (sections 5–6) |
+| `cache.get = hit` | cache model (below), for classes whose key exists |
+| `cache.get = negativeHit` | negative-entry cache model, for classes whose key does not exist; only when negative caching is live |
+| `store.read = found` / `notFound` | the class's `exists` fact |
+| `checkExpiry = expired` | the class's `expired` fact |
+| `checkStatus = disabled` | the class's `disabled` fact |
+| `validateUrl = invalid` | the class's `invalidInput` fact |
+| `insertIfAbsent = conflict` | for random codes: occupancy `N / K` at the scenario horizon (`N` links, `K` keyspace); custom aliases: `aliasConflictShare` (arrives with the write path) |
+| `*.error` | fault state of the target (M4), plus overload drops, plus the timeout fraction (M4) |
 
 ### 2. Load propagation
 
@@ -66,7 +78,7 @@ hit_k ≈ min(1 − e^{−λ_k t_C}, λ_k T / (1 + λ_k T))
 
 The first term is the capacity limit (Che); the second is the TTL limit. Taking the minimum is a bound-based approximation, and is documented as such. If the TTL is refreshed on reads, the TTL acts as a reset timer and the second term becomes `1 − e^{−λ_k T}`. The aggregate hit ratio is `Σ_k q_k hit_k`. This is where design decisions become visible: halving memory, or a 60-second TTL for takedown compliance, changes the hit ratio by an amount the candidate can see.
 
-**Negative caching** applies the same model to not-found keys with their own TTL.
+**Negative caching** applies the same model to not-found keys with their own TTL. Positive and negative entries compete for the same memory, which is split between them in proportion to their lookup rates. This is a simple, documented approximation.
 
 **Near cache (two-tier).** A small in-process cache with its own capacity per service replica and its own TTL sits in front. Its misses feed the shared cache.
 
@@ -80,27 +92,33 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
 
 ### 4. Capacity, utilisation, and queueing latency
 
-- **Capacity.** A component with `c` replicas (or shards × replicas) and per-replica capacity `μ` (by operation class) has utilisation `ρ = L / (c · μ)`. For autoscaling services, `c` is the smallest count in `[min, max]` that keeps `ρ ≤ targetUtilization`. In the analytic engine, autoscaling is instantaneous; the lag is a DES topic.
+- **Capacity.** Reads are served by every instance (`shards × replicas`). Writes are served by every instance for stateless services, but only by each shard's primary for replicated stores (`writeScaling: primaries`). Utilisation is `ρ = reads / readCapacity + writes / writeCapacity`. Managed, zone-redundant offerings (a managed load balancer, DynamoDB) count as one unit with the catalog's capacity. For autoscaling services (later), `c` is the smallest count in `[min, max]` that keeps `ρ ≤ targetUtilization`; the lag is a DES topic.
 - **Mean service time.** `S` is the catalog base latency for the size preset.
-- **Waiting time.** For `ρ < 1`, Sakasegawa's approximation for M/M/c gives
+- **Concurrency.** By Little's law, a component that serves `capacity` requests per second with service time `S` works on `c = capacity × S` requests at once. That `c` is the server count used by the queueing model.
+- **Waiting time.** For `ρ < 1`, M/M/c waiting is computed **exactly** (Erlang C) through the numerically stable Erlang B recursion `B(k) = a·B(k−1) / (k + a·B(k−1))`, with `C = c·B / (c − a(1 − B))`. Beyond 5,000 servers the O(c) cost is not worth it, and Sakasegawa's approximation is used instead:
 
   ```
   W_q ≈ ρ^(√(2(c+1)) − 1) / (c · (1 − ρ)) · S
   ```
 
-  Utilisation is capped at 0.98 inside the formula. Overload is handled separately (section 6). Unit tests compare the approximation against exact Erlang-C results.
-- **Node latency** is modelled as a shifted distribution: fixed part `S`, plus a variable part with mean `W_q + cv·S` and variance derived from the catalog coefficient of variation.
-- **Network hops.** Each connection adds hop latency based on placement: same zone ~0.3 ms, cross-zone ~1 ms, cross-region from a region matrix.
+  It was measured to stay within 4% of the service time of the exact value across c = 2…100 and ρ = 0.5…0.95. Its *relative* error is large only where waits are negligible. Utilisation is capped at 0.98 inside the formula.
+- **Overload wait.** Requests that an overloaded component (`ρ > 1`) still serves have waited in a queue that keeps growing until callers give up. Until timeouts arrive (M4), this is a fixed, documented wait of **1 s**. Without it, overloaded designs would look fast, because the excess is rejected rather than queued. Two limits follow:
+  - Between `ρ = 0.98` and `1.0` the queueing wait stays at its capped value, and it jumps to the overload wait above 1.0.
+  - Headroom checks (`utilization-below`, usually at 0.8) keep scenarios away from that region.
+- **Node latency.** Moments are `mean = S + W_q` and `variance = (cv·S)² + W_q²`.
+- **Network hops.** Each connection adds a round trip of 0.5 ms within a zone. Zone and region placement arrive with the failure scenarios.
 
 ### 5. Path latency and percentiles
 
-- **Per path.** Path latency is the sum of its hop and node latencies. Means and variances add, and the path is moment-matched to a **shifted Gamma** distribution.
-- **Per operation.** Operation latency is the **mixture** over paths weighted by `π(p)`. p50, p95, and p99 are found by bisection on the mixture CDF.
+- **Per path.** Path latency is the sum of its hop and node latencies. Means and variances add, and the path is moment-matched to a **Gamma** distribution. A rejected call fails fast: it costs the round trip, not the service time.
+- **Per operation.** Operation latency is the **mixture** over the paths of *successful* requests, weighted by `π(p)`. p50, p95, and p99 are found by bisection on the mixture CDF. Failed requests are reported by the success rate instead, because fast failures would otherwise pull the tail down. Latency checks also fail outright when fewer than 99% of requests succeed.
 - **Mixture, not maximum.** A cache hit and a cache miss are different distributions, and the p99 is often decided by the miss path. Taking the longest path instead would hide this.
 
 ### 6. Overload, timeouts, retries: the fixed point
 
-Loads depend on error rates (retries add attempts, fallbacks shift load). Error rates depend on loads (overload, timeouts). The engine iterates:
+Loads depend on error rates (retries add attempts, fallbacks shift load). Error rates depend on loads (overload, timeouts). Hit ratios depend on lookup rates and feed back into loads.
+
+In v0.1 (M2), steps 1–3 and the cache update run with damping 0.5 until the largest change is below 1e−7, with at most 80 iterations. Timeouts and retries (steps 5–7) arrive with M4. The planned full loop is:
 
 ```
 repeat until converged (Δ < 1e−4) or 100 iterations:
@@ -147,9 +165,9 @@ Success statuses are declared per operation: `302` and `410`/`404` count as *cor
 
 Monthly cost has three parts:
 
-- **instances**: `Σ replicas × size.costPerHour × 730`;
-- **storage**: GB-month for durable stores, from entity size × retention × the replication factor;
-- **requests and egress**: for request-priced flavors (on-demand key-value DB, CDN), from loads.
+- **instances**: `Σ shards × replicas × size.costPerHour × 730`;
+- **storage**: GB-month for durable stores, `(stored entities × entity bytes) × copies × price`. The stored-entity counts come from the workload's `dataset`. Every replica of a shard holds a full copy, so read replicas are expensive at this data size. For URL Shortener, one copy of 158 B links is ~79 TB, so read replicas cannot be the main way to absorb 300,000 reads per second.
+- **requests and egress**: for request-priced flavors (on-demand key-value DB, CDN later), from loads × seconds per month × price per million. This assumes the environment's traffic is sustained for the whole month. Budgets are therefore checked against the average environment, and peak-environment costs are a ceiling.
 
 Prices are order-of-magnitude list prices with a stated date and source. They are used for **relative** comparison and budget checks with ±25% tolerance, never as quotes.
 
@@ -191,7 +209,7 @@ The analytic and DES engines must agree in steady state. A CI test runs both on 
 
 | Test | What it proves |
 |---|---|
-| M/M/1 and M/M/c against closed-form or Erlang-C values | The queueing approximations are within a stated error band |
+| M/M/1 and M/M/c against closed-form or published Erlang-C values | The queueing model is exact where it is used, and the approximation's error band is stated |
 | Che approximation against the DES with a real LRU | The cache model is calibrated |
 | Property tests | Adding capacity never increases latency or error rate. Adding a handled fallback never lowers availability. Removing jitter or bounds never improves stability. |
 | Determinism tests | Identical inputs give byte-identical metrics |

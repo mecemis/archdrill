@@ -1,0 +1,82 @@
+id: mysql-memcached-cache-aside
+description: >-
+  NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (3 nodes, no replication)
+  → MySQL (2 shards × 2 replicas). A cache node that fails only costs its
+  share of hits, because cache errors fall through to the database. A day-long
+  TTL keeps the hot set cached; expiry is checked on every hit.
+expect:
+  s2-redirect: { minScore: 90 }
+  s3-cache: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: url-shortener
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: visitors, kind: client, flavor: browser, label: Visitors }
+      - { id: proxy, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 8 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
+      - { id: memcached, kind: cache, flavor: memcached, label: Memcached, size: m, shards: 3 }
+      - id: links-db
+        kind: relational-db
+        flavor: mysql
+        label: Links DB
+        size: m
+        shards: 2
+        replicas: 2
+        data: [{ entity: Link }]
+    connections:
+      - { id: visitors--proxy, from: visitors, to: proxy }
+      - { id: proxy--link-api, from: proxy, to: link-api }
+      - { id: link-api--memcached, from: link-api, to: memcached }
+      - { id: link-api--links-db, from: link-api, to: links-db }
+  flows:
+    - operation: redirect
+      handler: link-api
+      root: get
+      steps:
+        get:
+          type: call
+          target: memcached
+          action: cache.get
+          entity: Link
+          next: { hit: expiry-hit, negativeHit: r404, miss: read, error: read }
+        expiry-hit:
+          type: logic
+          logic: checkExpiry
+          next: { valid: r302, expired: r410 }
+        read:
+          type: call
+          target: links-db
+          action: store.read
+          entity: Link
+          next: { found: expiry-db, notFound: negative, error: r503 }
+        expiry-db:
+          type: logic
+          logic: checkExpiry
+          next: { valid: populate, expired: r410 }
+        populate:
+          type: call
+          target: memcached
+          action: cache.set
+          entity: Link
+          ttlSec: 86400
+          next: { ok: r302, error: r302 }
+        negative:
+          type: call
+          target: memcached
+          action: cache.setNegative
+          entity: Link
+          ttlSec: 300
+          next: { ok: r404, error: r404 }
+        r302: { type: respond, status: 302 }
+        r404: { type: respond, status: 404 }
+        r410: { type: respond, status: 410 }
+        r503: { type: respond, status: 503 }
+  decisions: {}
+  layout:
+    visitors: { x: 0, y: 120 }
+    proxy: { x: 220, y: 120 }
+    link-api: { x: 440, y: 120 }
+    memcached: { x: 680, y: 20 }
+    links-db: { x: 680, y: 220 }

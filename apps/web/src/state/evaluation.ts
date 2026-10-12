@@ -1,18 +1,24 @@
-import type { Analysis, OperationAnalysis } from "@archdrill/engine";
+import type { Analysis, EnvironmentMetrics, OperationAnalysis } from "@archdrill/engine";
 import { type AttemptEvaluation, type Evidence, evaluateAttempt } from "@archdrill/evaluator";
 import type { Attempt } from "@archdrill/model";
 import { activePack, catalogIndex } from "./content";
 import { useAttemptStore } from "./store";
-import type { Highlight } from "./ui-store";
+import { type Highlight, useUi } from "./ui-store";
 
 let cached: { readonly attempt: Attempt; readonly evaluation: AttemptEvaluation } | undefined;
 
+/** Evaluation never reads the layout, so moving nodes must not trigger a re-run. */
+function sameEvaluationInputs(a: Attempt, b: Attempt): boolean {
+  return a.architecture === b.architecture && a.flows === b.flows && a.decisions === b.decisions;
+}
+
 /**
- * Evaluates every scenario once per attempt version. Attempts are immutable,
- * so identity is a safe cache key and every component sees the same result.
+ * Evaluates every scenario once per version of the evaluated parts of the
+ * attempt. Attempts are immutable with structural sharing, so reference
+ * equality is a safe cache key and every component sees the same result.
  */
 export function evaluate(attempt: Attempt): AttemptEvaluation {
-  if (cached?.attempt !== attempt) {
+  if (!cached || !sameEvaluationInputs(cached.attempt, attempt)) {
     cached = {
       attempt,
       evaluation: evaluateAttempt(attempt, { ...activePack, catalog: catalogIndex }),
@@ -54,4 +60,29 @@ export function highlightFromPath(op: OperationAnalysis, pathId: string): Highli
     connections: new Set(path?.connections ?? []),
     steps: new Set(path?.steps.map((s) => s.stepId) ?? []),
   };
+}
+
+export interface ScenarioLoad {
+  /** Environments the active scenario simulates, lightest first. */
+  readonly environments: readonly { readonly id: string; readonly label: string }[];
+  readonly environmentId: string | null;
+  /** Metrics of the selected environment, or undefined when the scenario has no workload or is not evaluated. */
+  readonly metrics: EnvironmentMetrics | undefined;
+}
+
+/** Simulated load of the selected environment of the active scenario. */
+export function useScenarioLoad(): ScenarioLoad {
+  const { scenarios } = useEvaluation();
+  const scenarioId = useUi((s) => s.scenarioId);
+  const selected = useUi((s) => s.environmentId);
+  const workload = activePack.scenarios.find((s) => s.id === scenarioId)?.workload;
+  const environments = workload?.environments.map((e) => ({ id: e.id, label: e.label })) ?? [];
+  const environmentId =
+    selected && environments.some((e) => e.id === selected)
+      ? selected
+      : (environments.at(-1)?.id ?? null);
+  const result = scenarios.find((s) => s.scenarioId === scenarioId);
+  const metrics =
+    result?.status === "evaluated" && environmentId ? result.metrics.get(environmentId) : undefined;
+  return { environments, environmentId, metrics };
 }

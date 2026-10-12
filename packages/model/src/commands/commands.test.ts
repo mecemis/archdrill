@@ -28,6 +28,7 @@ describe("commands", () => {
       flavor: "redis",
       label: "Redis",
       replicas: 1,
+      shards: 1,
       data: [],
     });
   });
@@ -229,6 +230,15 @@ describe("commands", () => {
   it("validates command arguments", () => {
     expect(() =>
       applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 0 }),
+    ).toThrow();
+  });
+
+  it("keeps counts within the calibrated bounds", () => {
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 5000 }),
+    ).toThrow();
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "db", shards: 5000 }),
     ).toThrow();
   });
 

@@ -125,6 +125,9 @@ importers:
         specifier: workspace:*
         version: link:../model
     devDependencies:
+      fast-check:
+        specifier: ~4.10.2
+        version: 4.10.2
       typescript:
         specifier: ~6.0.3
         version: 6.0.3

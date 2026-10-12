@@ -65,6 +65,19 @@ describe("projection", () => {
     expect(callable).toEqual(["redis", "db"]);
   });
 
+  it("carries simulated utilisation to nodes and rates to connections", () => {
+    const metrics = {
+      components: new Map([["db", { utilization: 0.42 }]]),
+      connections: new Map([["api--db", 1234]]),
+    } as unknown as ProjectionInput["metrics"];
+    const input = inputFor(undefined, { metrics });
+
+    expect(projectNodes(input).find((n) => n.id === "db")?.data.utilization).toBe(0.42);
+    expect(projectNodes(input).find((n) => n.id === "redis")?.data.utilization).toBeNull();
+    expect(projectEdges(input).find((e) => e.id === "api--db")?.data?.rate).toBe(1234);
+    expect(projectEdges(inputFor()).find((e) => e.id === "api--db")?.data?.rate).toBeNull();
+  });
+
   it("flags components with validation errors", () => {
     const attempt = applyCommand(cacheAsideAttempt(), "updateComponent", {
       id: "lb",

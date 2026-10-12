@@ -4,6 +4,7 @@ import { useUi } from "../../state/ui-store";
 import { Tabs } from "../../ui/primitives";
 import { Findings } from "./Findings";
 import { IssuesList } from "./IssuesList";
+import { LoadPanel } from "./LoadPanel";
 import { PathExplorer } from "./PathExplorer";
 import { ScoreSummary } from "./ScoreSummary";
 
@@ -40,6 +41,7 @@ export function ResultsDock() {
             options={[
               { id: "findings", label: "Findings", count: openCount },
               { id: "paths", label: "Paths", count: pathCount },
+              { id: "load", label: "Load" },
               { id: "issues", label: "Issues", count: analysis.issues.length },
             ]}
           />
@@ -56,6 +58,7 @@ export function ResultsDock() {
           {tab === "paths" && (
             <PathExplorer analysis={analysis} operations={scenario?.focusOperations ?? []} />
           )}
+          {tab === "load" && <LoadPanel />}
           {tab === "issues" && <IssuesList issues={analysis.issues} />}
         </div>
       </div>

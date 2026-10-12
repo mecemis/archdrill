@@ -11,7 +11,7 @@ import {
 } from "@xyflow/react";
 import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { catalogIndex } from "../state/content";
-import { useEvaluation } from "../state/evaluation";
+import { useEvaluation, useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
@@ -60,6 +60,7 @@ function CanvasInner() {
   const hover = useUi((s) => s.hover);
   const pinned = useUi((s) => s.pinned);
   const { screenToFlowPosition } = useReactFlow();
+  const { metrics } = useScenarioLoad();
 
   const operation = analysis.operations.get(operationId);
   const highlight = hover ?? pinned?.highlight ?? null;
@@ -72,8 +73,9 @@ function CanvasInner() {
       highlight,
       selection,
       slotArmed,
+      metrics,
     }),
-    [attempt, operation, analysis.issues, highlight, selection, slotArmed],
+    [attempt, operation, analysis.issues, highlight, selection, slotArmed, metrics],
   );
   const projectedNodes = useMemo(() => projectNodes(input), [input]);
   const edges = useMemo(() => projectEdges(input), [input]);

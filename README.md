@@ -4,7 +4,7 @@ Scenario-based system design practice with deterministic simulation and evaluati
 
 You design **one architecture** for a problem, then drive it through **scenarios**: write path, read path, caching, peak traffic, failures, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. The analysis covers paths, data flow, configuration, and simulated load and faults, and every finding points at the part of the canvas that caused it.
 
-> **Status:** milestone M1 (walking skeleton) is complete. The redirect read path of the URL Shortener runs end to end: design, record, analyse, score, explain. See the [roadmap](docs/design/07-roadmap.md).
+> **Status:** milestones M1 (walking skeleton) and M2 (analytic simulation) are complete. The URL Shortener's read path (S2) and caching scenario (S3) run end to end: design, record, analyse, simulate, score, explain. See the [roadmap](docs/design/07-roadmap.md).
 
 ![A gate finding: the cache-miss path answers 302 without reading the store; the offending path is highlighted on the canvas and in the step tree](docs/media/m1-gate-finding.png)
 
@@ -22,13 +22,21 @@ Most system design practice tools reward placing familiar components (a cache, a
 - **Topology editor:** components from a catalog (clients, load balancers, services, Redis/Memcached, PostgreSQL/MySQL, DynamoDB), connections, sizes, replicas and entity bindings.
 - **Flow recorder:** each operation's request flow is recorded step by step, with every outcome (hit, negativeHit, miss, found, notFound, expired, error) as an explicit branch.
 - **Path explorer:** every path a request can take, with its outcome sequence and final status. Hovering a path highlights it on the canvas.
+- **Analytic simulation:**
+  - cache hit ratios from memory, TTL and Zipf-skewed popularity;
+  - exact M/M/c queueing and latency percentiles over every path;
+  - overload that cascades through fallbacks;
+  - monthly cost, including storage for every replica's copy.
+- **Load view:**
+  - per environment (average, peak): operations, components, caches, cost breakdown;
+  - utilisation on the canvas and request rates on connections.
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Tests:**
   - over 100 unit and integration tests;
-  - a golden corpus of valid designs and a mutant corpus of broken ones that CI must catch;
+  - a golden corpus of four valid designs and seventeen mutants that CI must catch;
   - Playwright tests that walk the core loop in a real browser.
 
-![Path explorer with a highlighted path](docs/media/m1-path-explorer.png)
+![Load view at peak: utilisation on every component, request rates on connections, and the cost breakdown](docs/media/m2-load.png)
 
 ## Design documents
 

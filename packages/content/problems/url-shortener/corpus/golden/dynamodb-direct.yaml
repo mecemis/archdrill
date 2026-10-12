@@ -1,10 +1,12 @@
 id: dynamodb-direct
 description: >-
-  ALB → stateless Link API (3 replicas) → DynamoDB, no cache. A valid
-  alternative for the read path: correct, redundant, and simple. Caching is
-  what the next scenario pushes on.
+  ALB → stateless Link API (25 × 8 vCPU) → DynamoDB, no cache. A valid
+  answer to the read path: correct, redundant and simple. It does not pass
+  S3, where paying per request for 300,000 redirects a second breaks the
+  budget.
 expect:
   s2-redirect: { minScore: 90 }
+notPassing: [s3-cache]
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -13,7 +15,7 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
       - id: links
         kind: key-value-db
         flavor: dynamodb

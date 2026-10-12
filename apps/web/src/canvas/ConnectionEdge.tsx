@@ -6,7 +6,10 @@ import {
   getBezierPath,
 } from "@xyflow/react";
 import { memo } from "react";
+import { compact } from "../ui/format";
 import type { ConnectionEdgeData } from "./projection";
+
+const MIN_LABELLED_LENGTH = 90;
 
 function strokeFor(data: ConnectionEdgeData | undefined, selected: boolean | undefined): string {
   if (data?.hasError) return "#e11d48";
@@ -21,6 +24,10 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
   const [path, labelX, labelY] = getBezierPath(props);
   const stroke = strokeFor(data, selected);
   const active = data ? data.steps.length > 0 || data.ingress : false;
+  // Short edges have no room for a rate label without covering the nodes.
+  const roomForRate =
+    Math.hypot(props.targetX - props.sourceX, props.targetY - props.sourceY) > MIN_LABELLED_LENGTH;
+  const rate = roomForRate ? (data?.rate ?? 0) : 0;
   return (
     <>
       <BaseEdge
@@ -34,12 +41,17 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
           opacity: data?.emphasis === "dimmed" ? 0.3 : 1,
         }}
       />
-      {data && data.steps.length > 0 && (
+      {data && (data.steps.length > 0 || rate > 0) && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-none absolute flex gap-0.5"
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           >
+            {rate > 0 && (
+              <span className="rounded bg-white/90 px-1 text-[11px] font-medium text-zinc-700 tabular-nums shadow-sm">
+                {compact(rate)}/s
+              </span>
+            )}
             {data.steps.map((n) => (
               <span
                 key={n}
