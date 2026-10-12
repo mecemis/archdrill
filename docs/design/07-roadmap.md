@@ -52,7 +52,7 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - **The `negativeHit` cache outcome.** It is only feasible once a reachable flow step stores negative entries. Without modelling it, a redirect of a tombstoned code went unnoticed.
 - **Evaluation runs on the main thread for now.** Without simulation it takes well under a millisecond. It moves to a worker together with the analytic engine in M2.
 
-### M2: Analytic simulation (L)
+### M2: Analytic simulation (L) ✅
 - Load propagation.
 - Cache model: Zipf buckets, Che approximation, TTL, negative caching.
 - Queueing latency (Sakasegawa) and mixture percentiles.
@@ -62,6 +62,20 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - Golden: 4. Mutants: 12.
 
 **Done when:** changing cache memory or TTL visibly moves hit ratio → database utilisation → p99 → cost, and the S3 golden and mutant expectations hold.
+
+**Delivered (2026-10-12):**
+- The analytic engine: Zipf buckets, Che + TTL caches, exact Erlang C queueing, Gamma latency mixtures, an overload fixed point, request classes, and cost covering instances, requests and storage per copy.
+- Five metric checks.
+- A workload for S2 and the new scenario S3.
+- Four golden designs and 17 mutants.
+- In the editor: a Load tab, utilisation on nodes, rates on connections, path shares and p99, and shard sliders.
+
+**Learned along the way:**
+- **Storage cost.** Without storage cost, the budget could not tell caching from read-replica sprawl; with ~79 TB per copy it can.
+- **The overload gate.** Without a 99% success gate at peak, a design that dropped half its traffic still scored "passing". Overloaded components also needed a queueing wait, or rejected traffic made p99 look good.
+- **The simulator catches real sizing mistakes.** It flagged undersized tiers in our own golden designs (two NGINX instances for 300,000 requests a second).
+- **Exact Erlang C instead of Sakasegawa.** The exact formula is cheap enough, so Sakasegawa is used only beyond 5,000 servers.
+- **Evaluation stays on the main thread.** Two scenarios with two environments each take a few milliseconds, cached per attempt version, so the worker is deferred until the discrete-event engine needs it.
 
 ### M3: Write path and strategies (M)
 - Conditional writes, conflict outcomes, id-generation and leases capabilities.
