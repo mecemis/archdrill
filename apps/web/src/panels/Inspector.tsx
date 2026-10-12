@@ -1,12 +1,13 @@
 import { componentProfile, HOURS_PER_MONTH } from "@archdrill/engine";
-import type { Component, Connection } from "@archdrill/model";
-import { ArrowLeftRight, Trash2 } from "lucide-react";
+import type { Component } from "@archdrill/model";
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { activePack, catalogIndex } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { compact, usd } from "../ui/format";
 import { Button, Field, SectionTitle, Select } from "../ui/primitives";
+import { ConnectionInspector } from "./ConnectionInspector";
 
 const MAX_REPLICAS = 200;
 const MAX_SHARDS = 64;
@@ -256,54 +257,5 @@ function LabelInput({
         }}
       />
     </Field>
-  );
-}
-
-function ConnectionInspector({ connection }: { readonly connection: Connection }) {
-  const dispatch = useAttemptStore((s) => s.dispatch);
-  const components = useAttemptStore((s) => s.attempt.architecture.components);
-  const label = (id: string) => components.find((c) => c.id === id)?.label ?? id;
-  return (
-    <div className="flex flex-col gap-4 p-4">
-      <SectionTitle>Connection</SectionTitle>
-      <p className="text-sm text-zinc-900">
-        {label(connection.from)} → {label(connection.to)}
-      </p>
-      <Field label="Mode">
-        <Select
-          value={connection.mode}
-          onChange={(e) =>
-            dispatch("setConnectionMode", {
-              id: connection.id,
-              mode: e.target.value as "sync" | "async",
-            })
-          }
-        >
-          <option value="sync">Synchronous (request/response)</option>
-          <option value="async">Asynchronous (fire and forget)</option>
-        </Select>
-      </Field>
-      <div className="flex gap-2">
-        <Button
-          onClick={() => {
-            dispatch("reverseConnection", { id: connection.id });
-            useUi.getState().select(null);
-          }}
-        >
-          <ArrowLeftRight className="h-4 w-4" />
-          Reverse
-        </Button>
-        <Button
-          variant="danger"
-          onClick={() => {
-            dispatch("removeConnection", { id: connection.id });
-            useUi.getState().select(null);
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-          Remove
-        </Button>
-      </div>
-    </div>
   );
 }

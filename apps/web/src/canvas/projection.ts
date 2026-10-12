@@ -28,6 +28,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly callable: boolean;
   /** Simulated utilisation in the selected environment, or null without a simulation. */
   readonly utilization: number | null;
+  /** Faults the selected environment injects into this component. */
+  readonly faults: readonly string[];
 }
 
 export interface ConnectionEdgeData extends Record<string, unknown> {
@@ -100,6 +102,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         hasError: erroneous.has(component.id),
         callable: callable.has(component.id),
         utilization: input.metrics?.components.get(component.id)?.utilization ?? null,
+        faults: input.metrics?.components.get(component.id)?.faults ?? [],
       },
     };
   });

@@ -1,4 +1,5 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
+import { AlertTriangle } from "lucide-react";
 import { memo } from "react";
 import { percent, utilizationTone } from "../ui/format";
 import { KindIcon } from "../ui/icons";
@@ -57,6 +58,12 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
               stores {entity}
             </span>
           ))}
+        </div>
+      )}
+      {data.faults.length > 0 && (
+        <div className="mt-1 flex items-start gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-800">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+          <span>{data.faults.join("; ")}</span>
         </div>
       )}
       {data.utilization !== null && (

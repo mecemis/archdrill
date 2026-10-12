@@ -1,5 +1,5 @@
 import { AttemptSchema, applyCommand } from "@archdrill/model";
-import { cacheAsideAttempt, createLinkAttempt } from "@archdrill/model/testing";
+import { cacheAsideAttempt, createLinkAttempt, disableLinkAttempt } from "@archdrill/model/testing";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -187,6 +187,43 @@ describe("App", () => {
     expect(screen.getByText(/^Not evaluable yet/)).toBeDefined();
     expect(screen.getByText(/^Ingress:/)).toBeDefined();
     expect(screen.queryByText(/No client can reach/)).toBeNull();
+  });
+
+  it("edits the call policy of a connection a service calls over", () => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+    useUi.getState().select({ type: "connection", id: "api--redis" });
+    renderApp();
+    const policy = () =>
+      useAttemptStore.getState().attempt.architecture.connections.find((c) => c.id === "api--redis")
+        ?.policy;
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Timeout" }));
+    expect(policy()?.timeoutMs).toBe(50);
+    const timeout = screen.getByRole("spinbutton", { name: "Timeout (ms)" });
+    fireEvent.change(timeout, { target: { value: "20" } });
+    fireEvent.keyDown(timeout, { key: "Enter" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Circuit breaker/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Retries after a failed attempt" }), {
+      target: { value: "2" },
+    });
+
+    expect(policy()).toMatchObject({ timeoutMs: 20, circuitBreaker: true, retries: 2 });
+    expect(screen.getByRole("checkbox", { name: "Jitter" })).toBeDefined();
+  });
+
+  it("shows which components an environment breaks and what calls go through", () => {
+    useAttemptStore.getState().replace(disableLinkAttempt("delete-after-update"));
+    useUi.getState().setScenario("s4-cache-outage");
+    renderApp();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Load" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Peak, cache cluster hanging" }));
+
+    expect(
+      screen.getByText("Every cache node stops answering; connections open but hang."),
+    ).toBeDefined();
+    expect(screen.getByText("Redis: hanging")).toBeDefined();
+    expect(screen.getByRole("cell", { name: "Link API → Redis" })).toBeDefined();
   });
 
   it("records interview decisions and shows the approach the flow implements", () => {
