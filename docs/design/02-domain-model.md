@@ -72,7 +72,7 @@ Each capability exposes **actions**. Every action has a closed set of **outcomes
 
 | Capability | Action | Outcomes | Notes |
 |---|---|---|---|
-| `volatile-kv` | `cache.get(entity, key)` | `hit`, `miss`, `error` | hit probability comes from the simulation |
+| `volatile-kv` | `cache.get(entity, key)` | `hit`, `negativeHit`, `miss`, `error` | hit probability comes from the simulation; `negativeHit` is only feasible when a reachable step stores negative entries for the same entity in the same cache |
 | | `cache.set(entity, key, ttl)` | `ok`, `error` | |
 | | `cache.setNegative(entity, key, ttl)` | `ok`, `error` | caches "does not exist" |
 | | `cache.delete(entity, key)` | `ok`, `error` | |

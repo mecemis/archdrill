@@ -1,0 +1,89 @@
+id: url-shortener
+version: 1
+title: URL Shortener
+levels: [senior, staff]
+brief: |
+  Users submit long URLs and get short codes back. Anyone who opens a short
+  link is redirected to the long URL. Links can expire, and trust & safety can
+  disable abusive links. Traffic is heavily read-biased and link popularity is
+  very skewed: a few links get most of the clicks.
+scale:
+  - { label: Creates, value: "1,000 /s avg, ×3 peak", note: "158 B links over 5 years" }
+  - { label: Redirects, value: "100,000 /s avg, ×3 peak", note: "100:1 read/write" }
+  - { label: Link record, value: "~500 B", note: "~79 TB raw over 5 years" }
+  - { label: Code space, value: "7 chars base62", note: "62⁷ ≈ 3.5 × 10¹² codes" }
+requirements:
+  - { id: FR-1, kind: functional, text: "Create a short link for a long URL, with an optional custom alias." }
+  - { id: FR-2, kind: functional, text: "Redirect a short code to its long URL." }
+  - { id: FR-3, kind: functional, text: "Links may expire; an expired link no longer redirects." }
+  - { id: FR-4, kind: functional, text: "A disabled (abusive) link stops redirecting within 60 seconds." }
+  - { id: NFR-1, kind: non-functional, text: "Redirect p99 < 50 ms server-side; create p99 < 200 ms." }
+  - { id: NFR-2, kind: non-functional, text: "Redirect availability 99.99%; create availability 99.9%." }
+  - { id: NFR-3, kind: non-functional, text: "Codes are unique and not enumerable." }
+  - { id: NFR-4, kind: non-functional, text: "An acknowledged link is never lost." }
+  - { id: NFR-5, kind: non-functional, text: "Link creation is protected against abuse with per-client limits." }
+entities:
+  - name: Link
+    key: code
+    fields: [code, longUrl, ownerId, createdAt, expiresAt, status]
+    avgBytes: 500
+operations:
+  - id: create-link
+    label: Create link
+    method: POST
+    path: /links
+    class: write
+    idempotent: false
+    successStatuses: [201, 400, 409]
+    requirements: [FR-1, NFR-3, NFR-4, NFR-5]
+    introducedIn: s1-create
+  - id: redirect
+    label: Redirect
+    method: GET
+    path: "/{code}"
+    class: read
+    idempotent: true
+    successStatuses: [301, 302, 307, 308, 404, 410]
+    requirements: [FR-2, FR-3, NFR-1, NFR-2]
+    introducedIn: s2-redirect
+  - id: disable-link
+    label: Disable link
+    method: POST
+    path: "/links/{code}/disable"
+    class: write
+    idempotent: true
+    successStatuses: [200, 204, 404]
+    requirements: [FR-4]
+    introducedIn: s4-cache-failure-invalidation
+decisionPoints:
+  - id: code-strategy
+    question: How are short codes generated?
+    options:
+      - { id: kgs, label: Key generation service (pre-generated random keys) }
+      - { id: random-conditional, label: Random code + conditional insert }
+      - { id: counter-range, label: Counter ranges + base62 }
+      - { id: hash-based, label: Hash of the long URL }
+    requirements: [NFR-3]
+  - id: redirect-status
+    question: Which redirect status do you return?
+    options:
+      - { id: "301", label: 301 Moved Permanently }
+      - { id: "302", label: 302 Found }
+      - { id: 301-short-max-age, label: 301 with a short Cache-Control max-age }
+      - { id: "307", label: 307 Temporary Redirect }
+      - { id: "308", label: 308 Permanent Redirect }
+    requirements: [FR-4]
+  - id: replication-mode
+    question: How does the link store replicate writes?
+    options:
+      - { id: async, label: Asynchronous }
+      - { id: semi-sync, label: Semi-synchronous }
+      - { id: sync, label: Synchronous }
+    requirements: [NFR-4, NFR-1]
+  - id: expired-status
+    question: What does an expired link return?
+    options:
+      - { id: "404", label: 404 Not Found }
+      - { id: "410", label: 410 Gone }
+    requirements: [FR-3]
+scenarios: [s2-redirect]

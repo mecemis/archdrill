@@ -1,0 +1,188 @@
+id: s2-redirect
+problemId: url-shortener
+title: Redirect (read path)
+order: 2
+story: |
+  "Now the read side. A visitor clicks a short link. Walk me through what
+  happens, from the moment the request arrives until the browser follows the
+  redirect. What does the visitor see when the code does not exist, when the
+  link has expired, or when a dependency is having a bad day?"
+focusOperations: [redirect]
+dimensions:
+  correctness: 0.40
+  latency: 0.25
+  scalability: 0.20
+  availability: 0.15
+checks:
+  - id: redirect-backed-by-data
+    use: no-path
+    title: Every redirect is backed by the stored link
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-2]
+    params:
+      operation: redirect
+      where:
+        all:
+          - statusClass: 3xx
+          - not: { hasStep: { entity: Link, outcome: [hit, found] } }
+    why: >-
+      A redirect has to send the visitor to the long URL that was stored for
+      this code. A path that answers 3xx without having found the link in a
+      cache or a store is redirecting to nothing; interviewers treat that as a
+      broken read path.
+    fix: >-
+      Make every 3xx answer come after a cache hit or a store read that found
+      the Link. On a miss, read the store before answering.
+
+  - id: unknown-code-404
+    use: status-for-condition
+    title: Unknown codes answer 404
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-2]
+    params:
+      operation: redirect
+      when:
+        any:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - hasStep: { action: cache.get, entity: Link, outcome: negativeHit }
+      statuses: [404]
+    why: >-
+      Most short codes that do not exist are typos, scrapers or enumeration
+      attempts. They must get a clean 404, not an error page or an undefined
+      response, and they must not be treated as an outage.
+    fix: >-
+      Handle the notFound outcome of the store read and respond with 404. If
+      you cache negative entries, answer a negative cache hit with 404 too.
+
+  - id: expired-not-redirected
+    use: all-success-paths-contain
+    title: Expired links never redirect
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-3]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { logic: checkExpiry, outcome: valid }
+    why: >-
+      Expiry is a functional requirement. Stores that expire data on their own
+      (for example DynamoDB TTL) delete lazily, sometimes days later, and a
+      cached copy can outlive the record. Checking expiry on the read path is
+      the only way to guarantee an expired link stops redirecting.
+    fix: >-
+      Add a checkExpiry step before every redirect: on a cache hit and after a
+      store read. Answer expired links with 404 or 410.
+
+  - id: expired-answer
+    use: status-for-condition
+    title: Expired links answer 404 or 410
+    dimension: correctness
+    weight: 1
+    requirements: [FR-3]
+    params:
+      operation: redirect
+      when: { hasStep: { logic: checkExpiry, outcome: expired } }
+      statuses: [404, 410]
+    why: >-
+      Visitors and crawlers should be told the link is gone. 410 Gone says it
+      existed and was retired on purpose; 404 hides that it ever existed. Both
+      are defensible; a 5xx or a redirect is not.
+    fix: >-
+      Route the expired outcome of checkExpiry to a 410 (or 404) response.
+
+  - id: errors-handled
+    use: outcome-handled
+    title: Dependency errors are handled
+    dimension: availability
+    weight: 2
+    requirements: [NFR-2]
+    params:
+      operation: redirect
+      outcome: error
+    why: >-
+      Every network call can fail. An error outcome nobody handles leaves the
+      request in an undefined state; interviewers expect you to say what the
+      visitor sees when the cache or the store errors.
+    fix: >-
+      Handle the error outcome of every call: fall back (for example from the
+      cache to the store) or answer 503 so clients and load balancers can retry.
+
+  - id: no-single-point-of-failure
+    use: no-single-point-of-failure
+    title: No single point of failure on the read path
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params:
+      operation: redirect
+    why: >-
+      99.99% availability leaves about 52 minutes of downtime a year. A single
+      instance of anything the redirect cannot work without will eat that
+      budget the first time it is patched or crashes.
+    fix: >-
+      Run at least two replicas of every component the redirect cannot survive
+      losing, or use a managed, zone-redundant offering.
+
+  - id: cache-warms
+    use: populate-after-miss
+    title: The cache is populated after a miss
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params:
+      operation: redirect
+      entity: Link
+    why: >-
+      In cache-aside, nothing else fills the cache. If a miss that finds the
+      link in the store does not write it back, the cache stays cold and every
+      request pays for the store read.
+    fix: >-
+      After a store read finds the Link (and it is not expired), call cache.set
+      with a TTL before responding.
+
+  - id: negative-caching
+    use: no-path
+    title: Unknown codes are negatively cached
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params:
+      operation: redirect
+      where:
+        all:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - not: { hasStep: { action: cache.setNegative, entity: Link } }
+    why: >-
+      Scrapers and enumeration attacks hit codes that do not exist. Without a
+      short-lived "does not exist" entry, every one of those requests goes to
+      the store.
+    fix: >-
+      Before answering 404, store a negative cache entry for the code with a
+      short TTL (for example 60 seconds).
+
+  - id: dead-weight
+    use: unused-components
+    title: Every component earns its place
+    dimension: correctness
+    weight: 0
+    severity: minor
+    params: {}
+    why: >-
+      Components that no flow uses add cost, on-call load and failure modes
+      without making the design better. Interviewers notice boxes you cannot
+      explain.
+    fix: >-
+      Use the component in a flow, or remove it.
+hints:
+  - What has to happen between receiving GET /{code} and answering with a redirect?
+  - A redirect needs the long URL. Where does it come from, and what happens when it is not there, has expired, or the lookup fails?
+  - Read the Link by code (cache first if you have one), check expiry, then answer 302. Handle notFound with 404, expired with 410, and errors with a fallback or 503.

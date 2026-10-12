@@ -4,7 +4,9 @@ Scenario-based system design practice with deterministic simulation and evaluati
 
 You design **one architecture** for a problem, then drive it through **scenarios**: write path, read path, caching, peak traffic, failures, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. The analysis covers paths, data flow, configuration, and simulated load and faults, and every finding points at the part of the canvas that caused it.
 
-> **Status:** design phase and foundations (milestone M0). See the [roadmap](docs/design/07-roadmap.md).
+> **Status:** milestone M1 (walking skeleton) is complete. The redirect read path of the URL Shortener runs end to end: design, record, analyse, score, explain. See the [roadmap](docs/design/07-roadmap.md).
+
+![A gate finding: the cache-miss path answers 302 without reading the store; the offending path is highlighted on the canvas and in the step tree](docs/media/m1-gate-finding.png)
 
 ## Why
 
@@ -14,6 +16,19 @@ Most system design practice tools reward placing familiar components (a cache, a
 - **Capability-based checks and strategies.** Several valid designs are accepted (for example KGS, random codes with conditional writes, or obfuscated counter ranges for unique codes).
 - **Analytic simulation.** Cache memory drives the hit ratio, the hit ratio drives database load, and database load drives p99, cost, and survival under faults.
 - **A trustworthy evaluator.** A golden corpus of valid designs must pass and a mutant corpus of broken designs must fail. Both are enforced in CI.
+
+## What works today (M1)
+
+- **Topology editor:** components from a catalog (clients, load balancers, services, Redis/Memcached, PostgreSQL/MySQL, DynamoDB), connections, sizes, replicas and entity bindings.
+- **Flow recorder:** each operation's request flow is recorded step by step, with every outcome (hit, negativeHit, miss, found, notFound, expired, error) as an explicit branch.
+- **Path explorer:** every path a request can take, with its outcome sequence and final status. Hovering a path highlights it on the canvas.
+- **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
+- **Tests:**
+  - over 100 unit and integration tests;
+  - a golden corpus of valid designs and a mutant corpus of broken ones that CI must catch;
+  - Playwright tests that walk the core loop in a real browser.
+
+![Path explorer with a highlighted path](docs/media/m1-path-explorer.png)
 
 ## Design documents
 
@@ -36,7 +51,8 @@ Requires Node.js ≥ 22 and pnpm 10.
 ```bash
 pnpm install
 pnpm dev         # web app on http://localhost:5173
-pnpm test        # unit tests (Vitest)
+pnpm test        # unit, integration and corpus tests (Vitest)
+pnpm e2e         # browser tests (Playwright; uses the installed Chrome locally)
 pnpm check       # Biome lint/format check + TypeScript
 pnpm build       # production build
 ```

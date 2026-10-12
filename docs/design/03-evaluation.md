@@ -161,7 +161,12 @@ If no strategy matches but the outcome checks for that requirement pass, the req
    `score = 100 × Σ(dimensionWeight × dimension)`
 
    The scenario defines the dimension weights.
-4. **Bands.**
+4. **Severity caps.** Open baseline findings cap the score by their severity:
+   - a **critical** finding caps the score at 79, so the band is at most Passing;
+   - a **major** finding caps it at 89, so the band is at most Strong.
+
+   This keeps "Excellent" honest. For example, a single API instance on a 99.99% read path cannot rank as excellent however good the rest is. Minor findings never cap. The scorecard reports which cap applied and why.
+5. **Bands.**
 
    | Band | Score |
    |---|---|
@@ -170,8 +175,8 @@ If no strategy matches but the outcome checks for that requirement pass, the req
    | Strong | 80–89 |
    | Excellent | ≥ 90 |
 
-5. **Signals (depth).** Checks tagged `senior` or `staff` do **not** lower the score when missing. They appear as "signals demonstrated: 4 / 7 senior, 1 / 3 staff". Examples: negative caching, stampede protection, two-tier caching, idempotency keys, multi-zone survival, ID obfuscation, bounded-staleness reasoning. A correct baseline design is never penalised for not being clever, and depth stays visible.
-6. **Problem summary.** A **scenario × dimension matrix** (heatmap), not a single number. Scenarios with regressions since they last passed are flagged.
+6. **Signals (depth).** Checks tagged `senior` or `staff` do **not** lower the score when missing. They appear as "signals demonstrated: 4 / 7 senior, 1 / 3 staff". Examples: negative caching, stampede protection, two-tier caching, idempotency keys, multi-zone survival, ID obfuscation, bounded-staleness reasoning. A correct baseline design is never penalised for not being clever, and depth stays visible.
+7. **Problem summary.** A **scenario × dimension matrix** (heatmap), not a single number. Scenarios with regressions since they last passed are flagged.
 
 Scores are only computed for **valid** attempts. Validation errors produce a "fix these to evaluate" state with locations, not a zero.
 

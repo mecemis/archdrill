@@ -1,0 +1,108 @@
+# Each mutant breaks a golden design in one specific way. CI asserts that the
+# evaluator catches it: either validation blocks the scenario with the listed
+# issue codes, or the listed checks fail.
+mutants:
+  - id: reverse-ingress
+    base: postgres-redis-cache-aside
+    description: The load balancer → API connection points the wrong way.
+    apply:
+      - reverseConnection: { id: lb--link-api }
+    expect:
+      scenario: s2-redirect
+      invalid: [flow-handler-unreachable]
+
+  - id: reverse-cache-connection
+    base: postgres-redis-cache-aside
+    description: The API → cache connection points the wrong way, so the API cannot call the cache.
+    apply:
+      - reverseConnection: { id: link-api--redis }
+    expect:
+      scenario: s2-redirect
+      invalid: [step-no-connection]
+
+  - id: unhandled-not-found
+    base: postgres-redis-cache-aside
+    description: The store's notFound outcome leads nowhere.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: read, outcome: notFound, target: null }
+    expect:
+      scenario: s2-redirect
+      fails: [unknown-code-404]
+      band: not-passing
+
+  - id: negative-hit-redirects
+    base: postgres-redis-cache-aside
+    description: A negative cache hit is treated like a hit and redirected.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: get, outcome: negativeHit, target: expiry-hit }
+    expect:
+      scenario: s2-redirect
+      fails: [redirect-backed-by-data, unknown-code-404]
+      band: not-passing
+
+  - id: blind-redirect-on-miss
+    base: postgres-redis-cache-aside
+    description: A cache miss redirects without reading the store.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: get, outcome: miss, target: r302 }
+    expect:
+      scenario: s2-redirect
+      fails: [redirect-backed-by-data]
+      band: not-passing
+
+  - id: no-expiry-check-on-hit
+    base: postgres-redis-cache-aside
+    description: Cache hits redirect without checking expiry.
+    apply:
+      - removeStep: { operation: redirect, stepId: expiry-hit, bypass: valid }
+    expect:
+      scenario: s2-redirect
+      fails: [expired-not-redirected]
+      band: not-passing
+
+  - id: no-populate
+    base: postgres-redis-cache-aside
+    description: Misses that find the link never write it back to the cache.
+    apply:
+      - removeStep: { operation: redirect, stepId: populate, bypass: ok }
+    expect:
+      scenario: s2-redirect
+      fails: [cache-warms]
+
+  - id: single-api-replica
+    base: postgres-redis-cache-aside
+    description: The API runs as a single instance.
+    apply:
+      - updateComponent: { id: link-api, replicas: 1 }
+    expect:
+      scenario: s2-redirect
+      fails: [no-single-point-of-failure]
+
+  - id: cache-error-fails-request-single-node
+    base: postgres-redis-cache-aside
+    description: A cache error fails the request and the cache is a single node.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: get, outcome: error, target: r503 }
+      - updateComponent: { id: redis, replicas: 1 }
+    expect:
+      scenario: s2-redirect
+      fails: [no-single-point-of-failure]
+
+  - id: store-error-unhandled
+    base: dynamodb-direct
+    description: The store's error outcome leads nowhere.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: read, outcome: error, target: null }
+    expect:
+      scenario: s2-redirect
+      fails: [errors-handled]
+
+  - id: expired-redirects
+    base: dynamodb-direct
+    description: Expired links are redirected anyway.
+    apply:
+      - linkOutcome: { operation: redirect, stepId: expiry, outcome: expired, target: r302 }
+    expect:
+      scenario: s2-redirect
+      fails: [expired-not-redirected, expired-answer]
+      band: not-passing

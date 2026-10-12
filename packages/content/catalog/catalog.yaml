@@ -1,0 +1,185 @@
+# Component catalog.
+#
+# Every number is an order-of-magnitude ballpark for comparing designs, not a
+# capacity plan or a price quote. Throughput is per replica (or per node) for
+# small requests; latency is server-side processing time; cost is an on-demand
+# list-price ballpark per instance-hour.
+version: 1
+kinds:
+  - id: client
+    label: Client
+    description: Where user traffic comes from.
+    capabilities: [traffic-source]
+    replicable: false
+    holdsData: false
+    flavors:
+      - id: browser
+        label: Browser
+        description: Visitors using a web browser.
+      - id: mobile-app
+        label: Mobile app
+        description: Users of a native mobile app.
+
+  - id: load-balancer
+    label: Load balancer
+    description: Spreads requests across healthy replicas and removes unhealthy ones.
+    capabilities: [load-balancing, health-checking]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: alb
+        label: Managed LB
+        description: Cloud-managed HTTP load balancer, redundant across zones (e.g. AWS ALB, Azure Application Gateway).
+        managedRedundancy: true
+        sizes:
+          managed:
+            label: managed
+            capacityPerSec: { read: 1000000, write: 1000000 }
+            latencyMs: { base: 1, cv: 0.3 }
+            costPerHour: 0.03
+        defaultSize: managed
+        notes: Scales automatically; very sudden extreme spikes may need pre-warming.
+      - id: nginx
+        label: NGINX
+        description: Self-managed reverse proxy and load balancer. Run at least two for redundancy.
+        sizes:
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 50000, write: 50000 }
+            latencyMs: { base: 0.5, cv: 0.3 }
+            costPerHour: 0.17
+        defaultSize: m
+
+  - id: service
+    label: Service
+    description: Stateless application service that runs request handlers. Scale out with replicas.
+    capabilities: [stateless-compute]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: generic
+        label: Service
+        description: A stateless HTTP service (for example ASP.NET Core, Spring Boot, Go, Node.js).
+        sizes:
+          s:
+            label: 2 vCPU
+            capacityPerSec: { read: 1500, write: 1000 }
+            latencyMs: { base: 2, cv: 0.5 }
+            costPerHour: 0.085
+          m:
+            label: 4 vCPU
+            capacityPerSec: { read: 3000, write: 2000 }
+            latencyMs: { base: 2, cv: 0.5 }
+            costPerHour: 0.17
+          l:
+            label: 8 vCPU
+            capacityPerSec: { read: 6000, write: 4000 }
+            latencyMs: { base: 2, cv: 0.5 }
+            costPerHour: 0.34
+        defaultSize: m
+        notes: Throughput assumes a thin, I/O-bound handler that makes a few network calls per request.
+
+  - id: cache
+    label: Cache
+    description: In-memory key-value cache. Fast and volatile; data can disappear at any time.
+    capabilities: [volatile-kv, ttl]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: redis
+        label: Redis
+        description: In-memory data store with rich data types and optional replication.
+        capabilities: [atomic-increment]
+        sizes:
+          s:
+            label: 13 GB
+            memoryGb: 13
+            capacityPerSec: { read: 100000, write: 80000 }
+            latencyMs: { base: 0.5, cv: 0.6 }
+            costPerHour: 0.22
+          m:
+            label: 26 GB
+            memoryGb: 26
+            capacityPerSec: { read: 150000, write: 120000 }
+            latencyMs: { base: 0.5, cv: 0.6 }
+            costPerHour: 0.44
+          l:
+            label: 52 GB
+            memoryGb: 52
+            capacityPerSec: { read: 200000, write: 160000 }
+            latencyMs: { base: 0.5, cv: 0.6 }
+            costPerHour: 0.87
+        defaultSize: m
+        notes: Command execution is single-threaded per node; scale reads with replicas and capacity with shards.
+      - id: memcached
+        label: Memcached
+        description: Multi-threaded in-memory cache for simple key-value data. No replication.
+        sizes:
+          m:
+            label: 26 GB
+            memoryGb: 26
+            capacityPerSec: { read: 300000, write: 250000 }
+            latencyMs: { base: 0.5, cv: 0.6 }
+            costPerHour: 0.44
+        defaultSize: m
+        notes: Nodes are independent; losing one loses its share of keys.
+
+  - id: relational-db
+    label: Relational database
+    description: Durable SQL database with transactions, unique constraints and secondary indexes.
+    capabilities: [durable-store, unique-constraint, conditional-write, transactions, secondary-index, range-scan]
+    replicable: true
+    holdsData: true
+    flavors:
+      - id: postgres
+        label: PostgreSQL
+        description: Open-source relational database. Replicas serve reads and take over on failover.
+        sizes:
+          s:
+            label: 2 vCPU
+            capacityPerSec: { read: 5000, write: 1500 }
+            latencyMs: { base: 2, cv: 1 }
+            costPerHour: 0.18
+          m:
+            label: 8 vCPU
+            capacityPerSec: { read: 20000, write: 5000 }
+            latencyMs: { base: 2, cv: 1 }
+            costPerHour: 0.7
+          l:
+            label: 16 vCPU
+            capacityPerSec: { read: 40000, write: 10000 }
+            latencyMs: { base: 2, cv: 1 }
+            costPerHour: 1.4
+        defaultSize: m
+        notes: Primary-key lookups and single-row inserts on a well-indexed table.
+      - id: mysql
+        label: MySQL
+        description: Open-source relational database. Replicas serve reads and take over on failover.
+        sizes:
+          m:
+            label: 8 vCPU
+            capacityPerSec: { read: 20000, write: 5000 }
+            latencyMs: { base: 2, cv: 1 }
+            costPerHour: 0.7
+        defaultSize: m
+
+  - id: key-value-db
+    label: Key-value database
+    description: Managed, horizontally partitioned key-value store with conditional writes.
+    capabilities: [durable-store, conditional-write, ttl]
+    replicable: false
+    holdsData: true
+    flavors:
+      - id: dynamodb
+        label: DynamoDB
+        description: Managed key-value and document database, replicated across zones.
+        managedRedundancy: true
+        capabilities: [atomic-increment]
+        sizes:
+          on-demand:
+            label: on-demand
+            capacityPerSec: { read: 40000, write: 40000 }
+            latencyMs: { base: 4, cv: 0.5 }
+            costPerHour: 0
+        defaultSize: on-demand
+        notes: Capacity reflects the default per-table on-demand quota (adjustable). Billed per request; request costs arrive with the cost model.

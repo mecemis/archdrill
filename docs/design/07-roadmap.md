@@ -16,14 +16,14 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 
 ## v0.1: URL Shortener in depth
 
-### M0: Foundations (S)
+### M0: Foundations (S) ✅
 - Design docs and ADRs (this folder).
 - pnpm workspace, TypeScript strict, Biome, Vitest, CI.
 - A web shell that renders an empty React Flow canvas, proving the toolchain.
 
 **Done when:** `pnpm check && pnpm test && pnpm build` pass locally and in CI.
 
-### M1: Walking skeleton for the redirect path (L)
+### M1: Walking skeleton for the redirect path (L) ✅
 - `model`:
   - schemas for catalog (6 kinds: client, load-balancer, service, cache, relational-db, key-value-db), architecture, connections, flows, scenarios, attempt;
   - reference validators;
@@ -41,6 +41,16 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - Golden: 2 designs. Mutants: 5.
 
 **Done when:** a user can build a redirect flow by clicking, see every path, and get gate and check feedback that points at the canvas. Reversed connections and missing branches are caught.
+
+**Delivered (2026-10-12):**
+- Seven checks: the six planned, plus `no-single-point-of-failure`, defined over survival paths.
+- Two golden designs and eleven mutants, all caught.
+- Two Playwright tests of the core loop.
+
+**Learned along the way:**
+- **Severity caps.** An open critical finding caps the score at 79; an open major finding caps it at 89. Without this, a single API instance still scored "excellent".
+- **The `negativeHit` cache outcome.** It is only feasible once a reachable flow step stores negative entries. Without modelling it, a redirect of a tombstoned code went unnoticed.
+- **Evaluation runs on the main thread for now.** Without simulation it takes well under a millisecond. It moves to a worker together with the analytic engine in M2.
 
 ### M2: Analytic simulation (L)
 - Load propagation.
