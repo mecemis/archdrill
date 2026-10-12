@@ -146,7 +146,7 @@ repeat until converged (Δ < 1e−4) or 100 iterations:
 | overload at the target | `1 − 1/ρ` | one round trip |
 | served after the caller's timeout | `P(latency > timeout)` from the target's latency Gamma | the timeout |
 
-With attempt failure `e` and `R` retries, a call fails with probability `e^(R+1)`; attempts per call are `Σ e^k`, and all of them load the target (timed-out attempts still cost it work). A successful call after `k` failed attempts pays their cost plus the backoff before each retry (10 ms doubling; full jitter halves the mean). A successful call came back before the timeout, so its latency is the target's Gamma truncated at the timeout.
+A fault is different: it takes out part of the target for good (a dead node's keys), so every attempt of a call whose key lives there fails, and retries do not help. With fault share `f`, attempt failure `e` on the working keys and `R` retries, a call fails with probability `f + (1 − f)·e^(R+1)`; attempts per call are `f·(R+1) + (1 − f)·Σ e^k`, and those that reach a working part load it (timed-out attempts still cost it work). A successful call after `k` failed attempts pays their cost plus the backoff before each retry (10 ms doubling; full jitter halves the mean). A successful call came back before the timeout, so its latency is the target's Gamma truncated at the timeout.
 
 A circuit breaker counts failures that come back from the dependency (faults, overload, timeouts), not the caller's own bulkhead rejections. It opens on a ramp from 50% to 75% failing attempts, which stands for the share of time a real breaker spends open; a hard switch would flap in a steady-state model. While open it fails calls at once and sends nothing to the dependency. It is one breaker per connection, so a failure of one shard counts against all of them.
 
@@ -175,6 +175,8 @@ Each scenario environment is evaluated as its own steady state, for example "dur
 - `failover` loses one primary of a store with primaries: writes to that shard fail, reads continue on replicas if there are any, and managed stores fail over transparently.
 
 Faults on ingress components (a crashed service instance) reduce capacity or reject requests before the handler runs.
+
+Read and write capacity scale separately: for stores whose writes go to primaries, losing a replica costs reads only, and a failover removes one primary's write capacity. Two faults on one component are assumed to hit the same part, so the larger failed share wins and capacity losses compound.
 
 Replication: writes to self-managed stores with a primary and replicas wait for them under semi-synchronous replication (one cross-zone round trip, 1 ms) or synchronous replication (2 ms), from the decision the workload names. Asynchronous replication adds no latency and is assumed until the candidate decides; what it risks is checked by `no-acknowledged-data-loss`.
 

@@ -30,9 +30,7 @@ function whySafe(store: Component, ctx: CheckContext, mode: string | undefined):
   if (ctx.catalog.flavor(store.kind, store.flavor)?.managedRedundancy) {
     return `${store.label} replicates synchronously across zones (managed)`;
   }
-  if (store.replicas < 2) {
-    return `${store.label} has no replica to promote, so writes wait for it to restart`;
-  }
+  if (store.replicas < 2) return null;
   if (mode && SAFE_MODES.has(mode)) {
     return `${store.label} waits for a replica before acknowledging (${mode})`;
   }
@@ -76,6 +74,13 @@ export const noAcknowledgedDataLoss = defineCheck({
     const total = lost.reduce((sum, n) => sum + n, 0).toLocaleString("en-US");
     const labels = atRisk.map((s) => s.label).join(", ");
     const evidence: Evidence[] = atRisk.map((s) => ({ type: "component", componentId: s.id }));
+    const single = atRisk.filter((s) => s.replicas < 2);
+    if (single.length > 0) {
+      return failed(
+        `${single.map((s) => s.label).join(", ")} has no replica: if its primary's disk is lost, every write since the last backup is gone, and nothing can take over meanwhile.`,
+        single.map((s): Evidence => ({ type: "component", componentId: s.id })),
+      );
+    }
     const window = `in the last ${ASYNC_REPLICATION_LAG_SEC} s before the failover (about ${total} at ${env.environment.label})`;
     return failed(
       mode === undefined

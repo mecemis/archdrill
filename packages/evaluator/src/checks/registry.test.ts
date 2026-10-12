@@ -33,6 +33,30 @@ function scenarioWithKeyspace(lengthDecision: string, dataset: Record<string, nu
   });
 }
 
+describe("validateScenarioConfig durability", () => {
+  it("requires the data-loss check to read the workload's replication decision", () => {
+    const base = scenarioWithKeyspace("code-length", { Link: 1e9 });
+    const scenario = ScenarioSchema.parse({
+      ...base,
+      workload: { ...base.workload, replication: { decision: "replication-mode" } },
+      checks: [
+        ...base.checks,
+        {
+          id: "loss",
+          use: "no-acknowledged-data-loss",
+          title: "No loss",
+          dimension: "correctness",
+          params: { operation: "create-link", environment: "peak", decision: "redirect-status" },
+          why: "w",
+          fix: "f",
+        },
+      ],
+    });
+
+    expect(validateScenarioConfig(scenario, testProblem).map((i) => i.checkId)).toContain("loss");
+  });
+});
+
 describe("validateScenarioConfig workloads", () => {
   it("accepts a keyspace sized by a numeric decision with a default", () => {
     expect(

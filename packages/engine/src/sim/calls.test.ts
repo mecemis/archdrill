@@ -18,7 +18,7 @@ describe("callModel", () => {
   it("leaves healthy calls alone", () => {
     const call = callModel(NO_RISK, policy({ retries: 3 }));
 
-    expect(call).toMatchObject({ failure: 0, attemptsOnSuccess: 1, reach: 1 });
+    expect(call).toMatchObject({ failure: 0, attemptsOnSuccess: 1, reachOnSuccess: 1 });
   });
 
   it("retries failed attempts and counts the extra attempts", () => {
@@ -74,8 +74,28 @@ describe("callModel", () => {
   it("does not send shed or faulted attempts to the target", () => {
     const call = callModel({ ...NO_RISK, shed: 0.5, fault: 0.2 }, policy({}));
 
-    expect(call.reach).toBeCloseTo(0.4, 12);
+    const reached =
+      (1 - call.failure) * call.attemptsOnSuccess * call.reachOnSuccess +
+      call.failure * call.attemptsOnFailure * call.reachOnFailure;
+    expect(reached).toBeCloseTo(0.4, 12);
     expect(call.failure).toBeCloseTo(1 - 0.5 * 0.8, 12);
+  });
+});
+
+describe("callModel with a partial fault", () => {
+  it("does not let retries recover keys on a failed node", () => {
+    // One of four shards is down: retrying a key there hits the same dead shard.
+    const call = callModel({ ...NO_RISK, fault: 0.25 }, policy({ retries: 2 }));
+
+    expect(call.failure).toBeCloseTo(0.25, 12);
+    expect(call.attemptsOnFailure).toBe(3);
+    expect(call.reachOnFailure).toBe(0);
+  });
+
+  it("still retries independent failures on the working keys", () => {
+    const call = callModel({ ...NO_RISK, fault: 0.25, overload: 0.5 }, policy({ retries: 1 }));
+
+    expect(call.failure).toBeCloseTo(0.25 + 0.75 * 0.25, 12);
   });
 });
 

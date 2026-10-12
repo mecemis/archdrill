@@ -195,6 +195,8 @@ function OptionalNumber({
       return;
     }
     const next = Math.min(max, parsed);
+    // Show what was stored, also when clamping or rounding left the value unchanged.
+    setDraft(String(next));
     if (next !== value) onCommit(next);
   };
   const enabled = value !== undefined;

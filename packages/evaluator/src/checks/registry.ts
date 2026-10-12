@@ -89,6 +89,16 @@ export function validateScenarioConfig(
     ) {
       issues.push({ checkId: instance.id, message: `unknown environment "${environment}"` });
     }
+    const decision = (parsed.data as { decision?: unknown }).decision;
+    if (
+      instance.use === "no-acknowledged-data-loss" &&
+      decision !== scenario.workload?.replication?.decision
+    ) {
+      issues.push({
+        checkId: instance.id,
+        message: `decision "${String(decision)}" must be the workload's replication decision, so the simulated latency and the durability verdict agree`,
+      });
+    }
     const op = (parsed.data as { operation?: unknown }).operation;
     if (typeof op === "string" && !operations.has(op)) {
       issues.push({ checkId: instance.id, message: `unknown operation "${op}"` });

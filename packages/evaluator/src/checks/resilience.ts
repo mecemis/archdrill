@@ -220,10 +220,14 @@ export const stableUnderRetries = defineCheck({
       );
     }
     if (!env.converged) {
-      return failed(
-        `The load model does not settle at ${env.environment.label}: failures, timeouts and retries keep feeding back.`,
-        [],
-      );
+      // Usually feedback the design creates, but the model can oscillate on its own too.
+      return {
+        status: "partial",
+        fraction: 0.5,
+        message: `The load model does not settle at ${env.environment.label}: failures, timeouts and retries keep feeding back, so these numbers are approximate.`,
+        details: [],
+        evidence: [],
+      };
     }
     return passed(`No component is kept overloaded by retries at ${env.environment.label}.`);
   },

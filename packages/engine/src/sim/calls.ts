@@ -17,11 +17,15 @@ const BREAKER_FULL_OPEN = 0.75;
 
 const ZERO: Moments = { mean: 0, variance: 0 };
 
-/** Why one attempt fails, each as a probability on its own (before the others apply). */
+/**
+ * Why calls fail. A fault takes out part of the target for good (a dead
+ * node's keys): every attempt of a call whose key lives there fails, so
+ * retrying does not help. The other risks hit attempts independently.
+ */
 export interface AttemptRisks {
-  /** Rejected by the caller's bulkhead; the call never leaves the caller. */
+  /** Rejected by the caller's bulkhead; the attempt never leaves the caller. */
   readonly shed: number;
-  /** Lost to a fault at the target. */
+  /** Share of calls whose key a fault has taken out. */
   readonly fault: number;
   /** The fault hangs instead of refusing the connection. */
   readonly faultHangs: boolean;
@@ -33,7 +37,7 @@ export interface AttemptRisks {
 
 /** What a policy-governed call to a dependency does, averaged over calls. */
 export interface CallModel {
-  /** Chance that one attempt fails. */
+  /** Chance that one attempt to a working part of the target fails (shed, overload, timeout). */
   readonly attemptFailure: number;
   /** Chance that the call fails after its retries and the circuit breaker. */
   readonly failure: number;
@@ -42,8 +46,12 @@ export interface CallModel {
   /** Expected attempts of a call that ends in success, and of one that fails. */
   readonly attemptsOnSuccess: number;
   readonly attemptsOnFailure: number;
-  /** Share of attempts that reach the target: not shed by the bulkhead, not lost to a fault. */
-  readonly reach: number;
+  /**
+   * Share of a call's attempts that reach a working part of the target (not
+   * shed, not sent to a failed part), for calls that succeed and that fail.
+   */
+  readonly reachOnSuccess: number;
+  readonly reachOnFailure: number;
   /** Latency that failed attempts and backoff add before a success. */
   readonly successExtra: Moments;
   /** Latency of a call that fails, from its attempts and backoff or an immediate short circuit. */
@@ -56,7 +64,8 @@ export const HEALTHY_CALL: CallModel = {
   shortCircuit: 0,
   attemptsOnSuccess: 1,
   attemptsOnFailure: 1,
-  reach: 1,
+  reachOnSuccess: 1,
+  reachOnFailure: 1,
   successExtra: ZERO,
   failureLatency: ZERO,
 };
@@ -76,19 +85,28 @@ function mixture(parts: readonly Weighted[]): Moments {
   return { mean, variance: Math.max(0, second - mean ** 2) };
 }
 
-/** Cost of one failed attempt, by why it failed. */
-function failedAttemptCost(risks: AttemptRisks, policy: ConnectionPolicy): Moments {
+/** Chance that one attempt to a working part of the target fails. */
+const independentFailure = (risks: Omit<AttemptRisks, "fault" | "faultHangs">) =>
+  1 - (1 - risks.shed) * (1 - risks.overload) * (1 - risks.timeout);
+
+/** Cost of one failed attempt to a working part of the target, by why it failed. */
+function liveAttemptCost(risks: AttemptRisks, policy: ConnectionPolicy): Moments {
   const wait = policy.timeoutMs ?? NO_TIMEOUT_WAIT_MS;
-  const pass = (p: number) => 1 - p;
-  const shed = risks.shed;
-  const fault = pass(shed) * risks.fault;
-  const overload = pass(shed) * pass(risks.fault) * risks.overload;
-  const timeout = pass(shed) * pass(risks.fault) * pass(risks.overload) * risks.timeout;
+  const overload = (1 - risks.shed) * risks.overload;
+  const timeout = (1 - risks.shed) * (1 - risks.overload) * risks.timeout;
   return mixture([
-    { weight: shed, mean: 0, variance: 0 },
-    { weight: fault, mean: risks.faultHangs ? wait : NETWORK_RTT_MS, variance: 0 },
+    { weight: risks.shed, mean: 0, variance: 0 },
     { weight: overload, mean: NETWORK_RTT_MS, variance: 0 },
     { weight: timeout, mean: wait, variance: 0 },
+  ]);
+}
+
+/** Cost of one attempt to a failed part: shed locally, or refused or hung there. */
+function deadAttemptCost(risks: AttemptRisks, policy: ConnectionPolicy): Moments {
+  const wait = policy.timeoutMs ?? NO_TIMEOUT_WAIT_MS;
+  return mixture([
+    { weight: risks.shed, mean: 0, variance: 0 },
+    { weight: 1 - risks.shed, mean: risks.faultHangs ? wait : NETWORK_RTT_MS, variance: 0 },
   ]);
 }
 
@@ -119,6 +137,13 @@ function breakerOpenShare(risks: AttemptRisks, policy: ConnectionPolicy): number
   return Math.min(1, Math.max(0, ramp));
 }
 
+/** Expected attempts per call that passes the breaker. */
+function attemptsPerCall(fault: number, e: number, retries: number): number {
+  let live = 0;
+  for (let k = 0; k <= retries; k++) live += e ** k;
+  return fault * (retries + 1) + (1 - fault) * live;
+}
+
 /** Rounds of the inner fixed point between shedding and the retries it causes. */
 const SHED_ROUNDS = 30;
 
@@ -136,13 +161,10 @@ export function bulkheadShed(
   const limit = policy.maxRps;
   if (limit === undefined || callsPerSec <= 0) return 0;
   const passing = callsPerSec * (1 - breakerOpenShare({ ...risks, shed: 0 }, policy));
-  const downstream = 1 - (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
   let shed = 0;
   for (let round = 0; round < SHED_ROUNDS; round++) {
-    const e = 1 - (1 - shed) * (1 - downstream);
-    let attempts = 0;
-    for (let k = 0; k <= policy.retries; k++) attempts += e ** k;
-    const offered = passing * attempts;
+    const e = independentFailure({ ...risks, shed });
+    const offered = passing * attemptsPerCall(risks.fault, e, policy.retries);
     const next = offered > limit ? 1 - limit / offered : 0;
     if (Math.abs(next - shed) < 1e-12) return next;
     shed = next;
@@ -151,20 +173,24 @@ export function bulkheadShed(
 }
 
 /**
- * Combines the risks of one attempt with the caller's retries and circuit
- * breaker. Attempts fail independently; a call is retried up to
+ * Combines the risks of a call with the caller's retries and circuit
+ * breaker. A call whose key a fault took out fails every attempt; otherwise
+ * attempts fail independently, and a call is retried up to
  * `policy.retries` times after failed attempts, with backoff between them.
  */
 export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallModel {
-  const pass = (1 - risks.shed) * (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
-  const e = 1 - pass;
-  const reach = (1 - risks.shed) * (1 - risks.fault);
-  if (e <= 0) return { ...HEALTHY_CALL, reach };
+  const f = risks.fault;
+  const e = independentFailure(risks);
+  if (f <= 0 && e <= 0) return HEALTHY_CALL;
   const attempts = policy.retries + 1;
-  const cost = failedAttemptCost(risks, policy);
-  const failsAll = e ** attempts;
+  const live = liveAttemptCost(risks, policy);
+  const backoffAll = backoffBefore(attempts - 1, policy);
+  const failedAfter = (cost: Moments): Moments => ({
+    mean: attempts * cost.mean + backoffAll.mean,
+    variance: attempts * cost.variance + backoffAll.variance,
+  });
 
-  // Calls that succeed after k failed attempts, k = 0..retries.
+  // Calls to working keys that succeed after k failed attempts, k = 0..retries.
   const successes: Weighted[] = [];
   let attemptsOnSuccess = 0;
   for (let k = 0; k < attempts && e < 1; k++) {
@@ -172,31 +198,34 @@ export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallMo
     const backoff = backoffBefore(k, policy);
     successes.push({
       weight,
-      mean: k * cost.mean + backoff.mean,
-      variance: k * cost.variance + backoff.variance,
+      mean: k * live.mean + backoff.mean,
+      variance: k * live.variance + backoff.variance,
     });
     attemptsOnSuccess += weight * (k + 1);
   }
-  const succeeds = 1 - failsAll;
-  const backoffAll = backoffBefore(attempts - 1, policy);
-  const failedCall: Moments = {
-    mean: attempts * cost.mean + backoffAll.mean,
-    variance: attempts * cost.variance + backoffAll.variance,
-  };
+  const liveFailsAll = e ** attempts;
+  const succeeds = 1 - liveFailsAll;
+  const perSuccess = succeeds > 0 ? attemptsOnSuccess / succeeds : 1;
+  // Failed attempts to working keys that still reached them (timed out or rejected there).
+  const reachedWhenFailing = e > 0 ? (e - risks.shed) / e : 0;
 
   const open = breakerOpenShare(risks, policy);
-  const failure = open + (1 - open) * failsAll;
+  const callsFailing = f + (1 - f) * liveFailsAll;
+  const failure = open + (1 - open) * callsFailing;
   return {
     attemptFailure: e,
     failure,
     shortCircuit: open,
-    attemptsOnSuccess: succeeds > 0 ? attemptsOnSuccess / succeeds : 1,
-    attemptsOnFailure: failure > 0 ? ((1 - open) * failsAll * attempts) / failure : attempts,
-    reach,
+    attemptsOnSuccess: perSuccess,
+    attemptsOnFailure: failure > 0 ? ((1 - open) * callsFailing * attempts) / failure : attempts,
+    reachOnSuccess: (1 + (perSuccess - 1) * reachedWhenFailing) / perSuccess,
+    reachOnFailure:
+      callsFailing > 0 ? ((1 - f) * liveFailsAll * reachedWhenFailing) / callsFailing : 0,
     successExtra: mixture(successes),
     failureLatency: mixture([
       { weight: open, mean: 0, variance: 0 },
-      { weight: (1 - open) * failsAll, ...failedCall },
+      { weight: (1 - open) * f, ...failedAfter(deadAttemptCost(risks, policy)) },
+      { weight: (1 - open) * (1 - f) * liveFailsAll, ...failedAfter(live) },
     ]),
   };
 }

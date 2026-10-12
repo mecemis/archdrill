@@ -98,6 +98,18 @@ describe("no-acknowledged-data-loss", () => {
     expect(outcome.message).toMatch(/^You have not decided how Postgres replicates writes\./);
   });
 
+  it("treats a store without replicas as a durability risk", () => {
+    const single = applyCommand(decided("semi-sync"), "updateComponent", {
+      id: "db",
+      replicas: 1,
+    }).attempt;
+
+    const outcome = runCheckWithLoad("no-acknowledged-data-loss", params, single, workload);
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toMatch(/^Postgres has no replica: if its primary's disk is lost/);
+  });
+
   it("passes when writes wait for a replica", () => {
     const outcome = runCheckWithLoad(
       "no-acknowledged-data-loss",

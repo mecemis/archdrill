@@ -127,6 +127,7 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - **A hanging cache costs twice.** Lookups and populations both wait out the timeout; the first test assumed only one.
 - **A property test found a real non-monotonicity.** With a broken miss branch, more cache capacity lowered success, because fewer requests errored into the working fallback. The property now holds on the intact flow only.
 - **Successful calls come back before the timeout.** Their latency is the Gamma truncated at the timeout, not the unbounded one.
+- **Code review found that retries "healed" partial faults.** Attempts were independent, so with one of four shards down and two retries a call failed 1.6% of the time instead of 25%. A fault now takes out keys for good. The same review split read and write capacity, which made the MySQL golden's failover headroom honest: it needed a third replica.
 
 ### M5: Scale, edges, polish (M)
 - Shards and hot keys, near cache, autoscaling bounds.

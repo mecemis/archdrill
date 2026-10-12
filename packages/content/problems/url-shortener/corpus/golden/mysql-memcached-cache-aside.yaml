@@ -1,7 +1,7 @@
 id: mysql-memcached-cache-aside
 description: >-
   NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (6 nodes, no replication)
-  → MySQL (2 shards × 2 replicas). A cache node that fails only costs its
+  → MySQL (2 shards × 3 replicas). A cache node that fails only costs its
   share of hits, because cache errors fall through to the database. A day-long
   TTL keeps the hot set cached; expiry is checked on every hit. Losing a Memcached node, or all of them, overloads MySQL (see S4).
 expect:
@@ -25,7 +25,7 @@ attempt:
         label: Links DB
         size: m
         shards: 2
-        replicas: 2
+        replicas: 3
         data: [{ entity: Link }]
       - { id: etcd, kind: coordination, flavor: etcd, label: etcd, size: m, replicas: 3 }
     connections:

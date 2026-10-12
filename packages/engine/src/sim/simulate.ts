@@ -151,7 +151,8 @@ function solve(model: Model, fixtures: Fixtures): { converged: boolean; iteratio
 function shockTest(fixtures: Fixtures, healthy: Propagation): MetastableComponent[] {
   if (!fixtures.connections.some((c) => c.policy.retries > 0)) return [];
   const shocked = createModel(fixtures);
-  solve(shocked, fixtures);
+  // An unsettled cold solve proves nothing either way.
+  if (!solve(shocked, fixtures).converged) return [];
   const flow = propagateModel(shocked, fixtures);
   const result: MetastableComponent[] = [];
   for (const [id, profile] of fixtures.profiles) {
@@ -445,10 +446,11 @@ function propagate(
           const callRate = weight * callShare(step);
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
-          addLoad(step.target, attempts * call.reach, write);
+          const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
+          addLoad(step.target, attempts * reach, write);
           retries.set(
             step.target,
-            (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * call.reach,
+            (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * reach,
           );
           addTraffic(step.connectionId, attempts * (1 - shedOf(step.connectionId)));
           tally(step.connectionId, {
@@ -458,7 +460,8 @@ function propagate(
             shortCircuited:
               failed && call.failure > 0 ? (callRate * call.shortCircuit) / call.failure : 0,
           });
-          if (step.action === "cache.get") {
+          // A lookup that never reached the cache does not warm or age its entries.
+          if (step.action === "cache.get" && !failed) {
             const key = cacheKey(step.target, step.entity);
             const entry = lookups.get(key) ?? { existing: 0, absent: 0 };
             lookups.set(

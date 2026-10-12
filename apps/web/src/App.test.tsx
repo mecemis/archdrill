@@ -209,6 +209,14 @@ describe("App", () => {
 
     expect(policy()).toMatchObject({ timeoutMs: 20, circuitBreaker: true, retries: 2 });
     expect(screen.getByRole("checkbox", { name: "Jitter" })).toBeDefined();
+
+    // Values beyond the limit are clamped, and the field shows what was stored.
+    fireEvent.change(timeout, { target: { value: "99999" } });
+    fireEvent.blur(timeout);
+    fireEvent.change(timeout, { target: { value: "99999" } });
+    fireEvent.blur(timeout);
+    expect(policy()?.timeoutMs).toBe(60_000);
+    expect((timeout as HTMLInputElement).value).toBe("60000");
   });
 
   it("shows which components an environment breaks and what calls go through", () => {

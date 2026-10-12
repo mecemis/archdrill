@@ -70,7 +70,7 @@ describe("resolveFaults", () => {
       "redis",
     );
 
-    expect(lost).toMatchObject({ failRead: 0, capacityFactor: 0.5 });
+    expect(lost).toMatchObject({ failRead: 0, readCapacity: 0.5, writeCapacity: 1 });
   });
 
   it("loses a shard's keys when the node had no replica", () => {
@@ -86,7 +86,12 @@ describe("resolveFaults", () => {
       "redis",
     );
 
-    expect(lost).toMatchObject({ failRead: 0.25, failWrite: 0.25, capacityFactor: 0.75 });
+    expect(lost).toMatchObject({
+      failRead: 0.25,
+      failWrite: 0.25,
+      readCapacity: 0.75,
+      writeCapacity: 0.75,
+    });
   });
 
   it("fails writes but not reads while a replicated primary fails over", () => {
@@ -96,6 +101,39 @@ describe("resolveFaults", () => {
       failRead: 0,
       failWrite: 1,
       hang: true,
+    });
+  });
+
+  it("keeps a store's write capacity when it loses a replica", () => {
+    const lost = effect(
+      cacheAsideAttempt(),
+      fault({ kind: "down", target: { holds: "Link" }, scope: "one-node" }),
+      "db",
+    );
+    const service = effect(
+      cacheAsideAttempt(),
+      fault({ kind: "down", target: { kind: "service" }, scope: "one-node" }),
+      "api",
+    );
+
+    expect(lost).toMatchObject({ readCapacity: 0.5, writeCapacity: 1 });
+    expect(service).toMatchObject({ readCapacity: 2 / 3, writeCapacity: 2 / 3 });
+  });
+
+  it("assumes two partial faults on one component hit the same part", () => {
+    const sharded = apply(cacheAsideAttempt(), "updateComponent", {
+      id: "db",
+      shards: 4,
+      replicas: 1,
+    });
+    const faults = [
+      fault({ kind: "down", target: { holds: "Link" }, scope: "one-shard" }),
+      fault({ kind: "failover", target: { holds: "Link" } }),
+    ];
+
+    expect(resolveFaults(faults, sharded, testCatalogIndex).get("db")).toMatchObject({
+      failRead: 0.25,
+      failWrite: 0.25,
     });
   });
 

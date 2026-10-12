@@ -8,8 +8,13 @@ export interface ComponentFault {
   readonly failWrite: number;
   /** Failed calls hang until the caller gives up, instead of being refused at once. */
   readonly hang: boolean;
-  /** Multiplier on capacity: lost nodes or degradation. */
-  readonly capacityFactor: number;
+  /**
+   * Multipliers on read and write capacity: lost nodes or degradation. They
+   * differ for stores whose writes go to primaries, where losing a replica
+   * costs reads only.
+   */
+  readonly readCapacity: number;
+  readonly writeCapacity: number;
   /** Multiplier on service time; capacity divides by it too. */
   readonly slowFactor: number;
   /** What happened, for people: "down", "one node down (survived by replicas)". */
@@ -20,7 +25,8 @@ export const NO_FAULT: ComponentFault = {
   failRead: 0,
   failWrite: 0,
   hang: false,
-  capacityFactor: 1,
+  readCapacity: 1,
+  writeCapacity: 1,
   slowFactor: 1,
   labels: [],
 };
@@ -60,12 +66,18 @@ export function resolveFaults(
   return result;
 }
 
+/**
+ * Two faults on one component: failed shares are assumed to hit the same part
+ * (a lost shard that also fails over), so the larger one wins; capacity
+ * losses compound. If either fault hangs, failed calls hang.
+ */
 function combine(a: ComponentFault, b: ComponentFault): ComponentFault {
   return {
-    failRead: 1 - (1 - a.failRead) * (1 - b.failRead),
-    failWrite: 1 - (1 - a.failWrite) * (1 - b.failWrite),
+    failRead: Math.max(a.failRead, b.failRead),
+    failWrite: Math.max(a.failWrite, b.failWrite),
     hang: a.hang || b.hang,
-    capacityFactor: a.capacityFactor * b.capacityFactor,
+    readCapacity: a.readCapacity * b.readCapacity,
+    writeCapacity: a.writeCapacity * b.writeCapacity,
     slowFactor: a.slowFactor * b.slowFactor,
     labels: [...a.labels, ...b.labels],
   };
@@ -77,8 +89,10 @@ interface Shape {
   readonly shards: number;
   /** The provider replaces failed nodes and fails over without the design's help. */
   readonly managed: boolean;
-  /** Writes go to one primary per shard, which a failover has to replace. */
+  /** A store whose writes go to one primary per shard, which a failover has to replace. */
   readonly primaries: boolean;
+  /** Writes scale with primaries only, so a lost replica costs no write capacity. */
+  readonly writesToPrimaries: boolean;
 }
 
 function shapeOf(component: Component, catalog: CatalogIndex): Shape {
@@ -89,6 +103,7 @@ function shapeOf(component: Component, catalog: CatalogIndex): Shape {
     shards: kind?.shardable ? component.shards : 1,
     managed,
     primaries: (kind?.holdsData ?? false) && kind?.writeScaling === "primaries",
+    writesToPrimaries: kind?.writeScaling === "primaries",
   };
 }
 
@@ -110,7 +125,8 @@ function faultEffect(fault: Fault, component: Component, catalog: CatalogIndex):
     case "degraded":
       return {
         ...NO_FAULT,
-        capacityFactor: fault.capacity,
+        readCapacity: fault.capacity,
+        writeCapacity: fault.capacity,
         labels: [`capacity at ${Math.round(fault.capacity * 100)}%`],
       };
     case "failover":
@@ -127,9 +143,12 @@ function nodeDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
   if (shape.managed) return { ...NO_FAULT, labels: ["one node lost, replaced by the provider"] };
   const instances = shape.replicas * shape.shards;
   if (shape.replicas >= 2) {
+    const remaining = (instances - 1) / instances;
     return {
       ...NO_FAULT,
-      capacityFactor: (instances - 1) / instances,
+      readCapacity: remaining,
+      // A lost primary is replaced by its replica; the primaries still carry the writes.
+      writeCapacity: shape.writesToPrimaries ? 1 : remaining,
       labels: ["one node lost, survived by replicas"],
     };
   }
@@ -137,12 +156,15 @@ function nodeDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
   return fail(1, hangs, [`${how} (its only node)`]);
 }
 
-/** Losing a whole shard: its share of keys fails. */
+/** Losing a whole shard: its share of keys fails. A provider keeps every partition replicated. */
 function shardDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
+  if (shape.managed) return { ...NO_FAULT, labels: ["partition replaced by the provider"] };
   if (shape.shards < 2) return fail(1, hangs, [`${how} (its only shard)`]);
+  const remaining = (shape.shards - 1) / shape.shards;
   return {
     ...fail(1 / shape.shards, hangs, [`one of ${shape.shards} shards ${how}`]),
-    capacityFactor: (shape.shards - 1) / shape.shards,
+    readCapacity: remaining,
+    writeCapacity: remaining,
   };
 }
 
@@ -163,21 +185,23 @@ function failoverEffect(shape: Shape, hangs: boolean): ComponentFault {
     ...NO_FAULT,
     failWrite: share,
     hang: hangs,
-    capacityFactor: (instances - 1) / instances,
+    readCapacity: (instances - 1) / instances,
+    writeCapacity: (shape.shards - 1) / shape.shards,
     labels: [`${scope} failing over; writes to it fail, reads continue on replicas`],
   };
 }
 
 /** A component's capacity and service time under its faults. */
 export function faultedProfile(profile: ComponentProfile, fault: ComponentFault): ComponentProfile {
-  if (fault.capacityFactor === 1 && fault.slowFactor === 1) return profile;
-  const capacity = fault.capacityFactor / fault.slowFactor;
+  if (fault.readCapacity === 1 && fault.writeCapacity === 1 && fault.slowFactor === 1) {
+    return profile;
+  }
   return {
     ...profile,
-    readCapacity: profile.readCapacity * capacity,
-    writeCapacity: profile.writeCapacity * capacity,
+    readCapacity: (profile.readCapacity * fault.readCapacity) / fault.slowFactor,
+    writeCapacity: (profile.writeCapacity * fault.writeCapacity) / fault.slowFactor,
     serviceTimeMs: profile.serviceTimeMs * fault.slowFactor,
     // Concurrency is capacity × service time, so slowness does not change it.
-    servers: Math.max(1, Math.round(profile.servers * fault.capacityFactor)),
+    servers: Math.max(1, Math.round(profile.servers * fault.readCapacity)),
   };
 }
