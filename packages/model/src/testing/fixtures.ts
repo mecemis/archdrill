@@ -1,0 +1,245 @@
+import { type Attempt, AttemptSchema } from "../attempt/schema";
+import { type Catalog, CatalogSchema, createCatalogIndex } from "../catalog/schema";
+import { type Problem, ProblemSchema } from "../problem/schema";
+
+const size = (read: number, write: number, base: number, cost: number) => ({
+  label: "medium",
+  capacityPerSec: { read, write },
+  latencyMs: { base, cv: 0.5 },
+  costPerHour: cost,
+});
+
+/** A small, self-contained catalog for unit tests. Content tests use the real one. */
+export const testCatalog: Catalog = CatalogSchema.parse({
+  version: 1,
+  kinds: [
+    {
+      id: "client",
+      label: "Client",
+      description: "Origin of user traffic.",
+      capabilities: ["traffic-source"],
+      replicable: false,
+      holdsData: false,
+      flavors: [{ id: "browser", label: "Browser", description: "Web browser." }],
+    },
+    {
+      id: "load-balancer",
+      label: "Load balancer",
+      description: "Spreads traffic across replicas.",
+      capabilities: ["load-balancing", "health-checking"],
+      replicable: false,
+      holdsData: false,
+      flavors: [
+        { id: "alb", label: "ALB", description: "Managed L7 LB.", managedRedundancy: true },
+      ],
+    },
+    {
+      id: "service",
+      label: "Service",
+      description: "Stateless application service.",
+      capabilities: ["stateless-compute"],
+      replicable: true,
+      holdsData: false,
+      flavors: [
+        {
+          id: "generic",
+          label: "Service",
+          description: "Stateless service.",
+          sizes: { m: size(3000, 3000, 2, 0.17) },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
+      id: "cache",
+      label: "Cache",
+      description: "In-memory key-value cache.",
+      capabilities: ["volatile-kv", "ttl"],
+      replicable: true,
+      holdsData: false,
+      flavors: [
+        {
+          id: "redis",
+          label: "Redis",
+          description: "Redis.",
+          capabilities: ["atomic-increment"],
+          sizes: { m: size(150000, 120000, 0.5, 0.32) },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
+      id: "relational-db",
+      label: "Relational database",
+      description: "SQL database.",
+      capabilities: ["durable-store", "unique-constraint", "conditional-write", "transactions"],
+      replicable: true,
+      holdsData: true,
+      flavors: [
+        {
+          id: "postgres",
+          label: "PostgreSQL",
+          description: "Postgres.",
+          sizes: { m: size(20000, 5000, 2, 1.4) },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
+      id: "key-value-db",
+      label: "Key-value database",
+      description: "Managed key-value store.",
+      capabilities: ["durable-store", "conditional-write", "ttl"],
+      replicable: false,
+      holdsData: true,
+      flavors: [
+        { id: "dynamodb", label: "DynamoDB", description: "DynamoDB.", managedRedundancy: true },
+      ],
+    },
+  ],
+});
+
+export const testCatalogIndex = createCatalogIndex(testCatalog);
+
+export const testProblem: Problem = ProblemSchema.parse({
+  id: "url-shortener",
+  version: 1,
+  title: "URL Shortener",
+  levels: ["senior"],
+  brief: "Shorten URLs and redirect visitors.",
+  requirements: [
+    { id: "FR-1", kind: "functional", text: "Create short links." },
+    { id: "FR-2", kind: "functional", text: "Redirect to the long URL." },
+    { id: "FR-3", kind: "functional", text: "Expired links stop redirecting." },
+  ],
+  entities: [
+    { name: "Link", key: "code", fields: ["code", "longUrl", "expiresAt"], avgBytes: 500 },
+  ],
+  operations: [
+    {
+      id: "redirect",
+      label: "Redirect",
+      method: "GET",
+      path: "/{code}",
+      class: "read",
+      idempotent: true,
+      successStatuses: [301, 302, 404, 410],
+      requirements: ["FR-2", "FR-3"],
+    },
+    {
+      id: "create-link",
+      label: "Create link",
+      method: "POST",
+      path: "/links",
+      class: "write",
+      idempotent: false,
+      successStatuses: [201, 400, 409],
+      requirements: ["FR-1"],
+    },
+  ],
+  decisionPoints: [
+    {
+      id: "redirect-status",
+      question: "Which redirect status?",
+      options: [
+        { id: "s301", label: "301" },
+        { id: "s302", label: "302" },
+      ],
+    },
+  ],
+  scenarios: ["s2-redirect"],
+});
+
+/**
+ * Client → ALB → link-api (3 replicas) → Redis cache-aside → Postgres.
+ * The redirect flow handles every outcome and populates the cache on a miss.
+ */
+export function cacheAsideAttempt(): Attempt {
+  return AttemptSchema.parse({
+    schemaVersion: 1,
+    problemId: "url-shortener",
+    problemVersion: 1,
+    architecture: {
+      components: [
+        { id: "client", kind: "client", flavor: "browser", label: "Visitors" },
+        { id: "lb", kind: "load-balancer", flavor: "alb", label: "ALB" },
+        {
+          id: "api",
+          kind: "service",
+          flavor: "generic",
+          label: "Link API",
+          size: "m",
+          replicas: 3,
+        },
+        { id: "redis", kind: "cache", flavor: "redis", label: "Redis", size: "m", replicas: 2 },
+        {
+          id: "db",
+          kind: "relational-db",
+          flavor: "postgres",
+          label: "Postgres",
+          size: "m",
+          replicas: 2,
+          data: [{ entity: "Link" }],
+        },
+      ],
+      connections: [
+        { id: "client--lb", from: "client", to: "lb" },
+        { id: "lb--api", from: "lb", to: "api" },
+        { id: "api--redis", from: "api", to: "redis" },
+        { id: "api--db", from: "api", to: "db" },
+      ],
+    },
+    flows: [
+      {
+        operation: "redirect",
+        handler: "api",
+        root: "get",
+        steps: {
+          get: {
+            type: "call",
+            target: "redis",
+            action: "cache.get",
+            entity: "Link",
+            next: { hit: "expiryHit", miss: "read", error: "read" },
+          },
+          expiryHit: {
+            type: "logic",
+            logic: "checkExpiry",
+            next: { valid: "r302", expired: "r410" },
+          },
+          read: {
+            type: "call",
+            target: "db",
+            action: "store.read",
+            entity: "Link",
+            next: { found: "expiryDb", notFound: "r404", error: "r503" },
+          },
+          expiryDb: {
+            type: "logic",
+            logic: "checkExpiry",
+            next: { valid: "populate", expired: "r410" },
+          },
+          populate: {
+            type: "call",
+            target: "redis",
+            action: "cache.set",
+            entity: "Link",
+            ttlSec: 3600,
+            next: { ok: "r302", error: "r302" },
+          },
+          r302: { type: "respond", status: 302 },
+          r404: { type: "respond", status: 404 },
+          r410: { type: "respond", status: 410 },
+          r503: { type: "respond", status: 503 },
+        },
+      },
+    ],
+    layout: {
+      client: { x: 0, y: 0 },
+      lb: { x: 200, y: 0 },
+      api: { x: 400, y: 0 },
+      redis: { x: 600, y: -100 },
+      db: { x: 600, y: 100 },
+    },
+  });
+}
