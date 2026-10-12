@@ -140,6 +140,15 @@ export const WorkloadSchema = z.object({
       z.object({ alphabet: z.number().int().min(2), lengthDecision: IdSchema }),
     )
     .default({}),
+  /**
+   * The decision that sets how stores with a primary replicate writes:
+   * `async`, `semi-sync` or `sync`. Waiting for replicas adds latency to writes.
+   */
+  replication: z.object({ decision: IdSchema }).optional(),
   environments: z.array(EnvironmentSchema).min(1),
 });
+
+/** Options a replication decision may offer. */
+export const REPLICATION_MODES = ["async", "semi-sync", "sync"] as const;
+export type ReplicationMode = (typeof REPLICATION_MODES)[number];
 export type Workload = z.infer<typeof WorkloadSchema>;

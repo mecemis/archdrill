@@ -1,4 +1,4 @@
-import type { Problem, Scenario } from "@archdrill/model";
+import { type Problem, REPLICATION_MODES, type Scenario } from "@archdrill/model";
 import { populateAfterMiss } from "./dataflow";
 import { ingressHasCapability } from "./ingress";
 import {
@@ -127,6 +127,14 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
           `decision "${lengthDecision}" has options that are not code lengths: ${lengths.join(", ")}`,
         ),
       );
+  }
+  const replication = workload.replication?.decision;
+  if (replication) {
+    const point = problem.decisionPoints.find((d) => d.id === replication);
+    const modes: readonly string[] = REPLICATION_MODES;
+    if (!point) issues.push(issue(`replication uses unknown decision "${replication}"`));
+    else if (point.options.some((o) => !modes.includes(o.id)))
+      issues.push(issue(`decision "${replication}" must offer only ${modes.join(", ")}`));
   }
   return issues;
 }

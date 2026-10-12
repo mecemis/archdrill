@@ -193,6 +193,15 @@ export const testProblem: Problem = ProblemSchema.parse({
       ],
       default: "7",
     },
+    {
+      id: "replication-mode",
+      question: "How does the link store replicate writes?",
+      options: [
+        { id: "async", label: "Asynchronous" },
+        { id: "semi-sync", label: "Semi-synchronous" },
+        { id: "sync", label: "Synchronous" },
+      ],
+    },
   ],
   scenarios: ["s2-redirect"],
 });
