@@ -95,6 +95,16 @@ export interface ConnectionCallMetrics {
   readonly timedOut: number;
 }
 
+/** A component that a shock leaves overloaded for good, although it is healthy in steady state. */
+export interface MetastableComponent {
+  readonly componentId: string;
+  /** Utilisation in the overloaded state the shock leads to. */
+  readonly utilization: number;
+  /** Requests per second reaching it there, and how many of them are retries. */
+  readonly load: number;
+  readonly retryLoad: number;
+}
+
 export interface EnvironmentMetrics {
   readonly environment: Environment;
   readonly operations: ReadonlyMap<string, OperationMetrics>;
@@ -108,4 +118,6 @@ export interface EnvironmentMetrics {
   /** False if the overload feedback loop did not settle; metrics are then the last iterate. */
   readonly converged: boolean;
   readonly iterations: number;
+  /** Components a shock (cold caches) tips into lasting overload that retries sustain; empty when none. */
+  readonly metastable: readonly MetastableComponent[];
 }

@@ -35,8 +35,9 @@ import {
   summarizeComponents,
   summarizeOperations,
   timeoutShare,
+  utilizationOf,
 } from "./summary";
-import type { EnvironmentMetrics } from "./types";
+import type { EnvironmentMetrics, MetastableComponent } from "./types";
 
 export { NETWORK_RTT_MS } from "./calls";
 export { CACHE_FILL_FACTOR, type SimulationContext } from "./setup";
@@ -63,13 +64,118 @@ interface LoopState {
   readonly negativeHit: Map<string, number>;
 }
 
+/** Iterations that warm the caches before the fixed point starts. */
+const WARM_UP_ITERATIONS = 40;
+
+interface Model {
+  readonly loop: LoopState;
+  readonly calls: ReturnType<typeof callModels>;
+  readonly state: OutcomeState;
+  readonly ingress: IngressModel;
+}
+
+interface Fixtures {
+  readonly profiles: ReadonlyMap<string, ComponentProfile>;
+  readonly operations: readonly OperationModel[];
+  readonly caches: readonly CacheSpec[];
+  readonly connections: readonly Connection[];
+  readonly faults: ReadonlyMap<string, ComponentFault>;
+  readonly occupancy: ReadonlyMap<string, { all: number; aliases: number }>;
+}
+
+function createModel(fixtures: Fixtures): Model {
+  const loop: LoopState = {
+    drop: new Map(),
+    timedOut: new Map(),
+    callRates: new Map(),
+    hit: new Map(),
+    negativeHit: new Map(),
+  };
+  const calls = callModels(fixtures.connections, fixtures.faults, loop);
+  const state: OutcomeState = {
+    callFailure: (step) => calls.get(step).failure,
+    occupancy: (entity) => fixtures.occupancy.get(entity ?? "")?.all ?? 0,
+    aliasOccupancy: (entity) => fixtures.occupancy.get(entity ?? "")?.aliases ?? 0,
+    hitRatio: (id, entity) => loop.hit.get(cacheKey(id, entity)) ?? 0,
+    negativeHitRatio: (id, entity) => loop.negativeHit.get(cacheKey(id, entity)) ?? 0,
+  };
+  return { loop, calls, state, ingress: ingressModel(fixtures.faults, loop) };
+}
+
+function propagateModel(model: Model, fixtures: Fixtures): Propagation {
+  model.calls.reset();
+  return propagate(
+    fixtures.operations,
+    model.state,
+    model.calls.get,
+    model.ingress,
+    model.calls.shedOf,
+  );
+}
+
+/**
+ * Fills the caches at nominal load before anything can fail. Starting the
+ * fixed point from cold caches would be a shock of its own: every request
+ * misses at once, which can tip designs with aggressive retries into an
+ * overloaded state they never leave.
+ */
+function warmCaches(model: Model, fixtures: Fixtures): void {
+  for (let i = 0; i < WARM_UP_ITERATIONS; i++) {
+    relaxCaches(fixtures.caches, propagateModel(model, fixtures), model.loop, 0.5);
+  }
+}
+
+function solve(model: Model, fixtures: Fixtures): { converged: boolean; iterations: number } {
+  let iterations = 0;
+  while (iterations < MAX_ITERATIONS) {
+    iterations++;
+    const flow = propagateModel(model, fixtures);
+    const damping = dampingAt(iterations);
+    const delta = Math.max(
+      relaxComponents(fixtures.profiles, flow, model.loop, damping),
+      relaxConnections(fixtures.connections, fixtures.profiles, flow, model.loop, damping),
+      relaxCaches(fixtures.caches, flow, model.loop, damping),
+    );
+    if (delta < TOLERANCE) return { converged: true, iterations };
+  }
+  return { converged: false, iterations };
+}
+
+/**
+ * Retries can give a design a second, overloaded steady state that it only
+ * reaches after a shock and then cannot leave (a metastable failure). Solving
+ * again from cold caches, a shock every design meets after a deploy or a
+ * cache flush, finds components that stay overloaded there but not in the
+ * healthy state.
+ */
+function shockTest(fixtures: Fixtures, healthy: Propagation): MetastableComponent[] {
+  if (!fixtures.connections.some((c) => c.policy.retries > 0)) return [];
+  const shocked = createModel(fixtures);
+  solve(shocked, fixtures);
+  const flow = propagateModel(shocked, fixtures);
+  const result: MetastableComponent[] = [];
+  for (const [id, profile] of fixtures.profiles) {
+    const load = flow.loads.get(id);
+    const utilization = utilizationOf(load, profile);
+    if (utilization <= 1 || utilizationOf(healthy.loads.get(id), profile) > 1) continue;
+    result.push({
+      componentId: id,
+      utilization,
+      load: (load?.read ?? 0) + (load?.write ?? 0),
+      retryLoad: flow.retries.get(id) ?? 0,
+    });
+  }
+  return result;
+}
+
 /**
  * Steady-state model of one environment: load propagation over path
  * probabilities, cache hit ratios, queueing latency, overload, faults, and the
  * callers' timeouts, retries, circuit breakers and bulkheads. These feed back
  * on each other (a failing call takes the error branch and may be retried,
- * which shifts load), so the model iterates to a damped fixed point. If it
- * does not settle, the metrics are the last iterate and `converged` is false.
+ * which shifts load), so the model iterates to a damped fixed point, starting
+ * from warm caches. If it does not settle, the metrics are the last iterate
+ * and `converged` is false.
  */
 export function simulateEnvironment(
   workload: Workload,
@@ -78,69 +184,43 @@ export function simulateEnvironment(
 ): EnvironmentMetrics {
   const faults = resolveFaults(environment.faults, ctx.attempt, ctx.catalog);
   const profiles = buildProfiles(ctx, faults);
-  const operations = buildOperations(workload, environment, ctx);
-  const caches = buildCacheSpecs(workload, profiles, ctx);
-  const connections = ctx.attempt.architecture.connections;
-  const loop: LoopState = {
-    drop: new Map(),
-    timedOut: new Map(),
-    callRates: new Map(),
-    hit: new Map(),
-    negativeHit: new Map(),
+  const fixtures: Fixtures = {
+    profiles,
+    operations: buildOperations(workload, environment, ctx),
+    caches: buildCacheSpecs(workload, profiles, ctx),
+    connections: ctx.attempt.architecture.connections,
+    faults,
+    occupancy: occupancies(workload, ctx),
   };
-  const calls = callModels(connections, faults, loop);
-  const occupancyByEntity = occupancies(workload, ctx);
-  const state: OutcomeState = {
-    callFailure: (step) => calls.get(step).failure,
-    occupancy: (entity) => occupancyByEntity.get(entity ?? "")?.all ?? 0,
-    aliasOccupancy: (entity) => occupancyByEntity.get(entity ?? "")?.aliases ?? 0,
-    hitRatio: (id, entity) => loop.hit.get(cacheKey(id, entity)) ?? 0,
-    negativeHitRatio: (id, entity) => loop.negativeHit.get(cacheKey(id, entity)) ?? 0,
-  };
-  const ingress = ingressModel(faults, loop);
+  const model = createModel(fixtures);
+  warmCaches(model, fixtures);
+  const { converged, iterations } = solve(model, fixtures);
 
-  let iterations = 0;
-  let converged = false;
-  while (iterations < MAX_ITERATIONS) {
-    iterations++;
-    calls.reset();
-    const flow = propagate(operations, state, calls.get, ingress, calls.shedOf);
-    const damping = dampingAt(iterations);
-    const delta = Math.max(
-      relaxComponents(profiles, flow, loop, damping),
-      relaxConnections(connections, profiles, flow, loop, damping),
-      relaxCaches(caches, flow, loop, damping),
-    );
-    if (delta < TOLERANCE) {
-      converged = true;
-      break;
-    }
-  }
-
-  calls.reset();
-  const final = propagate(operations, state, calls.get, ingress, calls.shedOf);
+  const final = propagateModel(model, fixtures);
   const components = summarizeComponents(
     profiles,
     final,
-    loop.drop,
+    model.loop.drop,
     storedGb(workload, ctx),
     faults,
   );
+  const connections = fixtures.connections;
   return {
     environment,
-    operations: summarizeOperations(operations, state, ingress.pass, {
+    operations: summarizeOperations(fixtures.operations, model.state, model.ingress.pass, {
       components,
-      callFor: calls.get,
+      callFor: model.calls.get,
       replicaAck: replicaAckMs(workload, ctx),
       timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,
     }),
     components,
-    caches: caches.map((spec) => summarizeCache(spec, final, state)),
+    caches: fixtures.caches.map((spec) => summarizeCache(spec, final, model.state)),
     connections: final.traffic,
-    calls: summarizeCalls(final, calls.shedOf, loop.timedOut),
+    calls: summarizeCalls(final, model.calls.shedOf, model.loop.timedOut),
     monthlyCost: [...components.values()].reduce((sum, c) => sum + c.monthlyCost, 0),
     converged,
     iterations,
+    metastable: shockTest(fixtures, final),
   };
 }
 

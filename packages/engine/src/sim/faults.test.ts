@@ -190,4 +190,23 @@ describe("faults and connection policies", () => {
     expect(p50("semi-sync") - p50("async")).toBeCloseTo(1, 1);
     expect(p50("sync") - p50("async")).toBeCloseTo(2, 1);
   });
+
+  it("finds the overloaded state aggressive retries can get stuck in", () => {
+    const big = apply(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 80 });
+    const hammer = apply(big, "setConnectionPolicy", {
+      id: "api--db",
+      timeoutMs: 200,
+      retries: 10,
+      backoff: "none",
+    });
+
+    // Warm, the store sees only misses; cold, it sees all 200,000 reads a second.
+    const healthy = redirects(big, [], 200_000).metrics;
+    const stuck = redirects(hammer, [], 200_000).metrics;
+
+    expect(healthy.metastable).toEqual([]);
+    expect(stuck.components.get("db")?.utilization).toBeLessThan(1);
+    expect(stuck.metastable.map((c) => c.componentId)).toEqual(["db"]);
+    expect(stuck.metastable[0]?.retryLoad).toBeGreaterThan(0.5 * (stuck.metastable[0]?.load ?? 0));
+  });
 });

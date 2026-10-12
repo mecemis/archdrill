@@ -208,6 +208,17 @@ export const stableUnderRetries = defineCheck({
         details,
       );
     }
+    if (env.metastable.length > 0) {
+      const details = env.metastable.map(
+        (c) =>
+          `${label(c.componentId)}: stays at ${Math.round(100 * c.utilization)}% utilisation, ${Math.round((100 * c.retryLoad) / Math.max(1, c.load))}% of its load retries`,
+      );
+      return failed(
+        `A shock such as a cache flush tips ${env.metastable.map((c) => label(c.componentId)).join(", ")} into an overload that retries sustain at ${env.environment.label}. The healthy numbers only hold if nothing ever goes wrong.`,
+        env.metastable.map((c): Evidence => ({ type: "component", componentId: c.componentId })),
+        details,
+      );
+    }
     if (!env.converged) {
       return failed(
         `The load model does not settle at ${env.environment.label}: failures, timeouts and retries keep feeding back.`,

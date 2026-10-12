@@ -135,6 +135,33 @@ describe("stable-under-retries", () => {
     );
   });
 
+  it("explains a retry storm a shock leaves the design stuck in", () => {
+    const steady = WorkloadSchema.parse({
+      ...workload,
+      environments: [{ id: "peak", label: "Peak", rates: { redirect: 200_000 } }],
+    });
+    const huge = applyCommand(cacheAsideAttempt(), "updateComponent", {
+      id: "api",
+      replicas: 80,
+    }).attempt;
+    const hammer = withPolicy("api--db", { timeoutMs: 200, retries: 10, backoff: "none" }, huge);
+
+    const outcome = runCheckWithLoad(
+      "stable-under-retries",
+      { environment: "peak" },
+      hammer,
+      steady,
+    );
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toMatch(
+      /^A shock such as a cache flush tips Postgres into an overload/,
+    );
+    expect(outcome.details[0]).toMatch(
+      /^Postgres: stays at \d+% utilisation, \d+% of its load retries$/,
+    );
+  });
+
   it("does not blame retries for overload they do not cause", () => {
     expect(runCheckWithLoad("stable-under-retries", params, big, workload).status).toBe("pass");
   });
