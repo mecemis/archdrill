@@ -85,11 +85,40 @@ describe("commands", () => {
   it("reverses a connection and renames it after its new direction", () => {
     const { attempt } = applyCommand(cacheAsideAttempt(), "reverseConnection", { id: "lb--api" });
 
-    expect(attempt.architecture.connections).toContainEqual({
-      id: "api--lb",
-      from: "api",
-      to: "lb",
-      mode: "sync",
+    expect(attempt.architecture.connections).toContainEqual(
+      expect.objectContaining({ id: "api--lb", from: "api", to: "lb", mode: "sync" }),
+    );
+  });
+
+  it("sets and clears a connection policy", () => {
+    const set = applyCommand(cacheAsideAttempt(), "setConnectionPolicy", {
+      id: "api--redis",
+      timeoutMs: 50,
+      retries: 2,
+      circuitBreaker: true,
+      maxRps: 10_000,
+    }).attempt;
+    const cleared = applyCommand(set, "setConnectionPolicy", {
+      id: "api--redis",
+      timeoutMs: null,
+      maxRps: null,
+    }).attempt;
+
+    const policy = (attempt: typeof set) =>
+      attempt.architecture.connections.find((c) => c.id === "api--redis")?.policy;
+    expect(policy(set)).toEqual({
+      timeoutMs: 50,
+      retries: 2,
+      backoff: "exponential",
+      jitter: true,
+      circuitBreaker: true,
+      maxRps: 10_000,
+    });
+    expect(policy(cleared)).toEqual({
+      retries: 2,
+      backoff: "exponential",
+      jitter: true,
+      circuitBreaker: true,
     });
   });
 

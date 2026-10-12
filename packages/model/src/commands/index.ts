@@ -10,6 +10,7 @@ import {
   reverseConnection,
   setComponentData,
   setConnectionMode,
+  setConnectionPolicy,
   setDecision,
   updateComponent,
 } from "./architecture";
@@ -40,6 +41,7 @@ export const COMMANDS = {
   removeConnection,
   reverseConnection,
   setConnectionMode,
+  setConnectionPolicy,
   setDecision,
   createFlow,
   setFlowHandler,

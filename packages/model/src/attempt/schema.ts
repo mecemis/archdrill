@@ -8,6 +8,8 @@ export const ATTEMPT_SCHEMA_VERSION = 1;
 /** Upper bounds that keep imported designs within what the model is calibrated for. */
 export const MAX_REPLICAS = 1000;
 export const MAX_SHARDS = 1024;
+export const MAX_TIMEOUT_MS = 60_000;
+export const MAX_RETRIES = 10;
 
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 export type Position = z.infer<typeof PositionSchema>;
@@ -28,11 +30,36 @@ export const ComponentSchema = z.object({
 });
 export type Component = z.infer<typeof ComponentSchema>;
 
+/**
+ * How a service treats its calls over a connection: give up after a timeout,
+ * retry failed calls, stop calling a dependency that fails most calls (circuit
+ * breaker), and cap the call rate (bulkhead). Only calls made by flow steps
+ * follow a policy; ingress hops do not.
+ */
+export const ConnectionPolicySchema = z.object({
+  /** Give up on a call after this long. Without it, a hung call waits for the client default. */
+  timeoutMs: z.number().int().min(1).max(MAX_TIMEOUT_MS).optional(),
+  /** Extra attempts after a failed call (an error, a timeout or a rejection). */
+  retries: z.number().int().min(0).max(MAX_RETRIES).default(0),
+  /** Wait between attempts: none, or exponential from a few milliseconds. */
+  backoff: z.enum(["none", "exponential"]).default("exponential"),
+  /** Randomise the backoff so callers do not retry in lockstep. */
+  jitter: z.boolean().default(true),
+  /** Fail fast without calling while the dependency fails most calls. */
+  circuitBreaker: z.boolean().default(false),
+  /** Bulkhead: calls beyond this rate are rejected locally and never reach the target. */
+  maxRps: z.number().positive().max(1e9).optional(),
+});
+export type ConnectionPolicy = z.infer<typeof ConnectionPolicySchema>;
+/** No timeout, no retries, no circuit breaker, no bulkhead. */
+export const DEFAULT_POLICY: ConnectionPolicy = ConnectionPolicySchema.parse({});
+
 export const ConnectionSchema = z.object({
   id: IdSchema,
   from: IdSchema,
   to: IdSchema,
   mode: z.enum(["sync", "async"]).default("sync"),
+  policy: ConnectionPolicySchema.prefault({}),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 

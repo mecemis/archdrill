@@ -23,7 +23,7 @@ const workload = WorkloadSchema.parse({
     },
   },
   dataset: { Link: 1e9 },
-  environments: [{ id: "e", label: "E", rates: { redirect: 1 } }],
+  environments: [{ id: "e", label: "E", rates: { redirect: 1 }, faults: [] }],
 });
 
 const stepIds = [
@@ -108,7 +108,7 @@ function simulate(attempt: Attempt, rate: number) {
   if (analysis.operations.get("redirect")?.status !== "ready") return null;
   return simulateEnvironment(
     workload,
-    { id: "e", label: "E", rates: { redirect: rate } },
+    { id: "e", label: "E", rates: { redirect: rate }, faults: [] },
     {
       attempt,
       catalog: testCatalogIndex,
