@@ -15,16 +15,25 @@ export type Zipf = z.infer<typeof ZipfSchema>;
  * so correlations hold: a code that does not exist always misses the cache
  * (unless negatively cached) and is never found in the store.
  */
-export const RequestClassSchema = z.object({
-  id: IdSchema,
-  share: z.number().min(0).max(1),
-  /** The entity the request refers to exists. */
-  exists: z.boolean().default(true),
-  expired: z.boolean().default(false),
-  disabled: z.boolean().default(false),
-  /** The request carries invalid input (e.g. a malformed URL). */
-  invalidInput: z.boolean().default(false),
-});
+export const RequestClassSchema = z
+  .object({
+    id: IdSchema,
+    share: z.number().min(0).max(1),
+    /** The entity the request refers to exists. */
+    exists: z.boolean().default(true),
+    expired: z.boolean().default(false),
+    disabled: z.boolean().default(false),
+    /** The request carries invalid input (e.g. a malformed URL). */
+    invalidInput: z.boolean().default(false),
+    /** The request asks for a specific alias instead of a generated code. */
+    customAlias: z.boolean().default(false),
+    /** The requested alias is already taken. */
+    aliasTaken: z.boolean().default(false),
+  })
+  .refine((cls) => cls.customAlias || !cls.aliasTaken, {
+    message: "aliasTaken only applies to requests with customAlias",
+    path: ["aliasTaken"],
+  });
 export type RequestClass = z.infer<typeof RequestClassSchema>;
 
 const SHARE_TOLERANCE = 1e-9;
@@ -61,6 +70,17 @@ export const WorkloadSchema = z.object({
   keys: z.record(z.string().min(1), KeyPopularitySchema),
   /** Number of stored entities per entity type, for storage cost and capacity. */
   dataset: z.record(z.string().min(1), z.number().nonnegative()).default({}),
+  /**
+   * Keyspace of generated codes per entity: alphabet size and the decision
+   * that sets the code length. Random codes collide with probability
+   * stored / alphabet^length.
+   */
+  keyspace: z
+    .record(
+      z.string().min(1),
+      z.object({ alphabet: z.number().int().min(2), lengthDecision: IdSchema }),
+    )
+    .default({}),
   environments: z.array(EnvironmentSchema).min(1),
 });
 export type Workload = z.infer<typeof WorkloadSchema>;

@@ -77,7 +77,7 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - **Exact Erlang C instead of Sakasegawa.** The exact formula is cheap enough, so Sakasegawa is used only beyond 5,000 servers.
 - **Evaluation stays on the main thread.** Two scenarios with two environments each take a few milliseconds, cached per attempt version, so the worker is deferred until the discrete-event engine needs it.
 
-### M3: Write path and strategies (M)
+### M3: Write path and strategies (M) ✅
 - Conditional writes, conflict outcomes, id-generation and leases capabilities.
 - Strategy registry: kgs, random-conditional, counter-range, hash-based, and the check-then-insert anti-pattern.
 - Decisions panel and decision checks.
@@ -86,6 +86,21 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - Golden: 5. Mutants: 18.
 
 **Done when:** all four strategies are recognised in golden designs, and the check-then-insert race is caught as a gate failure.
+
+**Delivered (2026-10-12):**
+- Model: `ids.allocate` and `coord.leaseRange` with optional batch sizes, alias and code-generation logic, `store.insert` as an explicit overwriting put, decision defaults, and keyspaces sized by a decision.
+- Engine: conflict probability by key origin (taken alias, random or hashed code at keyspace occupancy, allocated key never), and batched allocation.
+- Evaluator: `recognize-strategy`, `ingress-has-capability`, the `hasSequence` predicate and the `batched` step matcher, `applicableWhen` for `no-path`, single points of failure judged per kind of request, and error causes in success-rate findings.
+- Content: S1 with 5 gates, 13 baseline checks and 2 senior signals; API gateway, key generation service and coordination service kinds; the `code-length` decision.
+- Corpus: five golden designs covering all four strategies (each scores 100 in S1), and 15 new mutants (32 in total).
+- Web: a Decisions panel, the recognised approach in the score summary, batch sizes in the step form, and icons for the new kinds.
+
+**Learned along the way:**
+- **Counting inserts does not detect a retry.** When a retry's new allocation fails, the path has only one insert. The check now looks for a new code after a conflict, as an ordered step sequence.
+- **Single points of failure depend on the kind of request.** Custom aliases bypass the key generator, so "some path survives without it" let a single KGS pass. Paths are now grouped by the outcomes of branching logic before asking whether a component is critical.
+- **The code-length decision makes collisions concrete.** With 7 characters and one retry, about 0.2% of creates fail at 5-year occupancy, which misses the 99.9% target. The simulation shows the candidate why 8 characters or a second retry is needed.
+- **Code review caught the simulation contradicting the scenario.** The S1 text said pre-generated keys can meet a custom alias, but the engine treated them as never colliding. Generated keys now collide at the share of the keyspace that aliases hold. The same review found that hashing the same URL again was simulated as a fresh draw; it now collides every time unless salted.
+- **Visual QA still finds real bugs.** The flow panel claimed that no client could reach the handler whenever the design had validation errors, because it read the route from an analysis that is skipped for invalid designs.
 
 ### M4: Faults, timeouts, retries (L)
 - Fault model (crash, hang, slow, degraded, partition, failover; scopes).

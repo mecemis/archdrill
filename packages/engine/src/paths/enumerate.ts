@@ -67,6 +67,7 @@ export function enumeratePaths(
               action: step.action,
               entity: step.entity,
               ttlSec: step.ttlSec,
+              batchSize: step.batchSize,
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };

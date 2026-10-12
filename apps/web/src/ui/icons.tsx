@@ -1,11 +1,14 @@
 import {
   Boxes,
   Database,
+  DoorOpen,
+  KeyRound,
   type LucideIcon,
   Network,
   Server,
   Table2,
   Users,
+  Vote,
   Zap,
 } from "lucide-react";
 
@@ -16,6 +19,9 @@ const KIND_ICONS: Readonly<Record<string, LucideIcon>> = {
   cache: Zap,
   "relational-db": Database,
   "key-value-db": Table2,
+  "api-gateway": DoorOpen,
+  "id-generator": KeyRound,
+  coordination: Vote,
 };
 
 export function KindIcon({

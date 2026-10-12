@@ -11,7 +11,9 @@ export function stepTitle(step: Step, attempt: Attempt): string {
     case "call": {
       const action = `${ACTIONS[step.action].label} ${step.entity ?? ""}`.trim();
       const ttl = step.ttlSec === undefined ? "" : ` (TTL ${step.ttlSec}s)`;
-      return `${componentLabel(attempt, step.target)} · ${action}${ttl}`;
+      const batch =
+        step.batchSize === undefined ? "" : ` (batch ${step.batchSize.toLocaleString("en-US")})`;
+      return `${componentLabel(attempt, step.target)} · ${action}${ttl}${batch}`;
     }
     case "logic":
       return LOGIC[step.logic].label;

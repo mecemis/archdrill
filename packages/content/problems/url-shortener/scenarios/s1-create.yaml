@@ -1,0 +1,447 @@
+id: s1-create
+problemId: url-shortener
+title: Create a link (write path)
+order: 1
+story: |
+  "Walk me through what happens when a user creates a short link. How do you
+  generate the code, and how do you guarantee that two users never get the
+  same one, even when they create links at the same moment? What does a user
+  see if they ask for an alias that is already taken?"
+focusOperations: [create-link]
+workload:
+  operations:
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.975 }
+        - { id: custom-free, share: 0.019, customAlias: true }
+        - { id: custom-taken, share: 0.001, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.005, invalidInput: true }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  environments:
+    - { id: avg, label: Average, rates: { create-link: 1000 } }
+    - { id: peak, label: "Peak (×3)", rates: { create-link: 3000 } }
+dimensions:
+  correctness: 0.30
+  concurrency: 0.20
+  durability: 0.15
+  availability: 0.15
+  security: 0.10
+  latency: 0.10
+checks:
+  - id: validates-before-writing
+    use: all-success-paths-contain
+    title: URLs are validated before anything is written
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      statuses: [201]
+      step: { logic: validateUrl, outcome: valid }
+    why: >-
+      Garbage in the link table is forever: malformed or unsupported URLs
+      become redirects to nowhere. Validation is the cheapest check and must
+      happen before any code is spent or any row is written.
+    fix: >-
+      Start the flow with validateUrl and answer invalid URLs with 400.
+
+  - id: invalid-url-400
+    use: status-for-condition
+    title: Invalid URLs answer 400
+    dimension: correctness
+    weight: 1
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      when: { hasStep: { logic: validateUrl, outcome: invalid } }
+      statuses: [400]
+    why: >-
+      The caller sent something wrong; 400 says so and lets clients fix it
+      instead of retrying.
+    fix: >-
+      Route the invalid outcome of validateUrl to a 400 response.
+
+  - id: durable-before-ack
+    use: all-success-paths-contain
+    title: A link is stored durably before the user is told it exists
+    dimension: durability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-4]
+    params:
+      operation: create-link
+      statuses: [201]
+      step: { action: [store.insert, store.insertIfAbsent], entity: Link, outcome: ok }
+    why: >-
+      Once you answer 201 the user shares the short link. If the write had not
+      reached a durable store yet, a crash loses a link that is already
+      printed on posters.
+    fix: >-
+      Answer 201 only after the store confirms the write.
+
+  - id: atomic-uniqueness
+    use: all-success-paths-contain
+    title: Uniqueness is enforced by an atomic write
+    dimension: concurrency
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-3]
+    params:
+      operation: create-link
+      statuses: [201]
+      step: { action: store.insertIfAbsent, entity: Link, outcome: ok }
+    why: >-
+      Only the store can arbitrate between two concurrent writers. A plain put
+      silently overwrites whoever came first, so one user's link starts
+      redirecting to someone else's URL. Even generated keys and custom
+      aliases share one namespace.
+    fix: >-
+      Write the link with a conditional insert (INSERT … ON CONFLICT DO
+      NOTHING, a unique key, or a DynamoDB condition expression) and handle its
+      conflict outcome.
+
+  - id: no-check-then-insert
+    use: no-path
+    title: No check-then-insert race
+    dimension: concurrency
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-3]
+    params:
+      operation: create-link
+      where:
+        all:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - hasStep: { action: store.insert, entity: Link }
+    why: >-
+      Reading "is this code free?" and then writing is a time-of-check to
+      time-of-use race: two requests can both see notFound and both write.
+      Interviewers listen for exactly this mistake.
+    fix: >-
+      Drop the read and let a conditional insert decide atomically.
+
+  - id: custom-aliases-supported
+    use: all-success-paths-contain
+    title: Custom aliases are honoured
+    dimension: correctness
+    weight: 1
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      statuses: [201]
+      step: { logic: hasCustomAlias }
+    why: >-
+      Users who ask for a specific alias must get it or a clear refusal; a flow
+      that ignores the alias silently creates something else.
+    fix: >-
+      Branch on hasCustomAlias: insert the requested alias conditionally, and
+      generate a code otherwise.
+
+  - id: taken-alias-409
+    use: status-for-condition
+    title: A taken alias answers 409
+    dimension: correctness
+    weight: 2
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      when:
+        all:
+          - hasStep: { logic: hasCustomAlias, outcome: custom }
+          - hasStep: { action: store.insertIfAbsent, outcome: conflict }
+      statuses: [409]
+    why: >-
+      The user chose that alias; they need to know it is taken so they can
+      pick another. A 5xx would look like an outage and invite pointless
+      retries.
+    fix: >-
+      Route the conflict outcome of the alias insert to 409 Conflict.
+
+  - id: generated-collision-not-409
+    use: no-path
+    title: Generated-code collisions are never the user's problem
+    dimension: correctness
+    weight: 2
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      where:
+        all:
+          - hasStep: { logic: hasCustomAlias, outcome: generated }
+          - hasStep: { action: store.insertIfAbsent, outcome: conflict }
+          - status: [409]
+    why: >-
+      The user did not choose a generated code, so a collision on it is not a
+      conflict they can resolve. Answering 409 pushes your internal problem
+      onto them.
+    fix: >-
+      On a collision of a generated code, generate or allocate another one and
+      retry the insert.
+
+  - id: generated-collision-retried
+    use: no-path
+    title: A colliding generated code is retried
+    dimension: correctness
+    weight: 2
+    requirements: [FR-1, NFR-2]
+    params:
+      operation: create-link
+      where:
+        all:
+          - hasStep: { logic: hasCustomAlias, outcome: generated }
+          - hasStep: { action: store.insertIfAbsent, outcome: conflict }
+          - not:
+              any:
+                - hasSequence:
+                    - { action: store.insertIfAbsent, outcome: conflict }
+                    - { action: [ids.allocate, coord.leaseRange] }
+                    - { action: store.insertIfAbsent }
+                # The retry's allocation itself failed: retried, then answered with an error.
+                - hasSequence:
+                    - { action: store.insertIfAbsent, outcome: conflict }
+                    - { action: [ids.allocate, coord.leaseRange], outcome: error }
+                - hasSequence:
+                    - { action: store.insertIfAbsent, outcome: conflict }
+                    - { logic: [generateRandomCode, rehashWithSalt] }
+                    - { action: store.insertIfAbsent }
+    why: >-
+      With random codes collisions are a matter of time: at 5-year occupancy
+      about 4.5% of 7-character codes are taken. Even pre-generated keys can
+      meet a custom alias someone chose. A retry with a new code turns that
+      into a non-event, but only with a new code: hashing the same URL again
+      gives the same code.
+    fix: >-
+      After a conflict on a generated code, get a new code (draw again,
+      allocate again, or rehash with a salt) and insert again. Retries are
+      written out as steps; the simulation shows how many you need.
+
+  - id: non-enumerable
+    use: no-path
+    title: Generated codes are not enumerable
+    dimension: security
+    weight: 3
+    severity: critical
+    requirements: [NFR-3]
+    params:
+      operation: create-link
+      where:
+        all:
+          - status: [201]
+          - hasStep: { action: coord.leaseRange, outcome: ok }
+          - not: { hasStep: { logic: obfuscateId } }
+    why: >-
+      A code must not lead to other links. Random, hashed and pre-generated
+      codes are safe, but sequential ids encoded in base62 are trivially
+      enumerable: anyone can walk the keyspace and harvest every link,
+      including private ones.
+    fix: >-
+      Scramble the id with a reversible permutation (for example a Feistel
+      network or format-preserving encryption) before encoding it.
+
+  - id: code-strategy
+    use: recognize-strategy
+    title: Code generation strategy
+    dimension: correctness
+    weight: 1
+    requirements: [NFR-3]
+    params:
+      operation: create-link
+      decision: code-strategy
+      scope:
+        all:
+          - status: [201]
+          - hasStep: { logic: hasCustomAlias, outcome: generated }
+      strategies:
+        - id: kgs
+          label: Key generation service
+          where: { hasStep: { action: ids.allocate, outcome: ok } }
+          note: >-
+            Keys are unique by construction, so generated codes never collide
+            with each other. The service must be redundant, claim keys
+            atomically and hand them out in batches; the insert stays
+            conditional because custom aliases share the namespace.
+        - id: counter-range
+          label: Counter ranges with base62 encoding
+          where:
+            all:
+              - hasStep: { action: coord.leaseRange, outcome: ok }
+              - hasStep: { logic: encodeBase62 }
+          note: >-
+            Collision-free and cheap: each server leases a range and counts
+            locally. Sequential ids must be scrambled, or codes are enumerable.
+        - id: hash-based
+          label: Hash of the long URL
+          where: { hasStep: { logic: hashUrl } }
+          note: >-
+            The same URL always gets the same code, which deduplicates links
+            but ties different users' links together. Different URLs still
+            collide, so the insert stays conditional, and a retry must add a
+            salt: hashing the same URL again gives the same code.
+        - id: random-conditional
+          label: Random code with conditional insert
+          where:
+            all:
+              - hasStep: { logic: generateRandomCode }
+              - hasStep: { action: store.insertIfAbsent, outcome: ok }
+          note: >-
+            Simple and stateless; the conditional insert makes uniqueness
+            atomic and retries absorb collisions. At 5-year occupancy 7-character
+            codes collide on about 4.5% of inserts and 8-character codes on
+            about 0.07%.
+    why: >-
+      There are several sound ways to generate codes; interviewers want to
+      hear which one you chose and why, and the trade-offs that come with it.
+    fix: >-
+      Record your choice under Decisions so it matches the flow, or change the
+      flow to implement the approach you chose.
+
+  - id: serves-peak
+    use: success-rate-above
+    title: Almost every create succeeds at peak (99%)
+    dimension: availability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, environment: peak, min: 0.99 }
+    why: >-
+      A create path that fails for a noticeable share of users at peak (from
+      overload or from collisions the flow cannot absorb) is broken, whatever
+      else it does well.
+    fix: >-
+      Look at the failure causes in the finding: add capacity, retry
+      collisions, or use longer codes.
+
+  - id: creates-succeed
+    use: success-rate-above
+    title: Creates meet the 99.9% availability target at peak
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, environment: peak, min: 0.999 }
+    why: >-
+      Every failed create is a user who has to try again. Collisions you do
+      not retry, and tiers without headroom, show up here first.
+    fix: >-
+      Retry generated-code collisions enough times for your code length, and
+      size every component for peak writes.
+
+  - id: no-single-point-of-failure
+    use: no-single-point-of-failure
+    title: No single point of failure on the write path
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link }
+    why: >-
+      A single key generation service or coordination node takes link
+      creation down with it.
+    fix: >-
+      Run at least two instances of every component creation cannot survive
+      losing (three or five for consensus services).
+
+  - id: headroom-at-peak
+    use: utilization-below
+    title: Every component keeps 20% headroom at peak
+    dimension: availability
+    weight: 1
+    requirements: [NFR-2]
+    params: { environment: peak, max: 0.8 }
+    why: >-
+      Write paths saturate in surprising places: a coordination service on
+      every request, or a primary that takes all writes.
+    fix: >-
+      Add capacity to the listed components, or take them off the per-request
+      path with batching.
+
+  - id: create-p99
+    use: latency-below
+    title: Create p99 stays under 200 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: create-link, environment: peak, percentile: p99, ms: 200 }
+    why: >-
+      Creation is interactive. A coordination round trip on every request, or
+      a saturated primary, shows up in the tail.
+    fix: >-
+      Keep consensus and generators off the hot path (batch them) and keep the
+      primary below saturation.
+
+  - id: errors-handled
+    use: outcome-handled
+    title: Dependency errors are handled
+    dimension: availability
+    weight: 1
+    requirements: [NFR-2]
+    params: { operation: create-link, outcome: error }
+    why: >-
+      A failing generator or store must produce a clear 503, not an undefined
+      response.
+    fix: >-
+      Route every error outcome to a 503 (clients can retry with the same
+      request).
+
+  - id: rate-limited-creates
+    use: ingress-has-capability
+    title: Creation is rate-limited per client
+    dimension: security
+    signal: senior
+    requirements: [NFR-5]
+    params: { operation: create-link, capability: rate-limiting }
+    why: >-
+      Without per-client limits, one script can mint millions of links (spam,
+      phishing, keyspace exhaustion) and starve everyone else.
+    fix: >-
+      Put a gateway or rate limiter on the create path with per-API-key
+      limits.
+
+  - id: allocation-batched
+    use: no-path
+    title: Id allocation is batched off the hot path
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params:
+      operation: create-link
+      applicableWhen: { hasStep: { action: [ids.allocate, coord.leaseRange] } }
+      where:
+        hasStep: { action: [ids.allocate, coord.leaseRange], batched: false }
+    why: >-
+      Calling a generator or a consensus service on every create adds a round
+      trip and a dependency to every request. Claiming keys or ranges in
+      batches makes that cost negligible.
+    fix: >-
+      Give the allocation step a batch size (for example 1,000 keys or a
+      range of 10,000 ids per call).
+
+  - id: dead-weight
+    use: unused-components
+    title: Every component earns its place
+    dimension: correctness
+    weight: 0
+    severity: minor
+    params: {}
+    why: >-
+      Components that no flow uses add cost and failure modes without making
+      the design better.
+    fix: >-
+      Use the component in a flow, or remove it.
+hints:
+  - "What has to be true when you answer 201: is the link stored, is its code unique, and could another request have taken the same code?"
+  - Who should decide that a code is free, the service or the store? What happens if two requests ask at the same moment?
+  - "Validate the URL, branch on custom alias, get a code (generator, counter range, hash or random), write it with insertIfAbsent, and on conflict: 409 for aliases, a retry with a new code for generated ones."

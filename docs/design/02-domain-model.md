@@ -77,17 +77,17 @@ Each capability exposes **actions**. Every action has a closed set of **outcomes
 | | `cache.setNegative(entity, key, ttl)` | `ok`, `error` | caches "does not exist" |
 | | `cache.delete(entity, key)` | `ok`, `error` | |
 | `durable-store` | `store.read(entity, key)` | `found`, `notFound`, `error` | |
-| | `store.insert(entity)` | `ok`, `error` | **unconditional**; uniqueness not guaranteed |
+| | `store.insert(entity)` | `ok`, `error` | **unconditional put**: overwrites an entity with the same key, so uniqueness is not guaranteed |
 | | `store.update(entity, key)` | `ok`, `notFound`, `error` | |
 | | `store.delete(entity, key)` | `ok`, `error` | |
 | `conditional-write` | `store.insertIfAbsent(entity, key)` | `ok`, `conflict`, `error` | atomic; e.g. `INSERT … ON CONFLICT DO NOTHING`, `attribute_not_exists` |
-| `id-generation` | `ids.allocate()` | `ok`, `exhausted`, `error` | KGS pool / snowflake |
-| `leases` | `coord.leaseRange(size)` | `ok`, `error` | counter-range allocation |
+| `id-generation` | `ids.allocate(batchSize?)` | `ok`, `error` | key generation service; with a batch size the call happens once per batch, so its load and latency are divided by the batch size |
+| `leases` | `coord.leaseRange(batchSize?)` | `ok`, `error` | counter-range allocation from a consensus store; the batch size is the range size |
 | `async-buffer` | `publish(topic)` | `ack`, `error` | non-blocking continuation |
 | `rate-limiting` | `ratelimit.check(scope)` | `allowed`, `limited`, `error` | |
 | `edge-cache` | (configured on the ingress route) | | caches responses by status and `Cache-Control` |
 | `external` | `external.call(name)` | `ok`, `rejected`, `error` | e.g. URL safety scan |
-| *(local)* | `logic(name)` | declared per logic step | runs inside the actor: `validateUrl → valid/invalid`, `checkExpiry → valid/expired`, `checkStatus → active/disabled`, `generateRandomCode`, `hashUrl`, `encodeBase62`, `obfuscateId` |
+| *(local)* | `logic(name)` | declared per logic step | runs inside the actor: `validateUrl → valid/invalid`, `hasCustomAlias → custom/generated`, `checkExpiry → valid/expired`, `checkStatus → active/disabled`, `generateRandomCode`, `hashUrl`, `rehashWithSalt`, `encodeBase62`, `obfuscateId` |
 
 Every outcome a step can produce must lead somewhere: another step, a `respond`, or an explicit `fail`. An **unhandled outcome** is a validation warning, and the evaluation reports it as a finding with the exact step highlighted. The default semantics are documented: an unhandled `error` propagates as a failure, and an unhandled `miss` or `notFound` is treated as a bug.
 
@@ -247,6 +247,8 @@ Decisions are structured choices for the decision points a problem defines. They
 
 - for **consistency with requirements**: for example, 301 together with FR-4 (revocation) means browsers cache the redirect permanently, so revocation is impossible;
 - for **consistency with the design**: for example, a decision of `random-conditional` while the create flow uses an unconditional `store.insert`.
+
+A decision point may declare a **default** that is assumed until the candidate decides. Workloads can read decisions: the URL shortener's keyspace takes its length from the `code-length` decision (default 7), so choosing 6, 7 or 8 characters changes the simulated collision rate.
 
 ---
 

@@ -176,6 +176,27 @@ Prices are order-of-magnitude list prices with a stated date and source. They ar
 - **Random codes.** At horizon `H` years with `W` creates per second, the occupancy is `N = W · H · 3.15e7`. The conflict probability per insert is ≈ `N / K`, and the expected attempts per create are `1 / (1 − N/K)`. Both feed the conflict outcome and the write load.
 - **Counter ranges.** Lease size and lease rate determine coordination load. Leases lost on crash only waste keyspace; the engine reports the fraction wasted.
 
+**As built (M3).** The workload declares the stored dataset (158 B links at 5 years) and a keyspace per entity: an alphabet (62) and the decision point that sets the code length. Occupancy is `min(1, stored / alphabet^length)`; with no decision yet, the decision's default (7) applies. A conditional insert conflicts according to where its key came from, found by walking the path back to the most recent step that produced a key:
+
+| Key origin | Conflict probability |
+|---|---|
+| a custom alias (`hasCustomAlias: custom`) | 1 for the "alias taken" request class, else 0 |
+| `generateRandomCode`, `hashUrl` or `rehashWithSalt` | occupancy |
+| `hashUrl` again after its code collided | 1 (the same URL hashes to the same code) |
+| `ids.allocate` or `coord.leaseRange` | the share of the keyspace held by custom aliases |
+
+Generated keys are unique among themselves, but a custom alias may already hold the code a key generator hands out, so the insert stays conditional. Alias occupancy is occupancy × the share of stored links that are custom aliases (about 1.9% in S1). That assumes every alias is as long as a generated code, an upper bound.
+
+Retries are explicit steps, so a flow with *r* retries fails a share `occupancy^(r+1)` of generated creates. At 7 characters (occupancy ≈ 4.5%) one retry still fails about 0.2% of creates, which misses the 99.9% target; two retries or 8 characters meet it. At 6 characters the keyspace is smaller than the dataset and every generated insert collides.
+
+Batched allocation (`batchSize`) calls the allocator once per batch:
+
+- Load and connection rate are divided by the batch size.
+- Only the refilling call can be rejected, so an overloaded allocator fails a share `drop / batchSize` of requests, not `drop`.
+- Latency is a Bernoulli mixture: one request in a batch pays the full round trip and the others pay nothing. The mixture's mean and variance are exact, but the Gamma fitted to them is unimodal, so tail percentiles for rare expensive calls are approximate.
+
+Lease waste on crash is not modelled yet.
+
 ---
 
 ## Discrete-event engine (phase 2)

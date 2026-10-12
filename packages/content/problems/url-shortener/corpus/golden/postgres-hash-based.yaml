@@ -1,0 +1,85 @@
+id: postgres-hash-based
+description: >-
+  ALB → Link API (6 × 8 vCPU) → PostgreSQL (2 shards × 2 replicas). Codes
+  are 8-character hashes of the long URL; a collision with a different URL
+  is retried once with a salted hash. A write-path-only design.
+expect:
+  s1-create: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: url-shortener
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: users, kind: client, flavor: browser, label: Users }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 6 }
+      - id: links-db
+        kind: relational-db
+        flavor: postgres
+        label: Links DB
+        size: m
+        shards: 2
+        replicas: 2
+        data: [{ entity: Link }]
+    connections:
+      - { id: users--lb, from: users, to: lb }
+      - { id: lb--link-api, from: lb, to: link-api }
+      - { id: link-api--links-db, from: link-api, to: links-db }
+  flows:
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: hash }
+        insert-alias:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c409, error: c503 }
+        hash:
+          type: logic
+          logic: hashUrl
+          next: { ok: encode }
+        encode:
+          type: logic
+          logic: encodeBase62
+          next: { ok: insert }
+        insert:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: rehash, error: c503 }
+        rehash:
+          type: logic
+          logic: rehashWithSalt
+          next: { ok: encode-retry }
+        encode-retry:
+          type: logic
+          logic: encodeBase62
+          next: { ok: insert-retry }
+        insert-retry:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c503, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+  decisions: { code-strategy: hash-based, code-length: "8" }
+  layout:
+    users: { x: 0, y: 120 }
+    lb: { x: 220, y: 120 }
+    link-api: { x: 440, y: 120 }
+    links-db: { x: 680, y: 120 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attempt } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
+import { createLinkAttempt } from "../testing/write-path";
 import type { IssueCode } from "./issues";
 import { validateAttempt } from "./validate-attempt";
 
@@ -259,6 +260,46 @@ describe("validateAttempt", () => {
     const issue = validateAttempt(managed, ctx).find((i) => i.code === "replicas-ignored");
 
     expect(issue?.severity).toBe("warning");
+  });
+
+  it("rejects a batch size on actions that do not allocate", () => {
+    const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
+
+    expect(codes(attempt)).toContain("step-unexpected-param");
+  });
+
+  it("accepts id allocation without an entity", () => {
+    let attempt = mutate("addComponent", {
+      id: "kgs",
+      kind: "id-generator",
+      flavor: "kgs",
+      label: "KGS",
+      size: "m",
+      replicas: 2,
+      position: { x: 0, y: 0 },
+    });
+    attempt = mutate("addConnection", { from: "api", to: "kgs" }, attempt);
+    attempt = mutate("createFlow", { operation: "create-link", handler: "api" }, attempt);
+    attempt = mutate(
+      "addStep",
+      {
+        operation: "create-link",
+        step: { type: "call", target: "kgs", action: "ids.allocate", batchSize: 1000 },
+        attach: { to: "root" },
+      },
+      attempt,
+    );
+
+    const errors = validateAttempt(attempt, ctx).filter((i) => i.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects an entity on id allocation", () => {
+    const raw = JSON.parse(JSON.stringify(createLinkAttempt("kgs")));
+    raw.flows.find((f: { operation: string }) => f.operation === "create-link").steps.gen.entity =
+      "Link";
+
+    expect(codes(raw)).toContain("step-unexpected-param");
   });
 
   it("rejects decisions that the problem does not define", () => {

@@ -1,6 +1,7 @@
-import type { EnvironmentMetrics } from "@archdrill/engine";
+import { describeStep, type EnvironmentMetrics, type OperationMetrics } from "@archdrill/engine";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
+import { isSuccessPath } from "../predicates";
 import {
   type CheckContext,
   type CheckOutcome,
@@ -120,6 +121,49 @@ export const utilizationBelow = defineCheck({
   },
 });
 
+/** Most error responses worth naming in a finding. */
+const MAX_ERROR_CAUSES = 3;
+
+/**
+ * Where error responses come from: the last step before each error response,
+ * by share of all requests (e.g. "Links table · insert if absent: conflict").
+ */
+function errorCauses(
+  ctx: CheckContext,
+  operationId: string,
+  op: OperationMetrics,
+  pass: number,
+): { readonly details: string[]; readonly evidence: Evidence[] } {
+  const analysed = ctx.analysis.operations.get(operationId);
+  if (!analysed) return { details: [], evidence: [] };
+  const byId = new Map(analysed.paths.map((p) => [p.id, p]));
+  const causes = new Map<string, { share: number; pathIds: string[] }>();
+  for (const metrics of op.paths) {
+    const path = byId.get(metrics.pathId);
+    if (path?.terminal.kind !== "respond" || metrics.probability <= 0) continue;
+    if (isSuccessPath(path, analysed.operation)) continue;
+    const last = path.steps.at(-1);
+    const where = last?.kind === "call" ? `${label(ctx, last.target)} · ` : "";
+    const key = last
+      ? `${where}${describeStep(last)} → ${path.terminal.status}`
+      : `${path.terminal.status}`;
+    const cause = causes.get(key) ?? { share: 0, pathIds: [] };
+    causes.set(key, {
+      share: cause.share + pass * metrics.probability,
+      pathIds: [...cause.pathIds, path.id],
+    });
+  }
+  const top = [...causes.entries()]
+    .sort((a, b) => b[1].share - a[1].share)
+    .slice(0, MAX_ERROR_CAUSES);
+  return {
+    details: top.map(([key, cause]) => `${percent(cause.share)} of requests: ${key}`),
+    evidence: top.flatMap(([, cause]) =>
+      cause.pathIds.map((pathId): Evidence => ({ type: "path", operation: operationId, pathId })),
+    ),
+  };
+}
+
 /** Share of requests answered correctly under load (overload and unhandled outcomes count as failures). */
 export const successRateAbove = defineCheck({
   id: "success-rate-above",
@@ -145,10 +189,12 @@ export const successRateAbove = defineCheck({
       .filter((p) => p.terminal.kind === "unhandled")
       .map((p) => ({ type: "path", operation: params.operation, pathId: p.id }));
     const why = causes.length > 0 ? ` Failures: ${causes.join("; ")}.` : "";
-    return failed(`${base}${why}${approximateNote(env)}`, [
-      ...hotComponents(env, 1),
-      ...unhandledPaths,
-    ]);
+    const errors = errorCauses(ctx, params.operation, op, 1 - rejected);
+    return failed(
+      `${base}${why}${approximateNote(env)}`,
+      [...hotComponents(env, 1), ...unhandledPaths, ...errors.evidence],
+      errors.details,
+    );
   },
 });
 

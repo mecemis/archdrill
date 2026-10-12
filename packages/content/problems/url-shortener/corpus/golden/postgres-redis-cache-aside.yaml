@@ -4,6 +4,7 @@ description: >-
   caching (3 shards × 2 replicas) → PostgreSQL (2 shards × 2 replicas).
   Sized for 300,000 redirects per second; every outcome is handled.
 expect:
+  s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
 attempt:
@@ -24,11 +25,13 @@ attempt:
         shards: 2
         replicas: 2
         data: [{ entity: Link }]
+      - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2 }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--link-api, from: lb, to: link-api }
       - { id: link-api--redis, from: link-api, to: redis }
       - { id: link-api--links-db, from: link-api, to: links-db }
+      - { id: link-api--kgs, from: link-api, to: kgs }
   flows:
     - operation: redirect
       handler: link-api
@@ -72,10 +75,57 @@ attempt:
         r404: { type: respond, status: 404 }
         r410: { type: respond, status: 410 }
         r503: { type: respond, status: 503 }
-  decisions: {}
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: allocate }
+        insert-alias:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c409, error: c503 }
+        allocate:
+          type: call
+          target: kgs
+          action: ids.allocate
+          batchSize: 1000
+          next: { ok: insert, error: c503 }
+        insert:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: allocate-retry, error: c503 }
+        allocate-retry:
+          type: call
+          target: kgs
+          action: ids.allocate
+          batchSize: 1000
+          next: { ok: insert-retry, error: c503 }
+        insert-retry:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c503, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+  decisions: { code-strategy: kgs }
   layout:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }
     link-api: { x: 440, y: 120 }
     redis: { x: 680, y: 20 }
     links-db: { x: 680, y: 220 }
+    kgs: { x: 680, y: 360 }

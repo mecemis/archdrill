@@ -14,6 +14,7 @@ const oneOrMany = <T extends z.ZodType>(schema: T) =>
 
 const EFFECTS = [
   "read",
+  "allocate",
   "write",
   "conditional-write",
   "delete",
@@ -30,6 +31,8 @@ export const StepMatcherSchema = z.strictObject({
   effect: oneOrMany(z.enum(EFFECTS)).optional(),
   entity: z.string().min(1).optional(),
   outcome: oneOrMany(z.string().min(1)).optional(),
+  /** Matches allocation calls made once per batch (batch size above 1). */
+  batched: z.boolean().optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -39,6 +42,8 @@ export type PathPredicate =
   | { readonly success: boolean }
   | { readonly unhandled: boolean }
   | { readonly hasStep: StepMatcher }
+  /** Steps matching each matcher occur in this order (not necessarily adjacent). */
+  | { readonly hasSequence: readonly StepMatcher[] }
   | { readonly not: PathPredicate }
   | { readonly all: readonly PathPredicate[] }
   | { readonly any: readonly PathPredicate[] };
@@ -50,6 +55,7 @@ export const PathPredicateSchema: z.ZodType<PathPredicate, unknown> = z.lazy(() 
     z.strictObject({ success: z.boolean() }),
     z.strictObject({ unhandled: z.boolean() }),
     z.strictObject({ hasStep: StepMatcherSchema }),
+    z.strictObject({ hasSequence: z.array(StepMatcherSchema).min(2) }),
     z.strictObject({ not: PathPredicateSchema }),
     z.strictObject({ all: z.array(PathPredicateSchema).min(1) }),
     z.strictObject({ any: z.array(PathPredicateSchema).min(1) }),
@@ -59,7 +65,12 @@ export const PathPredicateSchema: z.ZodType<PathPredicate, unknown> = z.lazy(() 
 export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   if (matcher.outcome && !matcher.outcome.includes(step.outcome)) return false;
   if (step.kind === "logic") {
-    const callOnly = matcher.action || matcher.capability || matcher.effect || matcher.entity;
+    const callOnly =
+      matcher.action ||
+      matcher.capability ||
+      matcher.effect ||
+      matcher.entity ||
+      matcher.batched !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
   if (matcher.logic) return false;
@@ -68,6 +79,7 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   if (matcher.capability && !matcher.capability.includes(action.capability)) return false;
   if (matcher.effect && !matcher.effect.includes(action.effect)) return false;
   if (matcher.entity && matcher.entity !== step.entity) return false;
+  if (matcher.batched !== undefined && matcher.batched !== (step.batchSize ?? 1) > 1) return false;
   return true;
 }
 
@@ -100,6 +112,14 @@ export function evalPredicate(path: Path, predicate: PathPredicate, operation: O
   if ("success" in predicate) return isSuccessPath(path, operation) === predicate.success;
   if ("unhandled" in predicate) return (path.terminal.kind === "unhandled") === predicate.unhandled;
   if ("hasStep" in predicate) return path.steps.some((step) => matchStep(step, predicate.hasStep));
+  if ("hasSequence" in predicate) {
+    let next = 0;
+    for (const step of path.steps) {
+      const matcher = predicate.hasSequence[next];
+      if (matcher && matchStep(step, matcher)) next++;
+    }
+    return next === predicate.hasSequence.length;
+  }
   if ("not" in predicate) return !evalPredicate(path, predicate.not, operation);
   if ("all" in predicate) return predicate.all.every((p) => evalPredicate(path, p, operation));
   return predicate.any.some((p) => evalPredicate(path, p, operation));

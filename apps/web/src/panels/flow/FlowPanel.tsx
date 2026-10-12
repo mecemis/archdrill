@@ -1,7 +1,7 @@
+import { findIngressRoute } from "@archdrill/model";
 import { AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
-import { useEvaluation } from "../../state/evaluation";
 import { useAttemptStore } from "../../state/store";
 import { useUi } from "../../state/ui-store";
 import { Button, Field, SectionTitle, Select } from "../../ui/primitives";
@@ -14,14 +14,17 @@ export function FlowPanel() {
   const operationId = useUi((s) => s.operation);
   const scenarioId = useUi((s) => s.scenarioId);
   const setOperation = useUi((s) => s.setOperation);
-  const { analysis } = useEvaluation();
   const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
   const operation = activePack.problem.operations.find((o) => o.id === operationId);
   const flow = attempt.flows.find((f) => f.operation === operationId);
   const services = attempt.architecture.components.filter((c) =>
     catalogIndex.capabilities(c.kind, c.flavor).has("stateless-compute"),
   );
-  const ingress = analysis.operations.get(operationId)?.ingress;
+  // Derived here rather than read from the analysis, which is empty while the design has errors.
+  const ingress = useMemo(
+    () => (flow ? findIngressRoute(attempt.architecture, catalogIndex, flow.handler) : null),
+    [attempt.architecture, flow],
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4">

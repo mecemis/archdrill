@@ -64,6 +64,14 @@ decisionPoints:
       - { id: counter-range, label: Counter ranges + base62 }
       - { id: hash-based, label: Hash of the long URL }
     requirements: [NFR-3]
+  - id: code-length
+    question: How many characters do generated codes have?
+    options:
+      - { id: "6", label: 6 characters (62⁶ ≈ 5.7 × 10¹⁰) }
+      - { id: "7", label: 7 characters (62⁷ ≈ 3.5 × 10¹²) }
+      - { id: "8", label: 8 characters (62⁸ ≈ 2.2 × 10¹⁴) }
+    default: "7"
+    requirements: [NFR-3]
   - id: redirect-status
     question: Which redirect status do you return?
     options:
@@ -86,4 +94,4 @@ decisionPoints:
       - { id: "404", label: 404 Not Found }
       - { id: "410", label: 410 Gone }
     requirements: [FR-3]
-scenarios: [s2-redirect, s3-cache]
+scenarios: [s1-create, s2-redirect, s3-cache]

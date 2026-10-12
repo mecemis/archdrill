@@ -167,3 +167,151 @@ mutants:
       scenario: s3-cache
       fails: [within-budget]
       band: not-passing
+
+  # Write path (S1): uniqueness, durability, collisions and code space.
+  - id: put-instead-of-conditional-insert
+    base: postgres-redis-cache-aside
+    description: The generated code is written with an overwriting put.
+    apply:
+      - updateStep: { operation: create-link, stepId: insert, action: store.insert }
+    expect:
+      scenario: s1-create
+      fails: [atomic-uniqueness]
+      band: not-passing
+
+  - id: check-then-insert
+    base: dynamodb-redis-cache-aside
+    description: The flow reads the code first and puts it if absent, a TOCTOU race.
+    apply:
+      - updateStep: { operation: create-link, stepId: insert, action: store.insert }
+      - addStep:
+          operation: create-link
+          id: probe
+          step: { type: call, target: links, action: store.read, entity: Link }
+          attach: { to: outcome, stepId: generate, outcome: ok }
+          continueWith: { outcome: notFound }
+    expect:
+      scenario: s1-create
+      fails: [no-check-then-insert, atomic-uniqueness]
+      band: not-passing
+
+  - id: collision-not-retried
+    base: dynamodb-redis-cache-aside
+    description: A colliding random code fails the request instead of being retried.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: insert, outcome: conflict, target: c503 }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-retried]
+
+  - id: collision-answers-409
+    base: dynamodb-redis-cache-aside
+    description: A collision on a generated code is reported to the user as 409.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: insert, outcome: conflict, target: c409 }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-not-409, generated-collision-retried]
+
+  - id: enumerable-codes
+    base: mysql-memcached-cache-aside
+    description: Leased counter values are encoded without being scrambled.
+    apply:
+      - removeStep: { operation: create-link, stepId: obfuscate, bypass: ok }
+    expect:
+      scenario: s1-create
+      fails: [non-enumerable]
+
+  - id: ack-before-write
+    base: postgres-redis-cache-aside
+    description: The service answers 201 as soon as it has a key, before storing the link.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: allocate, outcome: ok, target: c201 }
+    expect:
+      scenario: s1-create
+      fails: [durable-before-ack, atomic-uniqueness]
+      band: not-passing
+
+  - id: no-url-validation
+    base: postgres-redis-cache-aside
+    description: URLs are stored without validation.
+    apply:
+      - removeStep: { operation: create-link, stepId: validate, bypass: valid }
+    expect:
+      scenario: s1-create
+      fails: [validates-before-writing]
+      band: not-passing
+
+  - id: six-character-codes
+    base: dynamodb-direct
+    description: Six-character random codes; 158 billion links do not fit in 62⁶ codes.
+    apply:
+      - setDecision: { decision: code-length, option: "6" }
+    expect:
+      scenario: s1-create
+      fails: [serves-peak, creates-succeed]
+      band: not-passing
+
+  - id: seven-characters-one-retry
+    base: dynamodb-redis-cache-aside
+    description: Seven-character random codes with a single retry fail about 0.2% of creates at 5-year occupancy.
+    apply:
+      - setDecision: { decision: code-length, option: "7" }
+    expect:
+      scenario: s1-create
+      fails: [creates-succeed]
+
+  - id: decision-contradicts-flow
+    base: postgres-redis-cache-aside
+    description: The declared strategy is random codes, but the flow uses a key generation service.
+    apply:
+      - setDecision: { decision: code-strategy, option: random-conditional }
+    expect:
+      scenario: s1-create
+      fails: [code-strategy]
+
+  - id: taken-alias-503
+    base: postgres-redis-cache-aside
+    description: A taken custom alias answers 503 instead of 409.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: insert-alias, outcome: conflict, target: c503 }
+    expect:
+      scenario: s1-create
+      fails: [taken-alias-409]
+
+  - id: single-key-generator
+    base: postgres-redis-cache-aside
+    description: One key generation service instance; creation stops when it does.
+    apply:
+      - updateComponent: { id: kgs, replicas: 1 }
+    expect:
+      scenario: s1-create
+      fails: [no-single-point-of-failure]
+
+  - id: alias-ignored
+    base: postgres-redis-cache-aside
+    description: Requests for a custom alias get a generated code instead.
+    apply:
+      - removeStep: { operation: create-link, stepId: alias, bypass: generated }
+    expect:
+      scenario: s1-create
+      fails: [custom-aliases-supported]
+
+  - id: unsalted-rehash
+    base: postgres-hash-based
+    description: After a collision the same URL is hashed again without a salt, which gives the same code.
+    apply:
+      - updateStep: { operation: create-link, stepId: rehash, logic: hashUrl }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-retried]
+
+  - id: retry-without-insert
+    base: dynamodb-redis-cache-aside
+    description: A colliding code is replaced by a new one, but the request then fails without inserting it.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: generate-retry, outcome: ok, target: c503 }
+    expect:
+      scenario: s1-create
+      fails: [generated-collision-retried]
+

@@ -33,12 +33,19 @@ export const OperationSchema = z.object({
 });
 export type Operation = z.infer<typeof OperationSchema>;
 
-export const DecisionPointSchema = z.object({
-  id: IdSchema,
-  question: z.string().min(1),
-  options: z.array(z.object({ id: IdSchema, label: z.string().min(1) })).min(2),
-  requirements: z.array(z.string()).default([]),
-});
+export const DecisionPointSchema = z
+  .object({
+    id: IdSchema,
+    question: z.string().min(1),
+    options: z.array(z.object({ id: IdSchema, label: z.string().min(1) })).min(2),
+    requirements: z.array(z.string()).default([]),
+    /** Option assumed until the candidate decides; used by the simulation for decisions that affect numbers. */
+    default: IdSchema.optional(),
+  })
+  .refine((d) => d.default === undefined || d.options.some((o) => o.id === d.default), {
+    message: "default must be one of the options",
+    path: ["default"],
+  });
 export type DecisionPoint = z.infer<typeof DecisionPointSchema>;
 
 export const ScaleItemSchema = z.object({
@@ -83,6 +90,7 @@ export type Problem = z.infer<typeof ProblemSchema>;
 
 export const DIMENSIONS = [
   "correctness",
+  "concurrency",
   "consistency",
   "durability",
   "latency",

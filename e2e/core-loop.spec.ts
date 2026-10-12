@@ -42,6 +42,7 @@ test("builds a read path from an empty canvas and gets it evaluated", async ({ p
   await replicas.fill("25");
   await replicas.blur();
 
+  await page.getByRole("button", { name: /S2 Redirect/ }).click();
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
   await page.getByRole("button", { name: "Add the first step" }).click();
@@ -70,6 +71,7 @@ test("points at the gate that a broken flow fails", async ({ page }) => {
   await page.locator('.react-flow__node[data-id="key-value-db-1"]').click();
   await page.getByRole("checkbox", { name: /Link/ }).check();
 
+  await page.getByRole("button", { name: /S2 Redirect/ }).click();
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
   await page.getByRole("button", { name: "Add the first step" }).click();

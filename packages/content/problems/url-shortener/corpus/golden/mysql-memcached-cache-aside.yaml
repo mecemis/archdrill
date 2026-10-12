@@ -5,6 +5,7 @@ description: >-
   share of hits, because cache errors fall through to the database. A day-long
   TTL keeps the hot set cached; expiry is checked on every hit.
 expect:
+  s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
 attempt:
@@ -25,11 +26,13 @@ attempt:
         shards: 2
         replicas: 2
         data: [{ entity: Link }]
+      - { id: etcd, kind: coordination, flavor: etcd, label: etcd, size: m, replicas: 3 }
     connections:
       - { id: visitors--proxy, from: visitors, to: proxy }
       - { id: proxy--link-api, from: proxy, to: link-api }
       - { id: link-api--memcached, from: link-api, to: memcached }
       - { id: link-api--links-db, from: link-api, to: links-db }
+      - { id: link-api--etcd, from: link-api, to: etcd }
   flows:
     - operation: redirect
       handler: link-api
@@ -73,10 +76,73 @@ attempt:
         r404: { type: respond, status: 404 }
         r410: { type: respond, status: 410 }
         r503: { type: respond, status: 503 }
-  decisions: {}
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: lease }
+        insert-alias:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c409, error: c503 }
+        lease:
+          type: call
+          target: etcd
+          action: coord.leaseRange
+          batchSize: 10000
+          next: { ok: obfuscate, error: c503 }
+        obfuscate:
+          type: logic
+          logic: obfuscateId
+          next: { ok: encode }
+        encode:
+          type: logic
+          logic: encodeBase62
+          next: { ok: insert }
+        insert:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: lease-retry, error: c503 }
+        lease-retry:
+          type: call
+          target: etcd
+          action: coord.leaseRange
+          batchSize: 10000
+          next: { ok: obfuscate-retry, error: c503 }
+        obfuscate-retry:
+          type: logic
+          logic: obfuscateId
+          next: { ok: encode-retry }
+        encode-retry:
+          type: logic
+          logic: encodeBase62
+          next: { ok: insert-retry }
+        insert-retry:
+          type: call
+          target: links-db
+          action: store.insertIfAbsent
+          entity: Link
+          next: { ok: c201, conflict: c503, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+  decisions: { code-strategy: counter-range }
   layout:
     visitors: { x: 0, y: 120 }
     proxy: { x: 220, y: 120 }
     link-api: { x: 440, y: 120 }
     memcached: { x: 680, y: 20 }
     links-db: { x: 680, y: 220 }
+    etcd: { x: 680, y: 360 }

@@ -64,6 +64,7 @@ export const outcomeHandled = defineCheck({
               action: step.action,
               entity: step.entity,
               ttlSec: step.ttlSec,
+              batchSize: step.batchSize,
               outcome: params.outcome,
             }
           : { kind: "logic" as const, stepId, logic: step.logic, outcome: params.outcome };
@@ -93,9 +94,18 @@ export const outcomeHandled = defineCheck({
 export const noPath = defineCheck({
   id: "no-path",
   description: "No path of the operation satisfies the given condition.",
-  params: z.strictObject({ operation: OperationParam, where: PathPredicateSchema }),
+  params: z.strictObject({
+    operation: OperationParam,
+    where: PathPredicateSchema,
+    /** The check only applies when some path satisfies this (e.g. the design uses counters at all). */
+    applicableWhen: PathPredicateSchema.optional(),
+  }),
   run(params, ctx) {
     const op = requireOperation(ctx, params.operation);
+    const applicableWhen = params.applicableWhen;
+    if (applicableWhen && !op.paths.some((p) => evalPredicate(p, applicableWhen, op.operation))) {
+      return notApplicable("This design does not use the approach the check is about.");
+    }
     const matching = op.paths.filter((p) => evalPredicate(p, params.where, op.operation));
     if (matching.length === 0) return passed(`None of the ${op.paths.length} paths match.`);
     const { evidence, details } = pathEvidence(matching);

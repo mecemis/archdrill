@@ -6,7 +6,7 @@ import {
   stepOutcomes,
   unhandledOutcomes,
 } from "../attempt/steps";
-import { ACTIONS, CONDITIONAL_OUTCOMES } from "../catalog/actions";
+import { ACTIONS, actionTakesParam, CONDITIONAL_OUTCOMES } from "../catalog/actions";
 import type { CatalogIndex } from "../catalog/schema";
 import { findIngressRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -327,7 +327,26 @@ function validateCallStep(
       error("step-action-not-supported", `"${target.label}" does not support ${step.action}.`, loc),
     );
   }
-  issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
+  if (action.effect !== "allocate") {
+    issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
+  } else if (step.entity !== undefined) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) hands out keys and does not take an entity.`,
+        loc,
+      ),
+    );
+  }
+  if (step.batchSize !== undefined && !actionTakesParam(step.action, "batchSize")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) does not take a batch size.`,
+        loc,
+      ),
+    );
+  }
   for (const param of action.params) {
     if (step[param] === undefined) {
       issues.push(

@@ -9,6 +9,8 @@ export interface CallPathStep {
   readonly action: ActionId;
   readonly entity: string | undefined;
   readonly ttlSec: number | undefined;
+  /** For batched allocation: ids per call. */
+  readonly batchSize: number | undefined;
   readonly outcome: string;
 }
 
