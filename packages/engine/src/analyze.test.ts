@@ -47,6 +47,36 @@ describe("analyzeAttempt", () => {
     expect(paths.map(describePath)).toContain("miss → notFound → unhandled");
   });
 
+  it("enumerates negative hits once negative caching is part of the design", () => {
+    let attempt = applyCommand(cacheAsideAttempt(), "addStep", {
+      operation: "redirect",
+      id: "neg",
+      step: {
+        type: "call",
+        target: "redis",
+        action: "cache.setNegative",
+        entity: "Link",
+        ttlSec: 60,
+      },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "ok" },
+    }).attempt;
+    attempt = applyCommand(attempt, "linkOutcome", {
+      operation: "redirect",
+      stepId: "get",
+      outcome: "negativeHit",
+      target: "r404",
+    }).attempt;
+
+    const labels = analyzeAttempt(attempt, ctx).operations.get("redirect")?.paths.map(describePath);
+
+    expect(labels?.slice(0, 3)).toEqual([
+      "hit → valid → 302",
+      "hit → expired → 410",
+      "negativeHit → 404",
+    ]);
+  });
+
   it("reports operations without flows as missing", () => {
     const analysis = analyzeAttempt(cacheAsideAttempt(), ctx);
 

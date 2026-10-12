@@ -1,4 +1,4 @@
-import { type Architecture, type Flow, type IngressRoute, stepOutcomes } from "@archdrill/model";
+import { type Attempt, type Flow, feasibleOutcomes, type IngressRoute } from "@archdrill/model";
 import type { Path, PathStep, PathTerminal } from "./types";
 
 /** Hard cap that protects the UI from pathological flows. */
@@ -19,14 +19,14 @@ export interface EnumerationResult {
  */
 export function enumeratePaths(
   flow: Flow,
-  architecture: Architecture,
+  attempt: Attempt,
   ingress: IngressRoute | null,
 ): EnumerationResult {
   const paths: Path[] = [];
   if (flow.root === null) return { paths, truncated: false };
 
   const connectionTo = new Map(
-    architecture.connections
+    attempt.architecture.connections
       .filter((c) => c.from === flow.handler)
       .map((c) => [c.to, c.id] as const),
   );
@@ -56,7 +56,7 @@ export function enumeratePaths(
       emit(trail, { kind: "respond", stepId, status: step.status });
       return;
     }
-    for (const outcome of stepOutcomes(step)) {
+    for (const outcome of feasibleOutcomes(step, attempt)) {
       const pathStep: PathStep =
         step.type === "call"
           ? {

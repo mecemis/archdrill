@@ -28,9 +28,10 @@ export const ACTIONS = {
     label: "get",
     capability: "volatile-kv",
     effect: "read",
-    outcomes: ["hit", "miss", "error"],
+    outcomes: ["hit", "negativeHit", "miss", "error"],
     params: [],
-    description: "Look up an entity by key in the cache.",
+    description:
+      "Look up an entity by key in the cache. A negative hit means the cache remembers that the key does not exist.",
   },
   "cache.set": {
     label: "set",
@@ -105,3 +106,14 @@ export const ActionIdSchema = z.enum(ACTION_IDS as [ActionId, ...ActionId[]]);
 export function getAction(id: ActionId): ActionDef {
   return ACTIONS[id];
 }
+
+/**
+ * Outcomes that can only happen when the design makes them possible. A cache
+ * can only answer with a negative hit if some flow stores negative entries for
+ * the same entity in the same cache.
+ */
+export const CONDITIONAL_OUTCOMES: Readonly<
+  Partial<Record<ActionId, Readonly<Record<string, ActionId>>>>
+> = {
+  "cache.get": { negativeHit: "cache.setNegative" },
+};

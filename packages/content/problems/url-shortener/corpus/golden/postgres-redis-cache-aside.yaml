@@ -1,0 +1,78 @@
+id: postgres-redis-cache-aside
+description: >-
+  ALB → stateless Link API (3 replicas) → Redis cache-aside with negative
+  caching → PostgreSQL with a replica. Every outcome is handled.
+expect:
+  s2-redirect: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: url-shortener
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: visitors, kind: client, flavor: browser, label: Visitors }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, replicas: 2 }
+      - id: links-db
+        kind: relational-db
+        flavor: postgres
+        label: Links DB
+        size: m
+        replicas: 2
+        data: [{ entity: Link }]
+    connections:
+      - { id: visitors--lb, from: visitors, to: lb }
+      - { id: lb--link-api, from: lb, to: link-api }
+      - { id: link-api--redis, from: link-api, to: redis }
+      - { id: link-api--links-db, from: link-api, to: links-db }
+  flows:
+    - operation: redirect
+      handler: link-api
+      root: get
+      steps:
+        get:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Link
+          next: { hit: expiry-hit, negativeHit: r404, miss: read, error: read }
+        expiry-hit:
+          type: logic
+          logic: checkExpiry
+          next: { valid: r302, expired: r410 }
+        read:
+          type: call
+          target: links-db
+          action: store.read
+          entity: Link
+          next: { found: expiry-db, notFound: negative, error: r503 }
+        expiry-db:
+          type: logic
+          logic: checkExpiry
+          next: { valid: populate, expired: r410 }
+        populate:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: r302, error: r302 }
+        negative:
+          type: call
+          target: redis
+          action: cache.setNegative
+          entity: Link
+          ttlSec: 60
+          next: { ok: r404, error: r404 }
+        r302: { type: respond, status: 302 }
+        r404: { type: respond, status: 404 }
+        r410: { type: respond, status: 410 }
+        r503: { type: respond, status: 503 }
+  decisions: {}
+  layout:
+    visitors: { x: 0, y: 120 }
+    lb: { x: 220, y: 120 }
+    link-api: { x: 440, y: 120 }
+    redis: { x: 680, y: 20 }
+    links-db: { x: 680, y: 220 }

@@ -3,7 +3,7 @@ import type { Component } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
 import { servesResource } from "../predicates";
-import { type CheckContext, defineCheck, graded, notApplicable, passed } from "./types";
+import { type CheckContext, defineCheck, failed, graded, notApplicable, passed } from "./types";
 
 /**
  * A path survives the failure of a component when it never relies on that
@@ -49,12 +49,12 @@ export const noSinglePointOfFailure = defineCheck({
     if (critical.length === 0)
       return passed("The operation survives the loss of any single component.");
     const fragile = critical.filter((c) => !isRedundant(c, ctx));
+    if (fragile.length === 0)
+      return passed(`All ${critical.length} critical component(s) are redundant.`);
     const evidence: Evidence[] = fragile.map((c) => ({ type: "component", componentId: c.id }));
-    const message =
-      fragile.length === 0
-        ? `All ${critical.length} critical component(s) are redundant.`
-        : `${fragile.map((c) => c.label).join(", ")} ${fragile.length === 1 ? "is a single point" : "are single points"} of failure.`;
-    return graded(critical.length - fragile.length, critical.length, message, evidence);
+    const labels = fragile.map((c) => c.label).join(", ");
+    const verb = fragile.length === 1 ? "is a single point" : "are single points";
+    return failed(`${labels} ${verb} of failure.`, evidence);
   },
 });
 

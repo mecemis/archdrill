@@ -2,7 +2,7 @@ import type { Attempt } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { evaluateAttempt, type ScenarioResult } from "./evaluate";
-import { GATE_SCORE_CAP } from "./score";
+import { GATE_SCORE_CAP, SEVERITY_SCORE_CAPS } from "./score";
 import { mutated, redirectScenario } from "./test-support";
 
 const input = { problem: testProblem, scenarios: [redirectScenario], catalog: testCatalogIndex };
@@ -64,6 +64,33 @@ describe("evaluateAttempt", () => {
     expect(scorecard.gateFailures).toEqual([]);
     // correctness 0.4, availability 0.15 at 100; latency 0.25 at 0; renormalised over 0.8
     expect(scorecard.score).toBe(Math.round((100 * 0.55) / 0.8));
+  });
+
+  it("keeps a design with an open major finding out of the excellent band", () => {
+    const attempt = mutated("updateComponent", { id: "api", replicas: 1 });
+
+    const { scorecard } = evaluated(attempt);
+
+    expect(scorecard.band).toBe("strong");
+    expect(scorecard.score).toBeLessThanOrEqual(SEVERITY_SCORE_CAPS.major);
+  });
+
+  it("keeps a design with an open critical finding out of the strong band", () => {
+    const critical = {
+      ...redirectScenario,
+      checks: redirectScenario.checks.map((c) =>
+        c.id === "spof" ? { ...c, severity: "critical" as const } : c,
+      ),
+    };
+    const attempt = mutated("updateComponent", { id: "api", replicas: 1 });
+
+    const result = evaluateAttempt(attempt, { ...input, scenarios: [critical] }).scenarios[0];
+
+    expect(result?.status === "evaluated" && result.scorecard).toMatchObject({
+      score: SEVERITY_SCORE_CAPS.critical,
+      band: "passing",
+      cap: { reason: "critical", value: SEVERITY_SCORE_CAPS.critical },
+    });
   });
 
   it("never scores advisory checks", () => {

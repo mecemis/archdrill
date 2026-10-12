@@ -210,7 +210,8 @@ describe("no-single-point-of-failure", () => {
 
     const outcome = runCheck("no-single-point-of-failure", params, attempt);
 
-    expect(outcome.status).toBe("partial");
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe("Link API is a single point of failure.");
     expect(outcome.evidence).toEqual([{ type: "component", componentId: "api" }]);
   });
 

@@ -58,6 +58,34 @@ describe("validateAttempt", () => {
     });
   });
 
+  it("asks for a negative-hit branch only once the design stores negative entries", () => {
+    const withNegative = mutate("addStep", {
+      operation: "redirect",
+      step: {
+        type: "call",
+        target: "redis",
+        action: "cache.setNegative",
+        entity: "Link",
+        ttlSec: 60,
+      },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "ok" },
+    });
+
+    const unhandled = (attempt: Attempt) =>
+      validateAttempt(attempt, ctx)
+        .filter((i) => i.code === "step-unhandled-outcome")
+        .map((i) => i.location);
+
+    expect(unhandled(cacheAsideAttempt())).toEqual([]);
+    expect(unhandled(withNegative)).toContainEqual({
+      type: "step",
+      operation: "redirect",
+      stepId: "get",
+      outcome: "negativeHit",
+    });
+  });
+
   it("rejects durable-store actions on a store that does not hold the entity", () => {
     const attempt = mutate("setComponentData", { id: "db", entities: [] });
 

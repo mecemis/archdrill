@@ -1,8 +1,8 @@
-import { ACTIONS } from "../catalog/actions";
+import { ACTIONS, CONDITIONAL_OUTCOMES } from "../catalog/actions";
 import { LOGIC } from "../catalog/logic";
-import type { Flow, Step } from "./schema";
+import type { Attempt, Flow, Step } from "./schema";
 
-/** The closed set of outcomes a step can produce; respond steps produce none. */
+/** Every outcome a step's action or logic declares; respond steps produce none. */
 export function stepOutcomes(step: Step): readonly string[] {
   switch (step.type) {
     case "call":
@@ -14,10 +14,39 @@ export function stepOutcomes(step: Step): readonly string[] {
   }
 }
 
-/** Outcomes of a step that do not lead anywhere yet. */
-export function unhandledOutcomes(step: Step): string[] {
+/**
+ * Outcomes that can actually happen in this design. Conditional outcomes (such
+ * as a cache's negative hit) are only possible when some flow performs the
+ * enabling action on the same target and entity.
+ */
+export function feasibleOutcomes(step: Step, attempt: Attempt): readonly string[] {
+  const declared = stepOutcomes(step);
+  if (step.type !== "call") return declared;
+  const conditional = CONDITIONAL_OUTCOMES[step.action];
+  if (!conditional) return declared;
+  return declared.filter((outcome) => {
+    const enabling = conditional[outcome];
+    return enabling === undefined || isPerformed(attempt, enabling, step.target, step.entity);
+  });
+}
+
+function isPerformed(
+  attempt: Attempt,
+  action: string,
+  target: string,
+  entity: string | undefined,
+): boolean {
+  return attempt.flows.some((flow) =>
+    Object.values(flow.steps).some(
+      (s) => s.type === "call" && s.action === action && s.target === target && s.entity === entity,
+    ),
+  );
+}
+
+/** Feasible outcomes of a step that do not lead anywhere yet. */
+export function unhandledOutcomes(step: Step, attempt: Attempt): string[] {
   if (step.type === "respond") return [];
-  return stepOutcomes(step).filter((outcome) => step.next[outcome] === undefined);
+  return feasibleOutcomes(step, attempt).filter((outcome) => step.next[outcome] === undefined);
 }
 
 /** Step ids reachable from the flow root, in depth-first order. */

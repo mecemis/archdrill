@@ -175,14 +175,14 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
       ),
     );
   }
-  issues.push(...validateFlowGraph(flow));
+  issues.push(...validateFlowGraph(flow, attempt));
   for (const [stepId, step] of Object.entries(flow.steps)) {
     if (step.type === "call") issues.push(...validateCallStep(flow, stepId, step, attempt, ctx));
   }
   return issues;
 }
 
-function validateFlowGraph(flow: Flow): Issue[] {
+function validateFlowGraph(flow: Flow, attempt: Attempt): Issue[] {
   const flowLocation = { type: "flow", operation: flow.operation } as const;
   if (flow.root === null) {
     return [
@@ -238,7 +238,7 @@ function validateFlowGraph(flow: Flow): Issue[] {
       );
       continue;
     }
-    for (const outcome of unhandledOutcomes(step)) {
+    for (const outcome of unhandledOutcomes(step, attempt)) {
       issues.push(
         warning(
           "step-unhandled-outcome",

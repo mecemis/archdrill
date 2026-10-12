@@ -1,5 +1,5 @@
 import { describePath, type Path } from "@archdrill/engine";
-import { reachableStepIds, stepOutcomes } from "@archdrill/model";
+import { feasibleOutcomes, reachableStepIds } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
 import {
@@ -47,7 +47,11 @@ export const outcomeHandled = defineCheck({
     if (!flow) return notApplicable(`"${params.operation}" has no flow yet.`);
     const relevant = reachableStepIds(flow).filter((stepId) => {
       const step = flow.steps[stepId];
-      if (!step || step.type === "respond" || !stepOutcomes(step).includes(params.outcome))
+      if (
+        !step ||
+        step.type === "respond" ||
+        !feasibleOutcomes(step, ctx.attempt).includes(params.outcome)
+      )
         return false;
       if (!params.match) return true;
       const probe =

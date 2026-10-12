@@ -1,0 +1,24 @@
+{
+  "name": "@archdrill/content",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vite-plugin": "./vite-plugin.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@archdrill/model": "workspace:*",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@archdrill/engine": "workspace:*",
+    "@archdrill/evaluator": "workspace:*",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.1"
+  }
+}
