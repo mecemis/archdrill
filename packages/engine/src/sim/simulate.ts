@@ -455,6 +455,8 @@ function summarizeOperations(
     const paths: PathMetrics[] = [];
     const mixture: WeightedMoments[] = [];
     let success = 0;
+    let unhandled = 0;
+    let errorStatus = 0;
     for (const path of op.analysis.paths) {
       const probability = op.classes.reduce(
         (sum, cls) => sum + cls.share * pathProbability(path, cls, state),
@@ -462,7 +464,9 @@ function summarizeOperations(
       );
       const moments = pathLatency(path, ingressLatency, components, state);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
-      if (status !== null && op.operation.successStatuses.includes(status)) success += probability;
+      if (status === null) unhandled += probability;
+      else if (op.operation.successStatuses.includes(status)) success += probability;
+      else errorStatus += probability;
       paths.push({ pathId: path.id, probability, latency: summarize([{ weight: 1, ...moments }]) });
       mixture.push({ weight: pass * probability, ...moments });
     }
@@ -473,6 +477,11 @@ function summarizeOperations(
       rate: op.rate,
       successRate: pass * success,
       ingressRejectRate: 1 - pass,
+      failures: {
+        rejected: 1 - pass,
+        unhandled: pass * unhandled,
+        errorStatus: pass * errorStatus,
+      },
       latency: summarize(mixture),
       paths,
     });

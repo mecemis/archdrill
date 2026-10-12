@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App";
 import { useAttemptStore } from "./state/store";
 
-/** Visitors → ALB → Link API (3 replicas) → DynamoDB holding Link, with no flows yet. */
+/** Visitors → ALB → Link API (25 × 8 vCPU) → DynamoDB holding Link, with no flows yet. */
 function topologyOnly() {
   return AttemptSchema.parse({
     schemaVersion: 1,
@@ -21,8 +21,8 @@ function topologyOnly() {
           kind: "service",
           flavor: "generic",
           label: "Link API",
-          size: "m",
-          replicas: 3,
+          size: "l",
+          replicas: 25,
         },
         {
           id: "links",

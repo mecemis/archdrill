@@ -1,0 +1,234 @@
+id: s3-cache
+problemId: url-shortener
+title: Cache the hot path
+order: 3
+prerequisites: [s2-redirect]
+story: |
+  "Your redirect service works, but finance flagged the data tier: it is the
+  biggest line on the bill, and at peak the database runs hot. Link popularity
+  is extremely skewed: a small share of links gets most of the clicks. Bring
+  the cost under $40,000 a month without hurting latency or correctness."
+focusOperations: [redirect]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.985 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: unknown, share: 0.01, exists: false }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  environments:
+    - { id: avg, label: Average, rates: { redirect: 100000 } }
+    - { id: peak, label: "Peak (×3)", rates: { redirect: 300000 } }
+dimensions:
+  correctness: 0.20
+  cache-efficiency: 0.25
+  cost: 0.25
+  scalability: 0.15
+  latency: 0.15
+checks:
+  - id: within-budget
+    use: cost-within-budget
+    title: The design costs less than $40,000 a month
+    dimension: cost
+    weight: 3
+    gate: true
+    severity: critical
+    params: { environment: avg, monthlyUsd: 40000 }
+    why: >-
+      This is the scenario's goal. Every read replica stores a full copy of
+      ~79 TB of links, and pay-per-request stores bill every redirect, so
+      scaling the database tier for 300,000 reads per second is the most
+      expensive way to absorb skewed traffic.
+    fix: >-
+      Put a cache in front of the store so the popular links are served from
+      memory, then shrink the store tier to what the misses need.
+
+  - id: redirect-backed-by-data
+    use: no-path
+    title: Every redirect is backed by the stored link
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-2]
+    params:
+      operation: redirect
+      where:
+        all:
+          - statusClass: 3xx
+          - not: { hasStep: { entity: Link, outcome: [hit, found] } }
+    why: >-
+      Adding a cache must not create a path that redirects without the link:
+      for example a miss that answers before the store is read.
+    fix: >-
+      On a cache miss, read the store; only answer 3xx after a hit or a found.
+
+  - id: unknown-code-404
+    use: status-for-condition
+    title: Unknown codes answer 404
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-2]
+    params:
+      operation: redirect
+      when:
+        any:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - hasStep: { action: cache.get, entity: Link, outcome: negativeHit }
+      statuses: [404]
+    why: >-
+      Negative caching is a good idea only if a negative hit still answers 404.
+      Treating it as a hit redirects visitors to nothing.
+    fix: >-
+      Answer both a store notFound and a negative cache hit with 404.
+
+  - id: expired-not-redirected
+    use: all-success-paths-contain
+    title: Cached links are checked for expiry
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-3]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { logic: checkExpiry, outcome: valid }
+    why: >-
+      A cached copy does not know that its link expired a minute ago. Unless
+      the TTL is bounded by the expiry time, the hit path has to check expiry
+      itself, or the cache keeps redirecting expired links.
+    fix: >-
+      Check expiry on the cache-hit path as well as after a store read.
+
+  - id: cache-warms
+    use: populate-after-miss
+    title: Misses populate the cache
+    dimension: cache-efficiency
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-1]
+    params: { operation: redirect, entity: Link }
+    why: >-
+      In cache-aside nothing else fills the cache. Without a write-back on a
+      miss the cache stays empty and every request still reaches the store.
+    fix: >-
+      After a store read finds a valid link, call cache.set with a TTL before
+      answering.
+
+  - id: hit-ratio
+    use: hit-ratio-above
+    title: The cache absorbs at least 80% of link lookups at peak
+    dimension: cache-efficiency
+    weight: 3
+    requirements: [NFR-1]
+    params: { entity: Link, environment: peak, min: 0.8 }
+    why: >-
+      With Zipf-like popularity a modest cache serves most requests, but only
+      if it holds enough of the working set for long enough. The hit ratio is
+      what turns a cache from a box on the diagram into lower cost and load.
+    fix: >-
+      Give the cache more memory (shards or a bigger size) and use a TTL as
+      long as freshness allows; expiry is checked on read anyway.
+
+  - id: no-overload-at-peak
+    use: success-rate-above
+    title: Redirects keep succeeding at peak (99.99%)
+    dimension: scalability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: peak, min: 0.9999 }
+    why: >-
+      A cache that cannot keep up with peak lookups rejects them, and every
+      rejected lookup falls through to the store, which then overloads too.
+      Shrinking the store only works if the cache is sized for peak.
+    fix: >-
+      Size the cache's nodes for peak lookups and the store for peak misses.
+
+  - id: headroom-at-peak
+    use: utilization-below
+    title: Every component keeps 20% headroom at peak
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-1, NFR-2]
+    params: { environment: peak, max: 0.8 }
+    why: >-
+      Cutting cost by running every tier at 95% trades the bill for outages:
+      there is nothing left for a spike or a lost node.
+    fix: >-
+      Bring each listed component below 80% at peak.
+
+  - id: redirect-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: peak, percentile: p99, ms: 50 }
+    why: >-
+      Caching should make the tail faster, not slower. A saturated cache or a
+      starved store shows up in p99 first.
+    fix: >-
+      Keep the cache and the store below saturation at peak.
+
+  - id: negative-caching
+    use: no-path
+    title: Unknown codes are negatively cached
+    dimension: cache-efficiency
+    signal: senior
+    requirements: [NFR-1]
+    params:
+      operation: redirect
+      where:
+        all:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - not: { hasStep: { action: cache.setNegative, entity: Link } }
+    why: >-
+      Scanners and typos ask for codes that do not exist. Without a short
+      negative entry each of them costs a store read, and an enumeration
+      attack goes straight to the database.
+    fix: >-
+      Before answering 404, store a negative entry with a short TTL.
+
+  - id: working-set-sized
+    use: hit-ratio-above
+    title: The cache is sized to the working set (≥ 85% hits at peak)
+    dimension: cache-efficiency
+    signal: senior
+    requirements: [NFR-1]
+    params: { entity: Link, environment: peak, min: 0.85 }
+    why: >-
+      Past a point, more memory buys little unless the TTL lets popular links
+      stay cached. Getting both right shows you reasoned from the popularity
+      curve instead of picking a node size.
+    fix: >-
+      Combine enough memory for the hot set with a long TTL (hours to a day);
+      expiry checks on read keep it correct.
+
+  - id: dead-weight
+    use: unused-components
+    title: Every component earns its place
+    dimension: correctness
+    weight: 0
+    severity: minor
+    params: {}
+    why: >-
+      Components that no flow uses add cost and failure modes without making
+      the design better.
+    fix: >-
+      Use the component in a flow, or remove it.
+hints:
+  - Which part of the bill grows with read traffic, and which part grows with the number of data copies?
+  - "Popularity is skewed: what share of requests would the most popular few percent of links serve if they were in memory?"
+  - Add a cache-aside read (get, then read the store on a miss and set with a TTL), size the cache for peak lookups, and shrink the store tier to what the misses need.

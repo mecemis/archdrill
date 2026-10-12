@@ -58,6 +58,14 @@ describe.each(corpora.map((c) => [c.problemId, c] as const))(
       },
     );
 
+    const notPassing = corpus.golden.flatMap((g) =>
+      g.notPassing.map((scenarioId) => [g.id, scenarioId, g] as const),
+    );
+    it.each(notPassing)("golden design %s does not pass %s", (_id, scenarioId, golden) => {
+      const result = scenarioResult(problemId, golden.attempt, scenarioId);
+      expect(result.status === "evaluated" && result.scorecard.band).toBe("not-passing");
+    });
+
     describe.each(corpus.mutants.map((m) => [m.id, m] as const))("mutant %s", (_id, mutant) => {
       const golden = corpus.golden.find((g) => g.id === mutant.base);
 

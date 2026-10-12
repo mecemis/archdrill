@@ -2,6 +2,8 @@
 import { AttemptSchema, isCommandName } from "@archdrill/model";
 import { z } from "zod";
 import dynamodbDirect from "../problems/url-shortener/corpus/golden/dynamodb-direct.yaml";
+import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redis-cache-aside.yaml";
+import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
 import postgresRedisCacheAside from "../problems/url-shortener/corpus/golden/postgres-redis-cache-aside.yaml";
 import urlShortenerMutants from "../problems/url-shortener/corpus/mutants.yaml";
 
@@ -10,6 +12,8 @@ export const GoldenSchema = z.object({
   description: z.string().min(1),
   /** Scenario id → minimum score the design must reach without failing a gate. */
   expect: z.record(z.string(), z.object({ minScore: z.number().min(0).max(100) })),
+  /** Scenarios this design is expected not to pass: valid elsewhere, but not an answer here. */
+  notPassing: z.array(z.string()).default([]),
   attempt: AttemptSchema,
 });
 export type Golden = z.infer<typeof GoldenSchema>;
@@ -52,7 +56,9 @@ export interface ProblemCorpus {
 export const corpora: readonly ProblemCorpus[] = [
   {
     problemId: "url-shortener",
-    golden: [postgresRedisCacheAside, dynamodbDirect].map((g) => GoldenSchema.parse(g)),
+    golden: [postgresRedisCacheAside, dynamodbDirect, dynamodbRedis, mysqlMemcached].map((g) =>
+      GoldenSchema.parse(g),
+    ),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(urlShortenerMutants).mutants,
   },
 ];

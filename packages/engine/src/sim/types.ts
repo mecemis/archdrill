@@ -60,6 +60,15 @@ export interface OperationMetrics {
   readonly successRate: number;
   /** Share of requests rejected before reaching the handler's steps. */
   readonly ingressRejectRate: number;
+  /** Why requests did not succeed, as shares of all requests. */
+  readonly failures: {
+    /** Rejected by an overloaded component on the ingress route. */
+    readonly rejected: number;
+    /** Ended at an outcome the flow does not handle. */
+    readonly unhandled: number;
+    /** Answered with a status that is not a success for this operation (e.g. 503 after a rejected call). */
+    readonly errorStatus: number;
+  };
   readonly latency: LatencySummary;
   readonly paths: readonly PathMetrics[];
 }

@@ -116,9 +116,21 @@ export const successRateAbove = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const op = env?.operations.get(params.operation);
     if (!env || !op) return notApplicable("This scenario does not simulate that operation.");
-    const message = `${percent(op.successRate)} of requests succeed at ${env.environment.label}; the target is ${percent(params.min)}.`;
-    if (op.successRate >= params.min) return passed(message);
-    return failed(message, hotComponents(env, 1));
+    const base = `${percent(op.successRate)} of requests succeed at ${env.environment.label}; the target is ${percent(params.min)}.`;
+    if (op.successRate >= params.min) return passed(base);
+    const { rejected, unhandled, errorStatus } = op.failures;
+    const causes = [
+      rejected > 0 ? `${percent(rejected)} rejected by overloaded components on the way in` : null,
+      errorStatus > 0 ? `${percent(errorStatus)} answered with an error status` : null,
+      unhandled > 0 ? `${percent(unhandled)} end at an outcome the flow does not handle` : null,
+    ].filter((c): c is string => c !== null);
+    const unhandledPaths: Evidence[] = (ctx.analysis.operations.get(params.operation)?.paths ?? [])
+      .filter((p) => p.terminal.kind === "unhandled")
+      .map((p) => ({ type: "path", operation: params.operation, pathId: p.id }));
+    return failed(`${base} Failures: ${causes.join("; ")}.`, [
+      ...hotComponents(env, 1),
+      ...unhandledPaths,
+    ]);
   },
 });
 
