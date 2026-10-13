@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Evidence } from "../evidence";
 import { defineCheck, failed, notApplicable, passed } from "./types";
 
 /**
@@ -31,13 +32,17 @@ export const decisionExcludes = defineCheck({
     const point = ctx.problem.decisionPoints.find((d) => d.id === params.decision);
     const chosen = ctx.attempt.decisions[params.decision];
     const optionLabel = (id: string) => labelOf(params.decision, id);
+    const evidence: Evidence[] = [
+      { type: "decision", decision: params.decision },
+      ...(params.when ? [{ type: "decision" as const, decision: params.when.decision }] : []),
+    ];
     if (chosen === undefined) {
       return {
         status: "partial",
         fraction: 0.5,
         message: `Not decided yet: ${point?.question ?? params.decision} Record it under Decisions.`,
         details: [],
-        evidence: [],
+        evidence,
       };
     }
     const conflict = params.forbidden.find((f) => f.option === chosen);
@@ -45,7 +50,7 @@ export const decisionExcludes = defineCheck({
       const given = params.when
         ? ` together with "${labelOf(params.when.decision, ctx.attempt.decisions[params.when.decision] ?? "")}"`
         : "";
-      return failed(`You chose "${optionLabel(chosen)}"${given}: ${conflict.reason}`, []);
+      return failed(`You chose "${optionLabel(chosen)}"${given}: ${conflict.reason}`, evidence);
     }
     return passed(`"${optionLabel(chosen)}" is consistent with the requirements.`);
   },

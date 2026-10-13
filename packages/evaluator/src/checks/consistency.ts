@@ -95,7 +95,9 @@ export const invalidationOnWrite = defineCheck({
         fraction: 0,
         message: `No successful path of ${write.operation.label} stores the change to ${params.entity}.`,
         details: [],
-        evidence: [],
+        evidence: write.paths
+          .filter((p) => isSuccessPath(p, write.operation))
+          .map((p): Evidence => ({ type: "path", operation: write.operation.id, pathId: p.id })),
       };
     }
     const label = (id: string) =>

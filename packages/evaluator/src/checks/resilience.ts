@@ -223,12 +223,19 @@ export const stableUnderRetries = defineCheck({
     }
     if (!env.converged) {
       // Usually feedback the design creates, but the model can oscillate on its own too.
+      // Point at what feeds back: components over capacity, else the connections that retry.
+      const overloaded = [...env.components.values()]
+        .filter((c) => c.utilization > 1)
+        .map((c): Evidence => ({ type: "component", componentId: c.componentId }));
+      const retrying = ctx.attempt.architecture.connections
+        .filter((c) => c.policy.retries > 0)
+        .map((c): Evidence => ({ type: "connection", connectionId: c.id }));
       return {
         status: "partial",
         fraction: 0.5,
         message: `The load model does not settle at ${env.environment.label}: failures, timeouts and retries keep feeding back, so these numbers are approximate.`,
         details: [],
-        evidence: [],
+        evidence: overloaded.length > 0 ? overloaded : retrying,
       };
     }
     return passed(`No component is kept overloaded by retries at ${env.environment.label}.`);

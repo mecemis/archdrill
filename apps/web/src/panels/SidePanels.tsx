@@ -8,7 +8,6 @@ import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
 
 type LeftTab = "brief" | "palette";
-type RightTab = "flow" | "inspector" | "decisions";
 
 export function LeftPanel() {
   const [tab, setTab] = useState<LeftTab>("brief");
@@ -37,11 +36,12 @@ export function LeftPanel() {
 
 export function RightPanel() {
   const selection = useUi((s) => s.selection);
-  const [tab, setTab] = useState<RightTab>("flow");
+  const tab = useUi((s) => s.rightTab);
+  const setTab = useUi((s) => s.setRightTab);
   // Selecting something on the canvas brings up its inspector.
   useEffect(() => {
     if (selection) setTab("inspector");
-  }, [selection]);
+  }, [selection, setTab]);
   return (
     <aside
       aria-label="Flow, inspector and decisions"

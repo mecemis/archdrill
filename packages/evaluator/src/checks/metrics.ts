@@ -76,6 +76,20 @@ function gradeAtMost(
   return failed(message, evidence);
 }
 
+/** Paths that end at an outcome the flow does not handle. */
+function unhandledPaths(ctx: CheckContext, operation: string): Evidence[] {
+  return (ctx.analysis.operations.get(operation)?.paths ?? [])
+    .filter((p) => p.terminal.kind === "unhandled")
+    .map((p) => ({ type: "path", operation, pathId: p.id }));
+}
+
+/** Components the environment breaks (down, slow, failing over). */
+function faultedComponents(env: EnvironmentMetrics): Evidence[] {
+  return [...env.components.values()]
+    .filter((c) => c.faults.length > 0)
+    .map((c) => ({ type: "component", componentId: c.componentId }));
+}
+
 function hotComponents(env: EnvironmentMetrics, threshold: number): Evidence[] {
   return [...env.components.values()]
     .filter((c) => c.utilization > threshold)
@@ -100,19 +114,40 @@ export const latencyBelow = defineCheck({
     if (fallsBehind(op)) {
       return failed(
         `${operationLabel(ctx, op.operation)} falls behind by ${perSecond(op.backlogGrowth)} at ${env.environment.label}, so its lag grows without bound.${approximateNote(env)}`,
-        hotComponents(env, 0.95),
+        [...hotComponents(env, 0.95), ...faultedComponents(env)],
       );
     }
     if (op.successRate < MEANINGFUL_SUCCESS) {
+      const errors = errorCauses(ctx, params.operation, op, 1 - op.failures.rejected);
       return failed(
         `Only ${percent(op.successRate)} of requests succeed at ${env.environment.label}, so latency cannot meet the target.${approximateNote(env)}`,
-        hotComponents(env, 1),
+        [
+          ...hotComponents(env, 1),
+          ...faultedComponents(env),
+          ...unhandledPaths(ctx, params.operation),
+          ...errors.evidence,
+        ],
+        errors.details,
       );
     }
     const actual = op.latency[params.percentile];
-    const slow = op.paths
-      .filter((p) => p.probability > 0.001 && p.latency.p99 > params.ms)
-      .map((p): Evidence => ({ type: "path", operation: params.operation, pathId: p.pathId }));
+    const analysed = ctx.analysis.operations.get(params.operation);
+    const succeeded = (pathId: string) => {
+      const path = analysed?.paths.find((p) => p.id === pathId);
+      return (
+        path !== undefined && analysed !== undefined && isSuccessPath(path, analysed.operation)
+      );
+    };
+    const candidates = op.paths.filter((p) => p.probability > 0.001 && succeeded(p.pathId));
+    const overTarget = candidates.filter((p) => p.latency.p99 > params.ms);
+    // The tail comes from the slowest paths even when none of them alone misses the target.
+    const slowest =
+      overTarget.length > 0
+        ? overTarget
+        : [...candidates].sort((a, b) => b.latency.p99 - a.latency.p99).slice(0, 2);
+    const slow = slowest.map(
+      (p): Evidence => ({ type: "path", operation: params.operation, pathId: p.pathId }),
+    );
     const measure = op.trigger === "request" ? params.percentile : `${params.percentile} lag`;
     const message = `${measure} is ${ms(actual)} at ${env.environment.label}; the target is under ${ms(params.ms)}.${approximateNote(env)}`;
     return gradeAtMost(actual, params.ms, message, [...slow, ...hotComponents(env, 0.8)]);
@@ -228,14 +263,17 @@ export const successRateAbove = defineCheck({
       errorStatus > 0 ? `${percent(errorStatus)} answered with an error status` : null,
       unhandled > 0 ? `${percent(unhandled)} end at an outcome the flow does not handle` : null,
     ].filter((c): c is string => c !== null);
-    const unhandledPaths: Evidence[] = (ctx.analysis.operations.get(params.operation)?.paths ?? [])
-      .filter((p) => p.terminal.kind === "unhandled")
-      .map((p) => ({ type: "path", operation: params.operation, pathId: p.id }));
+
     const why = causes.length > 0 ? ` Failures: ${causes.join("; ")}.` : "";
     const errors = errorCauses(ctx, params.operation, op, 1 - rejected);
     return failed(
       `${base}${why}${approximateNote(env)}`,
-      [...hotComponents(env, 1), ...unhandledPaths, ...errors.evidence],
+      [
+        ...hotComponents(env, 1),
+        ...faultedComponents(env),
+        ...unhandledPaths(ctx, params.operation),
+        ...errors.evidence,
+      ],
       errors.details,
     );
   },
@@ -329,7 +367,7 @@ export const backlogStable = defineCheck({
     );
     return failed(
       `${names(behind)} cannot keep up at ${env.environment.label}: the backlog grows until the lag is hours.${approximateNote(env)}`,
-      hotComponents(env, 0.95),
+      [...hotComponents(env, 0.95), ...faultedComponents(env)],
       details,
     );
   },

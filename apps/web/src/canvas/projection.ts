@@ -166,6 +166,7 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
 }
 
 function emphasisOf(highlight: Highlight | null, member: boolean): Emphasis {
-  if (!highlight) return "normal";
+  // A highlight with nothing on the canvas (a decision) leaves the canvas as it is.
+  if (!highlight || highlight.components.size + highlight.connections.size === 0) return "normal";
   return member ? "highlighted" : "dimmed";
 }

@@ -101,7 +101,9 @@ export function highlightFromEvidence(
   const components = new Set<string>();
   const connections = new Set<string>();
   const steps = new Set<string>();
+  const decisions = new Set<string>();
   for (const item of evidence) {
+    if (item.type === "decision") decisions.add(item.decision);
     if (item.type === "component") components.add(item.componentId);
     if (item.type === "connection") connections.add(item.connectionId);
     if (item.type === "step") steps.add(item.stepId);
@@ -113,7 +115,7 @@ export function highlightFromEvidence(
       for (const step of path.steps) steps.add(step.stepId);
     }
   }
-  return { components, connections, steps };
+  return { components, connections, steps, decisions };
 }
 
 export function highlightFromPath(op: OperationAnalysis, pathId: string): Highlight {
@@ -122,6 +124,7 @@ export function highlightFromPath(op: OperationAnalysis, pathId: string): Highli
     components: new Set(path?.components ?? []),
     connections: new Set(path?.connections ?? []),
     steps: new Set(path?.steps.map((s) => s.stepId) ?? []),
+    decisions: new Set(),
   };
 }
 
