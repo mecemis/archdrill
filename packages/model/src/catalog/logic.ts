@@ -103,7 +103,7 @@ export function getLogic(id: LogicId): LogicDef {
   return LOGIC[id];
 }
 
-/** Logic a problem offers: the ones it lists, or every one when it lists none. */
-export function offeredLogic(listed: readonly LogicId[]): readonly LogicId[] {
-  return listed.length > 0 ? listed : LOGIC_IDS;
+/** Logic a problem offers: the ones it lists, or every one when it lists nothing. */
+export function offeredLogic(listed: readonly LogicId[] | undefined): readonly LogicId[] {
+  return listed ?? LOGIC_IDS;
 }

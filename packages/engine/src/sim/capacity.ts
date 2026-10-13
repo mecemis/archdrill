@@ -18,6 +18,10 @@ export interface ComponentProfile {
   readonly writeCapacity: number;
   /** Writes a second one key can take, wherever it lives (infinite when only capacity limits it). */
   readonly perKeyWriteCapacity: number;
+  /** Client connections the component can hold open (infinite for components that hold none). */
+  readonly connectionCapacity: number;
+  /** Client connections it holds in this environment. */
+  readonly heldConnections: number;
   /** Mean service time per request, milliseconds. */
   readonly serviceTimeMs: number;
   /** Coefficient of variation of the service time. */
@@ -71,6 +75,9 @@ export function componentProfile(
     readCapacity,
     writeCapacity,
     perKeyWriteCapacity: flavor.perKeyCapacityPerSec?.write ?? Number.POSITIVE_INFINITY,
+    connectionCapacity:
+      size.maxConnections === undefined ? Number.POSITIVE_INFINITY : size.maxConnections * replicas,
+    heldConnections: 0,
     serviceTimeMs,
     cv: size.latencyMs.cv,
     servers,

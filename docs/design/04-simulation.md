@@ -322,6 +322,14 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
 - **Own batches.** A fan-out with a batch size fills its batches with the request's own calls, so it waits for nobody else: ⌈n / size⌉ calls, each costing one call plus 5% per extra item.
 - **Hot by fact.** An entity can be hot for requests with a fact (`hotFor`): every follower of a celebrity reads that celebrity's entry.
 
+## Connections (as built, M15)
+
+- **Held connections.** An environment can say how many clients hold a persistent connection, and the components with `persistent-connections` share them equally.
+- **Capacity.** A size's `maxConnections` gives the connections one instance holds, so capacity is that times the instances.
+- **Utilisation.** A gateway's utilisation is the larger of its request load and its connections over capacity: connections use memory, requests use CPU.
+  - Beyond capacity the excess is refused like any overload.
+  - Autoscaling follows whichever is fuller, so it sizes the fleet for connections.
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:

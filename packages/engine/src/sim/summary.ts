@@ -90,10 +90,13 @@ export interface CallTally {
 }
 
 export function utilizationOf(load: Load | undefined, profile: ComponentProfile): number {
-  if (!load) return 0;
+  // Open connections take memory, requests take CPU: whichever is fuller limits the component.
+  const held =
+    profile.heldConnections > 0 ? profile.heldConnections / profile.connectionCapacity : 0;
+  if (!load) return held;
   const read = Number.isFinite(profile.readCapacity) ? load.read / profile.readCapacity : 0;
   const write = Number.isFinite(profile.writeCapacity) ? load.write / profile.writeCapacity : 0;
-  return read + write;
+  return Math.max(read + write, held);
 }
 
 /** Beyond capacity, the excess share of arrivals is rejected. */

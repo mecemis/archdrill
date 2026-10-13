@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s3-presence
+problemId: chat
+title: Presence
+order: 3
+story: |
+  "Users want to see who is online. Every connected app sends a heartbeat
+  every 30 seconds, and opening the contact list shows 20 contacts' status.
+  Twenty million connected users is about 670,000 heartbeats a second."
+focusOperations: [heartbeat, read-presence]
+prerequisites: [s1-deliver]
+workload:
+  operations:
+    heartbeat:
+      entity: Presence
+      classes:
+        - { id: user, share: 1 }
+    read-presence:
+      entity: Presence
+      classes:
+        - { id: user, share: 1 }
+  keys:
+    Presence:
+      existing: { distribution: zipf, s: 0.6, population: 2.0e7 }
+  environments:
+    - id: online
+      label: Peak presence
+      description: Peak, with every connected user sending heartbeats.
+      connections: 20000000
+      rates: { heartbeat: 666667, read-presence: 100000 }
+dimensions:
+  scalability: 0.5
+  latency: 0.3
+  cost: 0.2
+checks:
+  - id: heartbeats-fast
+    use: latency-below
+    title: Heartbeat p99 under 100 ms
+    dimension: latency
+    requirements: [FR-4]
+    params: { operation: heartbeat, environment: online, percentile: p99, ms: 100 }
+    why: >-
+      A heartbeat is tiny; it should cost one write to memory.
+    fix: >-
+      Write presence to an in-memory store with a TTL a little over the
+      heartbeat interval.
+
+  - id: status-fast
+    use: latency-below
+    title: Contacts' status p99 under 200 ms
+    dimension: latency
+    requirements: [FR-4]
+    params: { operation: read-presence, environment: online, percentile: p99, ms: 200 }
+    why: >-
+      Twenty lookups one after the other add up.
+    fix: >-
+      Read the 20 contacts' presence in one batched lookup.
+
+  - id: headroom-presence
+    use: utilization-below
+    title: Nothing runs above 85% with presence
+    dimension: scalability
+    weight: 3
+    requirements: [FR-4]
+    params: { environment: online, max: 0.85 }
+    why: >-
+      670,000 writes a second go to wherever presence lives.
+    fix: >-
+      Keep presence in a sharded in-memory store, and never in the database.
+
+  - id: presence-in-memory
+    use: no-path
+    title: Presence is not written to a durable store
+    dimension: cost
+    requirements: [FR-4]
+    params:
+      operation: heartbeat
+      where: { hasStep: { capability: durable-store } }
+    why: >-
+      Presence is stale after a minute anyway. Writing it durably pays for
+      disks, replication and compaction for data that expires.
+    fix: >-
+      Write heartbeats to an in-memory store with a TTL.
+
+  - id: no-broadcast
+    use: no-path
+    title: Heartbeats are not broadcast to contacts
+    dimension: scalability
+    signal: senior
+    requirements: [FR-4]
+    params:
+      operation: heartbeat
+      where: { hasStep: { action: queue.publish } }
+    why: >-
+      Pushing every heartbeat to 200 contacts is over a hundred million pushes
+      a second. Looking up the 20 contacts on screen is a few million lookups.
+    fix: >-
+      Store presence with a TTL and look it up when a contact list is shown.
+hints:
+  - "How many writes a second do heartbeats add, and how long is a status worth keeping?"
+  - "Would you push a status change to every contact, or look up the contacts on screen?"
+  - "Write heartbeats to a sharded Redis with a 60-second TTL and read the visible contacts' status in one batched lookup."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - How would you show "last seen 5 minutes ago" without writing every heartbeat to disk?
+  - Should a user's status change when one of their three devices disconnects?

@@ -247,7 +247,7 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
   for (const [stepId, step] of Object.entries(flow.steps)) {
     if (step.type === "call") issues.push(...validateCallStep(flow, stepId, step, attempt, ctx));
     const offered = ctx.problem.logic;
-    if (step.type === "logic" && offered.length > 0 && !offered.includes(step.logic)) {
+    if (step.type === "logic" && offered !== undefined && !offered.includes(step.logic)) {
       issues.push(
         error(
           "step-logic-not-offered",

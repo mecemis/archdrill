@@ -1,6 +1,9 @@
 /// <reference path="../src/yaml.d.ts" />
 import { AttemptSchema, isCommandName } from "@archdrill/model";
 import { z } from "zod";
+import fixedGateways from "../problems/chat/corpus/golden/fixed-gateways.yaml";
+import gatewaysAndSequences from "../problems/chat/corpus/golden/gateways-and-sequences.yaml";
+import chatMutants from "../problems/chat/corpus/mutants.yaml";
 import hybridFanOut from "../problems/news-feed/corpus/golden/hybrid-fan-out.yaml";
 import pushPostgres from "../problems/news-feed/corpus/golden/push-postgres.yaml";
 import newsFeedMutants from "../problems/news-feed/corpus/mutants.yaml";
@@ -85,5 +88,10 @@ export const corpora: readonly ProblemCorpus[] = [
     problemId: "news-feed",
     golden: [hybridFanOut, pushPostgres].map((g) => GoldenSchema.parse(g)),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(newsFeedMutants).mutants,
+  },
+  {
+    problemId: "chat",
+    golden: [gatewaysAndSequences, fixedGateways].map((g) => GoldenSchema.parse(g)),
+    mutants: z.object({ mutants: z.array(MutantSchema) }).parse(chatMutants).mutants,
   },
 ];

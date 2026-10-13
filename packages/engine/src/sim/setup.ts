@@ -130,8 +130,14 @@ export function buildProfiles(
   faults: ReadonlyMap<string, ComponentFault>,
   scaled: ReadonlyMap<string, number> = new Map(),
   whole = false,
+  /** Client connections held open, shared by the components that hold connections. */
+  connections = 0,
 ): Map<string, ComponentProfile> {
   const profiles = new Map<string, ComponentProfile>();
+  const gateways = ctx.attempt.architecture.components.filter((c) =>
+    ctx.catalog.capabilities(c.kind, c.flavor).has("persistent-connections"),
+  );
+  const held = gateways.length > 0 ? connections / gateways.length : 0;
   for (const component of ctx.attempt.architecture.components) {
     const replicas = component.autoscale ? scaled.get(component.id) : undefined;
     const profile = componentProfile(
@@ -139,8 +145,9 @@ export function buildProfiles(
       ctx.catalog,
       replicas === undefined ? undefined : whole ? wholeInstances(replicas) : replicas,
     );
-    if (profile)
-      profiles.set(component.id, faultedProfile(profile, faults.get(component.id) ?? NO_FAULT));
+    if (!profile) continue;
+    const holding = gateways.includes(component) ? { ...profile, heldConnections: held } : profile;
+    profiles.set(component.id, faultedProfile(holding, faults.get(component.id) ?? NO_FAULT));
   }
   return profiles;
 }

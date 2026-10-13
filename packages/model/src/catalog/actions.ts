@@ -167,6 +167,26 @@ export const ACTIONS = {
     description:
       "Call another service's API and wait for its answer, for example to hand an allowed request to the backend that does the work.",
   },
+  "connection.push": {
+    label: "push",
+    capability: "persistent-connections",
+    effect: "write",
+    outcomes: ["ok", "error"],
+    params: [],
+    optionalParams: ["each", "batchSize"],
+    description:
+      "Send a frame to a connected client over the connection it holds open with a gateway, for example a new message.",
+  },
+  "external.notify": {
+    label: "send push notification",
+    capability: "push-notifications",
+    effect: "publish",
+    outcomes: ["ok", "error"],
+    params: [],
+    optionalParams: ["each", "batchSize"],
+    description:
+      "Ask a mobile push service to notify a device that is not connected. With a batch size, one call notifies that many devices.",
+  },
   "external.check": {
     label: "check URL",
     capability: "external",

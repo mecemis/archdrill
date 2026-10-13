@@ -47,3 +47,12 @@ test("passes every news feed scenario with a hybrid fan-out", async ({ page }) =
     await expect(page.getByTestId("scenario-score")).toHaveText("100");
   }
 });
+
+test("passes every chat scenario with gateways sized for connections", async ({ page }) => {
+  await importGolden(page, "gateways-and-sequences", "chat");
+
+  for (const scenario of [/S1 /, /S2 /, /S3 /]) {
+    await page.getByRole("button", { name: scenario }).click();
+    await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  }
+});

@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s2-groups
+problemId: chat
+title: Large groups
+order: 2
+story: |
+  "Communities have arrived: groups of 500 people, and one message in fifty
+  now goes to one of them. Four hundred members are connected; a hundred get
+  a notification. The push provider takes 100,000 requests a second."
+focusOperations: [send-message, deliver-message]
+prerequisites: [s1-deliver]
+workload:
+  operations:
+    send-message:
+      entity: Message
+      classes:
+        - { id: direct, share: 0.73 }
+        - { id: direct-offline, share: 0.15, counts: { onlineRecipients: 0, offlineRecipients: 1 } }
+        - { id: group, share: 0.1, counts: { onlineRecipients: 8, offlineRecipients: 2 } }
+        - { id: community, share: 0.02, counts: { onlineRecipients: 400, offlineRecipients: 100 } }
+    connect:
+      entity: Session
+      classes:
+        - { id: user, share: 1 }
+  keys:
+    Session:
+      existing: { distribution: zipf, s: 0.6, population: 2.0e7 }
+  environments:
+    - id: communities
+      label: Peak, with large groups
+      description: Peak traffic; one message in fifty goes to a group of 500.
+      connections: 20000000
+      rates: { send-message: 200000, connect: 6000 }
+dimensions:
+  scalability: 0.5
+  latency: 0.5
+checks:
+  - id: deliveries-keep-up
+    use: backlog-stable
+    title: Delivery keeps up with large groups
+    dimension: scalability
+    weight: 2
+    severity: major
+    requirements: [NFR-1]
+    params: { environment: communities }
+    why: >-
+      A message to 500 people is 500 deliveries. Large groups multiply the
+      delivery work tenfold.
+    fix: >-
+      Scale the delivery consumers for deliveries, not messages, and push to a
+      group's members in parallel.
+
+  - id: within-quota
+    use: utilization-below
+    title: Nothing runs above 85% with large groups, the push provider included
+    dimension: scalability
+    weight: 3
+    severity: major
+    requirements: [FR-2]
+    params: { environment: communities, max: 0.85 }
+    why: >-
+      A hundred notifications per community message, one request each, is far
+      beyond the push provider's quota; throttled notifications are lost.
+    fix: >-
+      Send notifications in batches: one request can address many devices.
+
+  - id: delivered-fast-groups
+    use: latency-below
+    title: Delivery p99 under 2 seconds with large groups
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: deliver-message, environment: communities, percentile: p99, ms: 2000 }
+    why: >-
+      Pushing to 400 members one after the other takes far longer than in
+      parallel.
+    fix: >-
+      Push to a group's connected members in parallel, in batches per gateway.
+hints:
+  - "How many deliveries a second do the large groups add, and how many notifications?"
+  - "Can one request to the push provider address more than one device?"
+  - "Push to members in parallel batches, and send notifications in batches to stay within the provider's quota."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Should every member of a 100,000-member channel get a notification for every message?
+  - How would you fan out to a group whose members are spread over 100 gateways?

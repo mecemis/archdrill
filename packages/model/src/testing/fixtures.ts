@@ -206,6 +206,23 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       ],
     },
     {
+      id: "websocket-gateway",
+      label: "WebSocket gateway",
+      description: "Holds persistent connections.",
+      capabilities: ["routing", "persistent-connections"],
+      replicable: true,
+      holdsData: false,
+      flavors: [
+        {
+          id: "connection-servers",
+          label: "Connection servers",
+          description: "Connection servers.",
+          sizes: { m: { ...size(100000, 100000, 1, 0.4), maxConnections: 1000 } },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
       id: "external-api",
       label: "External API",
       description: "A third-party service.",

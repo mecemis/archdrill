@@ -145,6 +145,8 @@ export const FaultSchema = z.discriminatedUnion("kind", [
 export type Fault = z.infer<typeof FaultSchema>;
 
 export const EnvironmentSchema = z.object({
+  /** Clients holding a persistent connection (WebSockets), spread over the gateways that hold them. */
+  connections: z.number().min(0).default(0),
   id: IdSchema,
   label: z.string().min(1),
   /** What the environment represents, shown next to its metrics. */
@@ -267,6 +269,8 @@ export const TimelineSchema = z
     durationSec: z.number().positive().max(MAX_TIMELINE_SEC),
     stepSec: z.number().min(0.1).max(10).default(1),
     rates: z.record(IdSchema, z.number().nonnegative()),
+    /** Clients holding persistent connections throughout the timeline. */
+    connections: z.number().min(0).default(0),
     classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
     events: z.array(TimelineEventSchema).default([]),
     /** Questions to answer before the timeline is revealed. */

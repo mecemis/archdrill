@@ -269,6 +269,7 @@ export function simulateTimeline(
       id: timeline.id,
       label: timeline.label,
       rates,
+      connections: timeline.connections,
       classShares: timeline.classShares,
       faults: active.map((e) => e.fault),
     };

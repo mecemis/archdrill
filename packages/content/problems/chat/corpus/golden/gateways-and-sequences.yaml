@@ -1,0 +1,185 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: gateways-and-sequences
+description: >-
+  App users hold WebSockets on connection servers (80 to 200 instances,
+  scaled for connections) that route requests to a chat service. Sending
+  numbers the message with a per-conversation counter in Redis, stores it in
+  Cassandra with a conditional insert on the client's message id (a resend
+  finds it there), and publishes message-sent to Kafka. A delivery service
+  looks up recipients' sessions in Redis, pushes through the connection
+  servers in batches, and notifies everyone else through the push provider in
+  batches of 100. Heartbeats write presence to Redis with a 60-second TTL; the
+  contact list reads 20 contacts' presence in one batched lookup.
+expect:
+  s1-deliver: { minScore: 90 }
+  s2-groups: { minScore: 90 }
+  s3-presence: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: chat
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: users, kind: client, flavor: mobile-app, label: App users }
+      - id: gateways
+        kind: websocket-gateway
+        flavor: connection-servers
+        label: Connection servers
+        size: m
+        replicas: 80
+        autoscale: { max: 200, targetUtilization: 0.7 }
+      - id: chat-api
+        kind: service
+        flavor: generic
+        label: Chat service
+        size: l
+        replicas: 20
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: redis, kind: cache, flavor: redis, label: Sessions and sequences, size: m, shards: 8, replicas: 2 }
+      - id: messages-db
+        kind: wide-column-db
+        flavor: cassandra
+        label: Messages
+        size: m
+        shards: 10
+        replicas: 3
+        data: [{ entity: Message }]
+      - { id: events, kind: queue, flavor: kafka, label: Message events, size: m, replicas: 4 }
+      - id: delivery
+        kind: service
+        flavor: generic
+        label: Delivery service
+        size: l
+        replicas: 10
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: push, kind: external-api, flavor: push-provider, label: Push provider, size: quota }
+    connections:
+      - { id: users--gateways, from: users, to: gateways }
+      - { id: gateways--chat-api, from: gateways, to: chat-api }
+      - id: chat-api--redis
+        from: chat-api
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
+      - id: chat-api--messages-db
+        from: chat-api
+        to: messages-db
+        policy: { timeoutMs: 200 }
+      - id: chat-api--events
+        from: chat-api
+        to: events
+        policy: { timeoutMs: 100, retries: 1 }
+      - { id: delivery--events, from: delivery, to: events }
+      - id: delivery--redis
+        from: delivery
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
+      - id: delivery--gateways
+        from: delivery
+        to: gateways
+        policy: { timeoutMs: 200 }
+      - id: delivery--push
+        from: delivery
+        to: push
+        policy: { timeoutMs: 1000 }
+  flows:
+    - operation: send-message
+      handler: chat-api
+      root: seq
+      steps:
+        seq:
+          type: call
+          target: redis
+          action: counter.increment
+          entity: ConversationSeq
+          next: { ok: store, error: s503 }
+        store:
+          type: call
+          target: messages-db
+          action: store.insertIfAbsent
+          entity: Message
+          next: { ok: publish, conflict: s201, error: s503 }
+        publish:
+          type: call
+          target: events
+          action: queue.publish
+          event: message-sent
+          next: { ok: s201, error: s503 }
+        s201: { type: respond, status: 201 }
+        s503: { type: respond, status: 503 }
+    - operation: connect
+      handler: chat-api
+      root: session
+      steps:
+        session:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Session
+          ttlSec: 86400
+          next: { ok: c204, error: c503 }
+        c204: { type: respond, status: 204 }
+        c503: { type: respond, status: 503 }
+    - operation: deliver-message
+      handler: delivery
+      root: sessions
+      steps:
+        sessions:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Session
+          each: onlineRecipients
+          batchSize: 50
+          next: { hit: push-online, miss: notify, error: d503 }
+        push-online:
+          type: call
+          target: gateways
+          action: connection.push
+          each: onlineRecipients
+          batchSize: 50
+          next: { ok: notify, error: d503 }
+        notify:
+          type: call
+          target: push
+          action: external.notify
+          each: offlineRecipients
+          batchSize: 100
+          next: { ok: d200, error: d503 }
+        d200: { type: respond, status: 200 }
+        d503: { type: respond, status: 503 }
+    - operation: heartbeat
+      handler: chat-api
+      root: seen
+      steps:
+        seen:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Presence
+          ttlSec: 60
+          next: { ok: h204, error: h204 }
+        h204: { type: respond, status: 204 }
+    - operation: read-presence
+      handler: chat-api
+      root: statuses
+      steps:
+        statuses:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Presence
+          each: contactsShown
+          batchSize: 20
+          next: { hit: p200, miss: p200, error: p200 }
+        p200: { type: respond, status: 200 }
+  decisions:
+    message-order: sequence
+  layout:
+    users: { x: 0, y: 160 }
+    gateways: { x: 220, y: 160 }
+    chat-api: { x: 460, y: 160 }
+    redis: { x: 720, y: 0 }
+    messages-db: { x: 720, y: 200 }
+    events: { x: 720, y: 380 }
+    delivery: { x: 980, y: 260 }
+    push: { x: 1200, y: 380 }

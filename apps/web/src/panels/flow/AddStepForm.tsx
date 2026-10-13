@@ -114,7 +114,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
 
   const modes: { id: Mode; label: string; disabled?: boolean }[] = [
     { id: "call", label: "Call", disabled: targets.length === 0 },
-    { id: "logic", label: "Logic" },
+    { id: "logic", label: "Logic", disabled: offeredLogic(activePack.problem.logic).length === 0 },
     { id: "respond", label: "Respond", disabled: inserting },
     { id: "goto", label: "Go to step", disabled: inserting || slot.attach.to === "root" },
   ];
