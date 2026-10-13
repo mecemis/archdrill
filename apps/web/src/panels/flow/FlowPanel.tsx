@@ -1,4 +1,4 @@
-import { type Attempt, findOperationRoute, type Operation } from "@archdrill/model";
+import { type Attempt, canHandle, findOperationRoute, type Operation } from "@archdrill/model";
 import { AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
@@ -19,7 +19,7 @@ export function FlowPanel() {
   const operation = activePack.problem.operations.find((o) => o.id === operationId);
   const flow = attempt.flows.find((f) => f.operation === operationId);
   const services = attempt.architecture.components.filter((c) =>
-    catalogIndex.capabilities(c.kind, c.flavor).has("stateless-compute"),
+    canHandle(catalogIndex.capabilities(c.kind, c.flavor), operation?.trigger.type === "event"),
   );
   // Derived here rather than read from the analysis, which is empty while the design has errors.
   const route = useMemo(

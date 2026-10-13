@@ -13,6 +13,8 @@ export interface ClickOptions {
   /** The worker sums clicks per link over this window before incrementing. */
   readonly aggregateSec?: number;
   readonly counterShards?: number;
+  /** Increments per call to the store. */
+  readonly batchSize?: number;
   /** Where counts are kept. */
   readonly store?: "cassandra" | "dynamodb";
   /** Cassandra shards (each with three replicas). */
@@ -31,6 +33,7 @@ export function clickAnalyticsAttempt({
   bufferSize = 10_000,
   aggregateSec,
   counterShards,
+  batchSize,
   store = "cassandra",
   storeShards = 2,
   dedupe = false,
@@ -100,6 +103,7 @@ export function clickAnalyticsAttempt({
     entity: "LinkStats",
     ...(aggregateSec ? { aggregateSec } : {}),
     ...(counterShards ? { counterShards } : {}),
+    ...(batchSize ? { batchSize } : {}),
   };
   if (dedupe) {
     add(

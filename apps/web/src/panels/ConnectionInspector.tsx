@@ -2,6 +2,7 @@ import type { ConnectionCallMetrics } from "@archdrill/engine";
 import {
   type Connection,
   type ConnectionPolicy,
+  canHandle,
   MAX_RETRIES,
   MAX_TIMEOUT_MS,
 } from "@archdrill/model";
@@ -21,9 +22,9 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
   const components = useAttemptStore((s) => s.attempt.architecture.components);
   const label = (id: string) => components.find((c) => c.id === id)?.label ?? id;
   const source = components.find((c) => c.id === connection.from);
+  // Services and stream processors call over connections from flow steps.
   const callsFlowSteps =
-    source !== undefined &&
-    catalogIndex.capabilities(source.kind, source.flavor).has("stateless-compute");
+    source !== undefined && canHandle(catalogIndex.capabilities(source.kind, source.flavor), true);
   return (
     <div className="flex flex-col gap-4 p-4">
       <SectionTitle>Connection</SectionTitle>

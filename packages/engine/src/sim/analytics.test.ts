@@ -111,6 +111,19 @@ describe("counting clicks", () => {
     expect(each.components.get("stats")?.utilization).toBeLessThan(0.1);
   });
 
+  it("cuts the load of batched writes, but not a per-request bill", () => {
+    const store = { store: "dynamodb" as const, aggregateSec: 10 };
+    const single = simulate(clickAnalyticsAttempt(store));
+    const batched = simulate(clickAnalyticsAttempt({ ...store, batchSize: 100 }));
+    const stats = (m: typeof single) => m.components.get("stats");
+
+    expect(stats(batched)?.writeLoad).toBeLessThan((stats(single)?.writeLoad ?? 0) / 10);
+    expect(stats(batched)?.costBreakdown.requests).toBeCloseTo(
+      stats(single)?.costBreakdown.requests ?? 0,
+      6,
+    );
+  });
+
   it("does not make rows keyed by something else hot", () => {
     const metrics = simulate(clickAnalyticsAttempt({ store: "dynamodb", dedupe: true }), {
       classShares: VIRAL,

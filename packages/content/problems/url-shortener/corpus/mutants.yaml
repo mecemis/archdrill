@@ -684,3 +684,113 @@ mutants:
     expect:
       scenario: s7-edge-cases
       invalid: [step-batch-in-request]
+
+  # S8: click analytics.
+  - id: count-on-redirect
+    base: postgres-redis-cache-aside
+    description: The redirect increments the link's click count in the links database before answering.
+    apply:
+      - setComponentData: { id: links-db, entities: [Link, LinkStats] }
+      - addStep:
+          operation: redirect
+          id: count
+          step: { type: call, target: links-db, action: counter.increment, entity: LinkStats }
+          attach: { to: outcome, stepId: expiry-hit, outcome: valid }
+          continueWith: { outcome: ok }
+    expect:
+      scenario: s8-click-analytics
+      fails: [no-write-on-redirect]
+      band: not-passing
+
+  - id: waiting-click-publish
+    base: postgres-redis-cache-aside
+    description: The redirect waits for the click queue to take each click, with no timeout.
+    apply:
+      - updateStep:
+          operation: redirect
+          stepId: click
+          fireAndForget: null
+          bufferSize: null
+          batchSize: null
+      - linkOutcome: { operation: redirect, stepId: click, outcome: error, target: r302 }
+    expect:
+      scenario: s8-click-analytics
+      fails: [clicks-published, redirects-fast-queue-down]
+
+  - id: unbounded-click-buffer
+    base: postgres-redis-cache-aside
+    description: Clicks are buffered fire-and-forget without a bound.
+    apply:
+      - updateStep: { operation: redirect, stepId: click, bufferSize: null }
+    expect:
+      scenario: s8-click-analytics
+      fails: [clicks-published]
+
+  - id: clicks-not-consumed
+    base: postgres-redis-cache-aside
+    description: Clicks are published, but nothing consumes them.
+    apply:
+      - removeFlow: { operation: record-click }
+    expect:
+      scenario: s8-click-analytics
+      fails: [clicks-counted]
+      band: not-passing
+
+  - id: increments-without-dedupe
+    base: postgres-redis-cache-aside
+    description: The counter increments per link and window instead of writing the window's total.
+    apply:
+      - updateStep: { operation: record-click, stepId: total, action: counter.increment }
+    expect:
+      scenario: s8-click-analytics
+      fails: [no-double-count]
+
+  - id: retried-increments
+    base: postgres-redis-cache-aside
+    description: Increments are retried on timeouts.
+    apply:
+      - updateStep: { operation: record-click, stepId: total, action: counter.increment }
+      - setConnectionPolicy: { id: click-counter--click-stats, retries: 2 }
+    expect:
+      scenario: s8-click-analytics
+      fails: [increments-not-retried, no-double-count]
+
+  - id: write-per-click
+    base: postgres-redis-cache-aside
+    description: The counter writes every click as it arrives, without a window or batches.
+    apply:
+      - updateStep:
+          operation: record-click
+          stepId: total
+          aggregateSec: null
+          batchSize: null
+    expect:
+      scenario: s8-click-analytics
+      fails: [viral-clicks-counted]
+
+  - id: stale-click-window
+    base: postgres-redis-cache-aside
+    description: Clicks are summed over two-minute windows.
+    apply:
+      - updateStep: { operation: record-click, stepId: total, aggregateSec: 120 }
+    expect:
+      scenario: s8-click-analytics
+      fails: [counts-fresh]
+
+  - id: permanent-redirect-hides-clicks
+    base: postgres-redis-cache-aside
+    description: Redirects answer 301, so browsers cache them.
+    apply:
+      - setDecision: { decision: redirect-status, option: "301" }
+    expect:
+      scenario: s8-click-analytics
+      fails: [countable-redirects]
+
+  - id: clicks-in-managed-queue
+    base: postgres-redis-cache-aside
+    description: Clicks go through a managed queue billed per message instead of Kafka.
+    apply:
+      - updateComponent: { id: clicks, flavor: managed-queue, size: on-demand }
+    expect:
+      scenario: s8-click-analytics
+      fails: [within-budget]

@@ -61,6 +61,11 @@ export interface Propagation {
   readonly operations: ReadonlyMap<string, ResolvedOperation>;
   /** Items per second reaching each step that collects a batch, keyed by `batchKey`. */
   readonly batchArrivals: ReadonlyMap<string, number>;
+  /**
+   * Per component: items its batched calls carry beyond the load they cost.
+   * Providers that price per request bill every item, batched or not.
+   */
+  readonly batchedItems: ReadonlyMap<string, Load>;
 }
 
 export interface ResolvedOperation {
@@ -187,9 +192,10 @@ export function summarizeComponents(
   for (const [id, profile] of profiles) {
     const load = flow.loads.get(id) ?? { read: 0, write: 0 };
     const hotLoad = flow.hotLoads.get(id);
+    const extra = flow.batchedItems.get(id) ?? { read: 0, write: 0 };
     const requestCost = profile.requestCost
-      ? ((load.read * profile.requestCost.readPerMillion +
-          load.write * profile.requestCost.writePerMillion) *
+      ? (((load.read + extra.read) * profile.requestCost.readPerMillion +
+          (load.write + extra.write) * profile.requestCost.writePerMillion) *
           SECONDS_PER_MONTH) /
         1e6
       : 0;
@@ -297,6 +303,8 @@ function batchWait(
   return { mean: fill / 2, variance: fill ** 2 / 12 };
 }
 
+const NO_WAIT: Moments = { mean: 0, variance: 0 };
+
 /** Time an item waits for its aggregation window to close: uniform over the window. */
 function windowWait(windowSec: number): Moments {
   const ms = windowSec * 1000;
@@ -338,8 +346,12 @@ function pathLatency(
     if (step.kind !== "call" || step.fireAndForget) continue;
     const latency = callLatency(step, inputs, hotKey && !unkeyed.has(step.stepId));
     if (aggregates(step)) {
-      // Every item waits for its window to close, then for the write that carries it.
-      total = addMoments(total, addMoments(windowWait(step.aggregateSec), latency));
+      // Every item waits for its window to close, then for its batch, then for the write.
+      const batch = collectsBatch(step) ? batchWait(step, path, inputs, batchers) : NO_WAIT;
+      total = addMoments(
+        total,
+        addMoments(addMoments(windowWait(step.aggregateSec), batch), latency),
+      );
     } else if (collectsBatch(step)) {
       // Every item waits for its batch, then for the call that carries it.
       total = addMoments(total, addMoments(batchWait(step, path, inputs, batchers), latency));

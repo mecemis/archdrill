@@ -303,7 +303,12 @@ describe("App", () => {
 
     const tab = screen.getByRole("button", { name: /S2 Redirect/ });
     expect(within(tab).getByText(/^↓\d+/)).toBeDefined();
-    expect(screen.getByText(/^S2 Redirect \(read path\) dropped from \d+ to \d+/)).toBeDefined();
+    // One scenario is named in full; several are listed (S8 counts redirects too).
+    expect(
+      screen.getByText(
+        /^S2 Redirect \(read path\) dropped from \d+ to \d+|lowered \d+ scenarios: S2 /,
+      ),
+    ).toBeDefined();
     fireEvent.click(tab);
     expect(within(tab).queryByText(/^↓\d+/)).toBeNull();
   });

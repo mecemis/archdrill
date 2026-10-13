@@ -359,6 +359,26 @@ kinds:
         defaultSize: m
         notes: Throughput per broker for small messages with replication factor 3. Consumers track their own offsets; at-least-once delivery is the default.
 
+  - id: stream-processor
+    label: Stream processor
+    description: Consumes a log partition by partition and keeps per-key state in memory, so it can count and sum over windows. It takes messages from a queue, not requests.
+    capabilities: [stream-processing]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: flink
+        label: Flink
+        description: A stream processing job (Apache Flink, or Kafka Streams inside a service) whose per-key state is checkpointed, so a restart resumes where it left off.
+        startupSec: 120
+        sizes:
+          m:
+            label: 8 vCPU task manager
+            capacityPerSec: { read: 100000, write: 100000 }
+            latencyMs: { base: 1, cv: 0.5 }
+            costPerHour: 0.4
+        defaultSize: m
+        notes: Throughput for small messages with simple per-key state, such as counts. A restart replays messages since the last checkpoint, so whatever it writes must tolerate seeing a message twice.
+
   - id: external-api
     label: External API
     description: A third-party service you call over the internet. You do not control its capacity, latency or uptime.

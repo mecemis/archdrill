@@ -162,6 +162,7 @@ export const testCatalog: Catalog = CatalogSchema.parse({
           description: "DynamoDB.",
           managedRedundancy: true,
           perKeyCapacityPerSec: { write: 1000 },
+          requestCost: { readPerMillion: 0.125, writePerMillion: 0.625 },
           sizes: { "on-demand": size(1_000_000, 1_000_000, 4, 0) },
           defaultSize: "on-demand",
         },

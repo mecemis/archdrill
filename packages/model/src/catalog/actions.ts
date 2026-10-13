@@ -92,9 +92,9 @@ export const ACTIONS = {
     effect: "write",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec"],
+    optionalParams: ["aggregateSec", "batchSize"],
     description:
-      "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total.",
+      "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total. With a batch size (in consumers), that many rows go in one call.",
   },
   "store.insertIfAbsent": {
     label: "insert if absent",
@@ -130,9 +130,9 @@ export const ACTIONS = {
     effect: "publish",
     outcomes: ["ok", "error"],
     params: ["event"],
-    optionalParams: ["fireAndForget", "bufferSize"],
+    optionalParams: ["fireAndForget", "bufferSize", "batchSize"],
     description:
-      "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice. Fire-and-forget hands the message to a local buffer and continues at once: the request never waits for the queue or fails with it, and while the queue is unreachable the buffer holds messages up to its size and drops the rest.",
+      "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice. Fire-and-forget hands the message to a local buffer and continues at once: the request never waits for the queue or fails with it, and while the queue is unreachable the buffer holds messages up to its size and drops the rest. With a batch size, the buffer sends that many messages in one call.",
   },
   "counter.increment": {
     label: "increment",
@@ -140,9 +140,9 @@ export const ACTIONS = {
     effect: "increment",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "counterShards"],
+    optionalParams: ["aggregateSec", "counterShards", "batchSize"],
     description:
-      "Atomically add to a count stored under the entity's key. With an aggregation window (in consumers), the handler sums increments per key over the window and adds each sum once. With counter shards, one key's count is spread over that many rows, so a hot key's writes spread too; reading the count adds them up.",
+      "Atomically add to a count stored under the entity's key. With an aggregation window (in consumers), the handler sums increments per key over the window and adds each sum once. With counter shards, one key's count is spread over that many rows, so a hot key's writes spread too; reading the count adds them up. With a batch size (in consumers), that many increments go in one call.",
     unsafeToRetry:
       "A timed-out increment may have been applied. Retrying it, or redelivering its message, counts the same thing twice.",
   },

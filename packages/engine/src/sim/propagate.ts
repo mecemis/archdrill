@@ -210,6 +210,7 @@ export function propagate(
 ): Propagation {
   const loads = new Map<string, Load>();
   const hotLoads = new Map<string, Load>();
+  const batchedItems = new Map<string, Load>();
   const retries = new Map<string, number>();
   const lookups = new Map<string, Lookups>();
   const traffic = new Map<string, number>();
@@ -268,10 +269,10 @@ export function propagate(
       if (hop && op.ingress.includes(hop)) enter(hop);
     });
     let redelivered = 0;
-    // Steps that sum per key over a window write once per key and window.
+    // Steps that sum per key over a window write one item (row) per key and window.
     const hotShare = classes.reduce((sum, c) => sum + (c.hotKey ? c.share : 0), 0);
-    const shareOf = (step: CallPathStep, hot: boolean) => {
-      if (!aggregates(step)) return callShare(step);
+    const itemsOf = (step: CallPathStep, hot: boolean) => {
+      if (!aggregates(step)) return 1;
       return hot
         ? hotWindowShare(arriving * hotShare, step.aggregateSec)
         : windowWriteShare(arriving * (1 - hotShare), step.aggregateSec, op.keyPopularity);
@@ -291,12 +292,17 @@ export function propagate(
           const call = calls.get(step, hot);
           const failed = step.outcome === "error";
           const perCall = failed ? call.attemptsOnFailure : call.attemptsOnSuccess;
-          const callRate = weight * shareOf(step, hot);
+          const items = itemsOf(step, hot);
+          const callRate = weight * items * callShare(step);
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          const work = attempts * reach * (aggregates(step) ? 1 : callCost(step));
+          const work = attempts * reach * callCost(step);
           add(loads, step.target, work, write);
+          if (collectsBatch(step)) {
+            const carried = attempts * reach * (step.batchSize ?? 1);
+            add(batchedItems, step.target, carried - work, write);
+          }
           // A key spread over counter shards loads each of them with its share.
           if (hot) add(hotLoads, step.target, work / (step.counterShards ?? 1), write);
           retries.set(
@@ -315,7 +321,7 @@ export function propagate(
           });
           if (collectsBatch(step)) {
             const key = batchKey(op.operation.id, step.stepId);
-            batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight);
+            batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight * items);
           }
           if (step.action === "queue.publish" && step.event && !failed) {
             publish(step.event, op.operation.id, cls, weight * (1 - lost));
@@ -350,5 +356,6 @@ export function propagate(
     entityLookups,
     operations: resolved,
     batchArrivals,
+    batchedItems,
   };
 }

@@ -24,11 +24,21 @@ requirements:
   - { id: NFR-3, kind: non-functional, text: "Codes are unique and not enumerable." }
   - { id: NFR-4, kind: non-functional, text: "An acknowledged link is never lost." }
   - { id: NFR-5, kind: non-functional, text: "Link creation is protected against abuse with per-client limits." }
+  - { id: FR-6, kind: functional, text: "Link owners see how many times each link was clicked, at most a minute behind." }
+  - { id: NFR-6, kind: non-functional, text: "Counting clicks never slows down or fails a redirect, and never counts a click twice." }
 entities:
   - name: Link
     key: code
     fields: [code, longUrl, ownerId, createdAt, expiresAt, status]
     avgBytes: 500
+  - name: LinkStats
+    key: code
+    fields: [code, clicks, updatedAt]
+    avgBytes: 64
+  - name: Click
+    key: clickId
+    fields: [clickId, code, at]
+    avgBytes: 100
 operations:
   - id: create-link
     label: Create link
@@ -75,8 +85,17 @@ operations:
     successStatuses: [200]
     requirements: [FR-5]
     introducedIn: s7-edge-cases
+  - id: record-click
+    label: Record click
+    trigger: { type: event, event: link-clicked }
+    class: write
+    idempotent: false
+    successStatuses: [200]
+    requirements: [FR-6, NFR-6]
+    introducedIn: s8-click-analytics
 events:
   - { id: link-created, label: Link created, entity: Link }
+  - { id: link-clicked, label: Link clicked, entity: Link }
 decisionPoints:
   - id: code-strategy
     question: How are short codes generated?
@@ -124,4 +143,4 @@ decisionPoints:
       - { id: immediately, label: As soon as the link expires }
     requirements: [FR-3, NFR-3]
 scenarios:
-  [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure, s7-edge-cases]
+  [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure, s7-edge-cases, s8-click-analytics]

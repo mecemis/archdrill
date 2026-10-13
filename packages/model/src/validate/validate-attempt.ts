@@ -12,6 +12,7 @@ import {
   actionTakesParam,
   CONDITIONAL_OUTCOMES,
 } from "../catalog/actions";
+import { canHandle } from "../catalog/capabilities";
 import type { CatalogIndex } from "../catalog/schema";
 import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -213,11 +214,14 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
     ];
   }
   const issues: Issue[] = [];
-  if (!ctx.catalog.capabilities(handler.kind, handler.flavor).has("stateless-compute")) {
+  const capabilities = ctx.catalog.capabilities(handler.kind, handler.flavor);
+  if (!canHandle(capabilities, operation.trigger.type === "event")) {
     issues.push(
       error(
         "flow-handler-not-compute",
-        `"${handler.label}" cannot handle requests; pick a service.`,
+        capabilities.has("stream-processing")
+          ? `"${handler.label}" processes messages from a queue; ${operation.label} needs a service.`
+          : `"${handler.label}" cannot handle requests; pick a service.`,
         location,
       ),
     );
@@ -446,7 +450,9 @@ function validateCallStep(
       ),
     );
   }
-  if ((step.batchSize ?? 1) > 1 && action.effect !== "allocate" && trigger?.type === "request") {
+  // A fire-and-forget publish fills its batch in the background; the request does not wait for it.
+  const waitsForBatch = action.effect !== "allocate" && !step.fireAndForget;
+  if ((step.batchSize ?? 1) > 1 && waitsForBatch && trigger?.type === "request") {
     issues.push(
       error(
         "step-batch-in-request",
