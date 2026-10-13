@@ -3,8 +3,25 @@ import type { CallPathStep, Path, PathStep } from "../paths/types";
 import { hotWindowShare, windowWriteShare } from "./aggregation";
 import { bulkheadShed, type CallModel, callModel } from "./calls";
 import { type ComponentFault, NO_FAULT } from "./faults";
-import { aggregates, callCost, callShare, collectsBatch, type OutcomeState } from "./outcomes";
-import { cacheKey, type OperationModel } from "./setup";
+import {
+  aggregates,
+  BATCH_ITEM_COST,
+  callCost,
+  callShare,
+  collectsBatch,
+  fanOut,
+  fanOutCalls,
+  type OutcomeState,
+  ownBatches,
+} from "./outcomes";
+
+/** Load of a call carrying a fan-out's items in its own batches, per batch on average. */
+function ownBatchCost(items: number, size: number): number {
+  const calls = Math.ceil(items / size);
+  return 1 + BATCH_ITEM_COST * (items / calls - 1);
+}
+
+import { cacheKey, isHotStep, type OperationModel } from "./setup";
 import {
   batchKey,
   type CallTally,
@@ -280,7 +297,7 @@ export function propagate(
     };
     for (const cls of classes) {
       for (const path of op.analysis.paths) {
-        const once = arriving * cls.share * pathProbability(path, cls, state, op.unkeyed);
+        const once = arriving * cls.share * pathProbability(path, cls, state, op);
         if (once === 0) continue;
         const deliveries = trigger === "event" && !succeeds(path, op) ? MAX_DELIVERIES : 1;
         const weight = once * deliveries;
@@ -288,20 +305,34 @@ export function propagate(
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
+          // Inlined: this loop runs for every step, class and path on every iteration.
+          const fan = step.each === undefined ? 1 : (cls.counts[step.each] ?? 0);
+          if (fan === 0) continue;
           // A hot link makes its own rows hot, not rows keyed by something else.
-          const hot = cls.hotKey && !op.unkeyed.has(step.stepId);
+          const hot =
+            op.hotBy.size === 0
+              ? cls.hotKey && !op.unkeyed.has(step.stepId)
+              : isHotStep(op, step.stepId, cls);
+          const batches = (step.batchSize ?? 1) > 1 && collectsBatch(step);
+          const own = batches && step.each !== undefined;
           const call = calls.get(step, hot);
           const failed = step.outcome === "error";
           const perCall = failed ? call.attemptsOnFailure : call.attemptsOnSuccess;
-          const items = itemsOf(step, hot);
-          const callRate = weight * items * callShare(step);
+          const items = itemsOf(step, hot) * fan;
+          // A fan-out's own batches: ceil(n / size) calls per request, each carrying up to size items.
+          const callRate = own ? weight * fanOutCalls(step, fan) : weight * items * callShare(step);
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          const work = attempts * reach * callCost(step);
+          const work =
+            attempts *
+            reach *
+            (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
           add(loads, step.target, work, write);
-          if (collectsBatch(step)) {
-            const carried = attempts * reach * (step.batchSize ?? 1);
+          if (batches) {
+            const carried = own
+              ? attempts * reach * (fan / fanOutCalls(step, fan))
+              : attempts * reach * (step.batchSize ?? 1);
             add(batchedItems, step.target, carried - work, write);
           }
           // A key spread over counter shards loads each of them with its share.
@@ -320,12 +351,12 @@ export function propagate(
             shortCircuited:
               failed && call.failure > 0 ? (callRate * call.shortCircuit) / call.failure : 0,
           });
-          if (collectsBatch(step)) {
+          if (batches && !own) {
             const key = batchKey(op.operation.id, step.stepId);
             batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight * items);
           }
           if (step.action === "queue.publish" && step.event && !failed) {
-            publish(step.event, op.operation.id, cls, weight * (1 - lost));
+            publish(step.event, op.operation.id, cls, weight * fan * (1 - lost));
           }
           // Entries only exist once a flow writes them: count the writes that land.
           if (ACTIONS[step.action].effect === "populate" && !failed) {
@@ -335,8 +366,8 @@ export function propagate(
               fills.set(
                 key,
                 hot
-                  ? { ...entry, hot: entry.hot + weight }
-                  : { ...entry, existing: entry.existing + weight },
+                  ? { ...entry, hot: entry.hot + weight * fan }
+                  : { ...entry, existing: entry.existing + weight * fan },
               );
             }
           }
@@ -346,9 +377,9 @@ export function propagate(
             const entry = lookups.get(key) ?? { existing: 0, absent: 0, hot: 0 };
             const exists = state.exists(step.entity, cls);
             lookups.set(key, {
-              existing: entry.existing + (exists && !hot ? weight : 0),
-              absent: entry.absent + (exists ? 0 : weight),
-              hot: entry.hot + (exists && hot ? weight : 0),
+              existing: entry.existing + (exists && !hot ? weight * fan : 0),
+              absent: entry.absent + (exists ? 0 : weight * fan),
+              hot: entry.hot + (exists && hot ? weight * fan : 0),
             });
           }
         }

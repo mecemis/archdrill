@@ -15,6 +15,7 @@ const TONES: Readonly<Record<string, OutcomeTone>> = {
   custom: "positive",
   clean: "positive",
   under: "positive",
+  regular: "positive",
   miss: "absent",
   notFound: "absent",
   negativeHit: "absent",

@@ -29,6 +29,11 @@ export const EntitySchema = z.object({
    * `exists` decides.
    */
   existsFor: IdSchema.optional(),
+  /**
+   * Requests with this fact ask for one hot key of this entity, whatever
+   * their own key: a celebrity's recent posts, read by millions of followers.
+   */
+  hotFor: IdSchema.optional(),
 });
 export type Entity = z.infer<typeof EntitySchema>;
 
@@ -105,6 +110,19 @@ export const ProblemSchema = z
     client: z
       .object({ flavor: IdSchema, label: z.string().min(1) })
       .default({ flavor: "browser", label: "Visitors" }),
+    /**
+     * Counts that size fan-out steps (`each`): followers of a post's author,
+     * accounts a reader follows. Request classes can override the default.
+     */
+    counts: z
+      .array(
+        z.object({
+          id: IdSchema,
+          label: z.string().min(1),
+          default: z.number().min(0),
+        }),
+      )
+      .default([]),
     /** Local decisions a handler can make in this problem; empty offers every one. */
     logic: z.array(LogicIdSchema).default([]),
     /** Back-of-envelope questions for the estimation gym. */

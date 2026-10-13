@@ -76,6 +76,7 @@ export function enumeratePaths(
               ...(step.counterShards === undefined ? {} : { counterShards: step.counterShards }),
               ...(step.fireAndForget === undefined ? {} : { fireAndForget: step.fireAndForget }),
               ...(step.bufferSize === undefined ? {} : { bufferSize: step.bufferSize }),
+              ...(step.each === undefined ? {} : { each: step.each }),
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };

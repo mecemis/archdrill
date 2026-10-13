@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s3-timelines-lost
+problemId: news-feed
+title: Timelines lost
+order: 3
+story: |
+  "The timeline cache cluster goes down at peak. Every read misses, and every
+  miss wants to rebuild a timeline from 200 accounts' posts, in the same
+  database that stores new posts. Timelines can wait a few minutes; posting
+  cannot."
+focusOperations: [create-post, read-timeline]
+prerequisites: [s1-timeline]
+workload:
+  operations:
+    create-post:
+      entity: Post
+      classes:
+        - { id: regular, share: 1 }
+    read-timeline:
+      entity: Timeline
+      classes:
+        - { id: reader, share: 1 }
+  keys:
+    Timeline:
+      existing: { distribution: zipf, s: 0.9, population: 5.0e7 }
+  environments:
+    - id: timelines-lost
+      label: Peak, timeline cache down
+      description: The timeline cache cluster refuses connections at peak.
+      rates: { create-post: 10000, read-timeline: 300000 }
+      faults:
+        - { kind: down, target: { kind: cache } }
+dimensions:
+  availability: 0.7
+  latency: 0.3
+checks:
+  - id: posting-survives
+    use: success-rate-above
+    title: Posting keeps 99.9% while timelines are lost
+    dimension: availability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-3]
+    params: { operation: create-post, environment: timelines-lost, min: 0.999 }
+    why: >-
+      300,000 rebuilds a second, each reading 200 accounts, would bury the
+      database that stores new posts. A cache outage becomes a posting outage.
+    fix: >-
+      Cap the rebuild rate (a bulkhead on the timeline service's reads), and
+      keep posting on its own connection to the store.
+
+  - id: store-protected
+    use: utilization-below
+    title: Nothing runs above 90% while timelines are lost
+    dimension: availability
+    weight: 2
+    requirements: [NFR-3]
+    params: { environment: timelines-lost, max: 0.9 }
+    why: >-
+      The store that rebuilds timelines also takes every new post. Run it at
+      its limit and posting slows down with it.
+    fix: >-
+      Shed rebuilds beyond what the store can take, with a bulkhead on the
+      timeline service's connection to it.
+
+  - id: cache-timeout
+    use: dependency-timeout-bounded
+    title: Cache calls time out within 50 ms
+    dimension: latency
+    requirements: [NFR-1]
+    params: { capability: volatile-kv, maxMs: 50 }
+    why: >-
+      A cache that does not answer should cost milliseconds, not seconds.
+    fix: >-
+      Set a short timeout on every connection to the cache.
+
+  - id: breaker-on-cache
+    use: circuit-breaker-on-dependency
+    title: A circuit breaker guards the timeline cache
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params: { capability: volatile-kv }
+    why: >-
+      Once the cache is known to be down, calls should fail at once.
+    fix: >-
+      Put a circuit breaker on connections to the cache.
+hints:
+  - "Where does a timeline come from when the cache is empty, and what else uses that store?"
+  - "How many rebuilds a second can the store take while posting continues?"
+  - "Give the timeline service its own capped connection to the store (a bulkhead), short cache timeouts behind a breaker, and keep posting on a separate service."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - When the cache comes back empty, how do you warm it without another storm?
+  - Could you serve a degraded timeline (recent posts of a few accounts) instead of none?
+  - Should timelines be replicated across zones, and what would that cost?

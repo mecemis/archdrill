@@ -1,6 +1,9 @@
 /// <reference path="../src/yaml.d.ts" />
 import { AttemptSchema, isCommandName } from "@archdrill/model";
 import { z } from "zod";
+import hybridFanOut from "../problems/news-feed/corpus/golden/hybrid-fan-out.yaml";
+import pushPostgres from "../problems/news-feed/corpus/golden/push-postgres.yaml";
+import newsFeedMutants from "../problems/news-feed/corpus/mutants.yaml";
 import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sliding-counter.yaml";
 import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
 import rateLimiterMutants from "../problems/rate-limiter/corpus/mutants.yaml";
@@ -77,5 +80,10 @@ export const corpora: readonly ProblemCorpus[] = [
     problemId: "rate-limiter",
     golden: [redisSlidingCounter, redisTokenBucket].map((g) => GoldenSchema.parse(g)),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(rateLimiterMutants).mutants,
+  },
+  {
+    problemId: "news-feed",
+    golden: [hybridFanOut, pushPostgres].map((g) => GoldenSchema.parse(g)),
+    mutants: z.object({ mutants: z.array(MutantSchema) }).parse(newsFeedMutants).mutants,
   },
 ];

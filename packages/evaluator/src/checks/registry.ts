@@ -168,13 +168,18 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
     ...BUILT_IN_FACTS,
     ...LOGIC_IDS.flatMap((id) => getLogic(id).decidedBy?.fact ?? []),
     ...ACTION_IDS.flatMap((id) => getAction(id).decidedBy?.fact ?? []),
+    ...problem.entities.flatMap((e) => [e.existsFor, e.hotFor].filter((f) => f !== undefined)),
   ]);
+  const counts = new Set(problem.counts.map((c) => c.id));
   for (const [id, op] of Object.entries(workload.operations)) {
     for (const cls of op.classes) {
       for (const fact of cls.facts.filter((f) => !decided.has(f))) {
         issues.push(
           issue(`class "${cls.id}" of "${id}" has fact "${fact}" that nothing decides on`),
         );
+      }
+      for (const count of Object.keys(cls.counts).filter((c) => !counts.has(c))) {
+        issues.push(issue(`class "${cls.id}" of "${id}" sets unknown count "${count}"`));
       }
     }
   }

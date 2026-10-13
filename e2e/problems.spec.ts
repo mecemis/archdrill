@@ -38,3 +38,12 @@ test("shows a runaway client saturating the shard that counts it", async ({ page
   await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
   await expect(page.getByText("Nothing runs above 85% with a runaway client")).toBeVisible();
 });
+
+test("passes every news feed scenario with a hybrid fan-out", async ({ page }) => {
+  await importGolden(page, "hybrid-fan-out", "news-feed");
+
+  for (const scenario of [/S1 /, /S2 /, /S3 /]) {
+    await page.getByRole("button", { name: scenario }).click();
+    await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  }
+});

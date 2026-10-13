@@ -441,6 +441,15 @@ function validateCallStep(
       );
     }
   }
+  if (step.each !== undefined && !ctx.problem.counts.some((c) => c.id === step.each)) {
+    issues.push(
+      error(
+        "step-unknown-count",
+        `Step ${stepId} fans out over unknown count "${step.each}".`,
+        loc,
+      ),
+    );
+  }
   if (step.bufferSize !== undefined && !step.fireAndForget) {
     issues.push(
       error(
@@ -460,8 +469,10 @@ function validateCallStep(
       ),
     );
   }
-  // A fire-and-forget publish fills its batch in the background; the request does not wait for it.
-  const waitsForBatch = action.effect !== "allocate" && !step.fireAndForget;
+  // A fire-and-forget publish fills its batch in the background, and a fan-out
+  // fills its batches with the request's own calls: neither waits for other requests.
+  const waitsForBatch =
+    action.effect !== "allocate" && !step.fireAndForget && step.each === undefined;
   if ((step.batchSize ?? 1) > 1 && waitsForBatch && trigger?.type === "request") {
     issues.push(
       error(
@@ -487,6 +498,7 @@ const NEW_PARAMS = [
   ["counterShards", "counter shards"],
   ["fireAndForget", "fire-and-forget"],
   ["bufferSize", "a buffer size"],
+  ["each", "a count to fan out over"],
 ] as const;
 
 function validateStepEntity(

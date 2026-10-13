@@ -1,5 +1,6 @@
 import { ACTIONS, type ActionId, actionTakesParam, type CallStep } from "@archdrill/model";
-import { Field } from "../../ui/primitives";
+import { activePack } from "../../state/content";
+import { Field, Select } from "../../ui/primitives";
 
 /** Call parameters a candidate tunes, as they are stored on a step. */
 export type TunableValues = Partial<
@@ -12,6 +13,7 @@ export type TunableValues = Partial<
     | "counterShards"
     | "fireAndForget"
     | "bufferSize"
+    | "each"
   >
 >;
 
@@ -30,7 +32,7 @@ export const prefetches = (action: ActionId) => ACTIONS[action].effect === "allo
 export function batchable(action: ActionId, values: TunableValues, background: boolean): boolean {
   return (
     actionTakesParam(action, "batchSize") &&
-    (background || prefetches(action) || values.fireAndForget === true)
+    (background || prefetches(action) || values.fireAndForget === true || values.each !== undefined)
   );
 }
 
@@ -54,6 +56,7 @@ export function applicableParams(
     ...(takes("aggregateSec") && background && values.aggregateSec !== undefined
       ? { aggregateSec: values.aggregateSec }
       : {}),
+    ...(takes("each") && values.each !== undefined ? { each: values.each } : {}),
     ...(takes("counterShards") && (values.counterShards ?? 1) > 1
       ? { counterShards: values.counterShards }
       : {}),
@@ -78,8 +81,24 @@ export function StepParams({
 }) {
   const takes = (param: keyof TunableValues) => actionTakesParam(action, param);
   const set = (patch: TunableValues) => onChange({ ...values, ...patch });
+  const counts = activePack.problem.counts;
   return (
     <>
+      {takes("each") && counts.length > 0 && (
+        <Field label="Once for each (in parallel)">
+          <Select
+            value={values.each ?? ""}
+            onChange={(e) => set({ each: e.target.value === "" ? undefined : e.target.value })}
+          >
+            <option value="">Once per request</option>
+            {counts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
       {takes("fireAndForget") && (
         <Check
           label="Fire-and-forget: hand the message to a local buffer and continue"
@@ -126,7 +145,9 @@ export function StepParams({
               ? "Batch size (keys per call; 1 = every request)"
               : values.fireAndForget
                 ? "Batch size (messages per call, sent in the background)"
-                : "Batch size (items per call; items wait for the batch to fill)"
+                : values.each !== undefined
+                  ? "Batch size (this request's calls per batch)"
+                  : "Batch size (items per call; items wait for the batch to fill)"
           }
           value={values.batchSize ?? 1}
           max={MAX_BATCH}
@@ -194,6 +215,7 @@ function NumberField({
 }
 
 const TUNABLE: readonly (keyof TunableValues)[] = [
+  "each",
   "ttlSec",
   "batchSize",
   "coalesce",

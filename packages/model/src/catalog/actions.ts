@@ -26,7 +26,8 @@ export type OptionalActionParam =
   | "aggregateSec"
   | "counterShards"
   | "fireAndForget"
-  | "bufferSize";
+  | "bufferSize"
+  | "each";
 
 export interface ActionDef {
   readonly label: string;
@@ -55,6 +56,7 @@ export const ACTIONS = {
     effect: "read",
     outcomes: ["hit", "negativeHit", "miss", "error"],
     params: [],
+    optionalParams: ["each", "batchSize"],
     description:
       "Look up an entity by key in the cache. A negative hit means the cache remembers that the key does not exist.",
   },
@@ -63,6 +65,7 @@ export const ACTIONS = {
     capability: "volatile-kv",
     effect: "populate",
     outcomes: ["ok", "error"],
+    optionalParams: ["each", "batchSize"],
     params: ["ttlSec"],
     description: "Store an entity in the cache with a time-to-live.",
   },
@@ -79,6 +82,7 @@ export const ACTIONS = {
     capability: "volatile-kv",
     effect: "invalidate",
     outcomes: ["ok", "error"],
+    optionalParams: ["each"],
     params: [],
     description: "Remove an entity from the cache.",
   },
@@ -88,7 +92,7 @@ export const ACTIONS = {
     effect: "read",
     outcomes: ["found", "notFound", "error"],
     params: [],
-    optionalParams: ["coalesce"],
+    optionalParams: ["coalesce", "each", "batchSize"],
     description:
       "Read an entity by key from a durable store. With coalescing (single-flight), concurrent reads of the same key in one instance share one call.",
   },
@@ -98,7 +102,7 @@ export const ACTIONS = {
     effect: "write",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "batchSize"],
+    optionalParams: ["aggregateSec", "batchSize", "each"],
     description:
       "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total. With a batch size (in consumers), that many rows go in one call.",
   },
@@ -117,6 +121,7 @@ export const ACTIONS = {
     capability: "durable-store",
     effect: "write",
     outcomes: ["ok", "notFound", "error"],
+    optionalParams: ["each"],
     params: [],
     description: "Update an existing entity by key.",
   },
@@ -126,7 +131,7 @@ export const ACTIONS = {
     effect: "delete",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["batchSize"],
+    optionalParams: ["batchSize", "each"],
     description:
       "Delete an entity by key. With a batch size (for background jobs), one call deletes that many entities.",
   },
@@ -136,7 +141,7 @@ export const ACTIONS = {
     effect: "publish",
     outcomes: ["ok", "error"],
     params: ["event"],
-    optionalParams: ["fireAndForget", "bufferSize", "batchSize"],
+    optionalParams: ["fireAndForget", "bufferSize", "batchSize", "each"],
     description:
       "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice. Fire-and-forget hands the message to a local buffer and continues at once: the request never waits for the queue or fails with it, and while the queue is unreachable the buffer holds messages up to its size and drops the rest. With a batch size, the buffer sends that many messages in one call.",
   },
@@ -146,7 +151,7 @@ export const ACTIONS = {
     effect: "increment",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "counterShards", "batchSize"],
+    optionalParams: ["aggregateSec", "counterShards", "batchSize", "each"],
     description:
       "Atomically add to a count stored under the entity's key. With an aggregation window (in consumers), the handler sums increments per key over the window and adds each sum once. With counter shards, one key's count is spread over that many rows, so a hot key's writes spread too; reading the count adds them up. With a batch size (in consumers), that many increments go in one call.",
     unsafeToRetry:
@@ -157,6 +162,7 @@ export const ACTIONS = {
     capability: "stateless-compute",
     effect: "read",
     outcomes: ["ok", "error"],
+    optionalParams: ["each"],
     params: [],
     description:
       "Call another service's API and wait for its answer, for example to hand an allowed request to the backend that does the work.",

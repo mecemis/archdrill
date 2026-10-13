@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s2-celebrities
+problemId: news-feed
+title: Celebrities
+order: 2
+story: |
+  "A few accounts have 50 million followers, and together they post twenty
+  times a second. Half of our readers follow at least three of them. Copying a
+  celebrity's post into 50 million timelines takes longer than the next one
+  takes to arrive. What do you do differently for celebrities, and what does
+  it cost the readers?"
+focusOperations: [create-post, read-timeline, fan-out-post]
+prerequisites: [s1-timeline]
+workload:
+  operations:
+    create-post:
+      entity: Post
+      classes:
+        - { id: regular, share: 0.998 }
+        - { id: celebrity, share: 0.002, facts: [celebrity], counts: { followers: 50000000 } }
+    read-timeline:
+      entity: Timeline
+      classes:
+        - { id: reader, share: 0.5 }
+        - { id: fan, share: 0.5, facts: [followsCelebrity], counts: { celebritiesFollowed: 3 } }
+  keys:
+    Timeline:
+      existing: { distribution: zipf, s: 0.9, population: 5.0e7 }
+  environments:
+    - id: celebrities
+      label: Peak, with celebrities
+      description: Peak traffic; celebrities post 20 times a second.
+      rates: { create-post: 10000, read-timeline: 300000 }
+dimensions:
+  scalability: 0.45
+  latency: 0.3
+  correctness: 0.25
+checks:
+  - id: fan-out-keeps-up
+    use: backlog-stable
+    title: Fan-out keeps up with celebrities posting
+    dimension: scalability
+    weight: 3
+    severity: major
+    requirements: [NFR-2]
+    params: { environment: celebrities }
+    why: >-
+      Twenty posts a second × 50 million followers is a billion timeline
+      writes a second. No fan-out keeps up; every post queues behind them.
+    fix: >-
+      Do not copy celebrities' posts: keep each celebrity's recent posts in
+      one place and merge them into a timeline when it is read.
+
+  - id: fresh-with-celebrities
+    use: latency-below
+    title: New posts reach timelines within 5 seconds
+    dimension: correctness
+    weight: 2
+    requirements: [NFR-2]
+    params: { operation: fan-out-post, environment: celebrities, percentile: p99, ms: 5000 }
+    why: >-
+      Behind a celebrity's fan-out, everyone's posts arrive late.
+    fix: >-
+      Branch on celebrity authors in the fan-out and skip the copy.
+
+  - id: timeline-fast-celebrities
+    use: latency-below
+    title: Timeline p99 under 200 ms with celebrity posts merged in
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: read-timeline, environment: celebrities, percentile: p99, ms: 200 }
+    why: >-
+      Merging celebrities' posts adds a lookup per celebrity to every read.
+    fix: >-
+      Keep celebrities' recent posts in an in-process cache with a short TTL.
+
+  - id: headroom-celebrities
+    use: utilization-below
+    title: Nothing runs above 85% with celebrities
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-1]
+    params: { environment: celebrities, max: 0.85 }
+    why: >-
+      150,000 readers a second each look up the same few celebrities: those
+      keys are hot, and one cache shard holds each of them.
+    fix: >-
+      Serve celebrities' recent posts from an in-process cache in the
+      timeline service.
+
+  - id: celebrities-pulled
+    use: no-path
+    title: Celebrity posts are merged at read time, not copied
+    dimension: scalability
+    signal: staff
+    requirements: [NFR-2]
+    params:
+      operation: fan-out-post
+      where:
+        all:
+          - { hasStep: { logic: isCelebrity, outcome: celebrity } }
+          - { hasStep: { action: cache.set, entity: Timeline } }
+      applicableWhen: { hasStep: { logic: isCelebrity } }
+    why: >-
+      The hybrid model (push for most, pull for the few with huge followings)
+      is how large social networks keep both writes and reads bounded.
+    fix: >-
+      On the celebrity branch, store the post in the celebrity's recent posts
+      instead of copying it.
+hints:
+  - "How long does one post take to reach 50 million timelines, and what happens to the posts behind it?"
+  - "Readers follow a handful of celebrities. Could they fetch those few accounts' posts when they read?"
+  - "Branch on celebrity authors in the fan-out: keep their recent posts in one cache entry, merge the entries of the celebrities a reader follows into the timeline, and cache them in-process."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Where do you draw the line between a celebrity and everyone else, and what happens to someone who crosses it?
+  - A celebrity deletes a post. Which timelines still show it?
+  - How would you push a celebrity's post to the followers who are online right now?

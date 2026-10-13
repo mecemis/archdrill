@@ -1,0 +1,193 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: hybrid-fan-out
+description: >-
+  ALB → a post service that stores the post and the author's recent posts in
+  Cassandra and publishes post-created to Kafka, and a timeline service that
+  serves timelines from Redis. A Flink job copies each post into its
+  followers' cached timelines in batches of 100, except celebrities' posts,
+  which go into one cache entry per celebrity; readers merge the celebrities
+  they follow from an in-process cache. A missing timeline is rebuilt from
+  the followed accounts' recent posts in batches of 50, behind a bulkhead
+  that keeps the rebuilds from crowding out posting.
+expect:
+  s1-timeline: { minScore: 90 }
+  s2-celebrities: { minScore: 90 }
+  s3-timelines-lost: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: news-feed
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: users, kind: client, flavor: browser, label: Users }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - id: post-api
+        kind: service
+        flavor: generic
+        label: Post service
+        size: m
+        replicas: 2
+        autoscale: { max: 10, targetUtilization: 0.7 }
+      - id: timeline-api
+        kind: service
+        flavor: generic
+        label: Timeline service
+        size: l
+        replicas: 10
+        autoscale: { max: 40, targetUtilization: 0.7 }
+      - { id: near, kind: near-cache, flavor: in-process-lru, label: Celebrity cache, size: s }
+      - { id: redis, kind: cache, flavor: redis, label: Timelines, size: l, shards: 16, replicas: 2 }
+      - id: posts-db
+        kind: wide-column-db
+        flavor: cassandra
+        label: Posts
+        size: m
+        shards: 6
+        replicas: 3
+        data: [{ entity: Post }, { entity: AuthorPosts }]
+      - { id: events, kind: queue, flavor: kafka, label: Post events, size: m, replicas: 3 }
+      - id: fan-out
+        kind: stream-processor
+        flavor: flink
+        label: Fan-out
+        size: m
+        replicas: 4
+        autoscale: { max: 16, targetUtilization: 0.7 }
+    connections:
+      - { id: users--lb, from: users, to: lb }
+      - { id: lb--post-api, from: lb, to: post-api }
+      - { id: lb--timeline-api, from: lb, to: timeline-api }
+      - id: post-api--posts-db
+        from: post-api
+        to: posts-db
+        policy: { timeoutMs: 200 }
+      - id: post-api--events
+        from: post-api
+        to: events
+        policy: { timeoutMs: 100, retries: 1 }
+      - { id: timeline-api--near, from: timeline-api, to: near }
+      - id: timeline-api--redis
+        from: timeline-api
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
+      - id: timeline-api--posts-db
+        from: timeline-api
+        to: posts-db
+        policy: { timeoutMs: 200, maxRps: 20000, circuitBreaker: true }
+      - { id: fan-out--events, from: fan-out, to: events }
+      - id: fan-out--redis
+        from: fan-out
+        to: redis
+        policy: { timeoutMs: 50, circuitBreaker: true }
+  flows:
+    - operation: create-post
+      handler: post-api
+      root: store
+      steps:
+        store:
+          type: call
+          target: posts-db
+          action: store.insert
+          entity: Post
+          next: { ok: recent, error: p503 }
+        recent:
+          type: call
+          target: posts-db
+          action: store.insert
+          entity: AuthorPosts
+          next: { ok: publish, error: p503 }
+        publish:
+          type: call
+          target: events
+          action: queue.publish
+          event: post-created
+          next: { ok: p201, error: p503 }
+        p201: { type: respond, status: 201 }
+        p503: { type: respond, status: 503 }
+    - operation: read-timeline
+      handler: timeline-api
+      root: timeline
+      steps:
+        timeline:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Timeline
+          next: { hit: celebs-local, miss: rebuild, error: rebuild }
+        rebuild:
+          type: call
+          target: posts-db
+          action: store.read
+          entity: AuthorPosts
+          each: followees
+          batchSize: 50
+          next: { found: keep, notFound: celebs-local, error: t503 }
+        keep:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Timeline
+          ttlSec: 86400
+          next: { ok: celebs-local, error: celebs-local }
+        celebs-local:
+          type: call
+          target: near
+          action: cache.get
+          entity: CelebrityPosts
+          each: celebritiesFollowed
+          next: { hit: t200, miss: celebs, error: celebs }
+        celebs:
+          type: call
+          target: redis
+          action: cache.get
+          entity: CelebrityPosts
+          each: celebritiesFollowed
+          next: { hit: celebs-keep, miss: t200, error: t200 }
+        celebs-keep:
+          type: call
+          target: near
+          action: cache.set
+          entity: CelebrityPosts
+          each: celebritiesFollowed
+          ttlSec: 5
+          next: { ok: t200, error: t200 }
+        t200: { type: respond, status: 200 }
+        t503: { type: respond, status: 503 }
+    - operation: fan-out-post
+      handler: fan-out
+      root: who
+      steps:
+        who:
+          type: logic
+          logic: isCelebrity
+          next: { regular: push, celebrity: celebrity }
+        push:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Timeline
+          each: followers
+          batchSize: 100
+          ttlSec: 86400
+          next: { ok: done, error: retry }
+        celebrity:
+          type: call
+          target: redis
+          action: cache.set
+          entity: CelebrityPosts
+          ttlSec: 86400
+          next: { ok: done, error: retry }
+        done: { type: respond, status: 200 }
+        retry: { type: respond, status: 503 }
+  decisions:
+    pagination: cursor
+  layout:
+    users: { x: 0, y: 160 }
+    lb: { x: 200, y: 160 }
+    post-api: { x: 420, y: 320 }
+    timeline-api: { x: 420, y: 40 }
+    near: { x: 420, y: -120 }
+    redis: { x: 700, y: 0 }
+    posts-db: { x: 700, y: 260 }
+    events: { x: 700, y: 460 }
+    fan-out: { x: 960, y: 300 }

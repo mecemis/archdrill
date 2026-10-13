@@ -19,11 +19,13 @@ import {
   aggregates,
   callShare,
   collectsBatch,
+  fanOutCalls,
   type OutcomeState,
   outcomeProbability,
+  ownBatches,
 } from "./outcomes";
 import type { CacheSpec, OperationModel } from "./setup";
-import { cacheKey } from "./setup";
+import { cacheKey, isHotStep } from "./setup";
 import type {
   CacheMetrics,
   ComponentMetrics,
@@ -307,6 +309,21 @@ function batchWait(
 
 const NO_WAIT: Moments = { mean: 0, variance: 0 };
 
+/** Calls a fan-out makes at once; more go out in successive waves. */
+export const MAX_PARALLEL_CALLS = 100;
+
+/**
+ * A fan-out of `calls` parallel calls waits for the slowest in each wave: the
+ * maximum of g calls sits near the 1 − 1/(g + 1) quantile of one call.
+ */
+function fanOutLatency(single: Moments, calls: number): Moments {
+  if (calls <= 1) return single;
+  const waves = Math.ceil(calls / MAX_PARALLEL_CALLS);
+  const group = Math.min(calls, MAX_PARALLEL_CALLS);
+  const slowest = mixtureQuantile([{ weight: 1, ...single }], 1 - 1 / (group + 1));
+  return { mean: waves * slowest, variance: waves * single.variance };
+}
+
 /** Time an item waits for its aggregation window to close: uniform over the window. */
 function windowWait(windowSec: number): Moments {
   const ms = windowSec * 1000;
@@ -338,23 +355,31 @@ function pathLatency(
   path: Path,
   ingressLatency: Moments,
   inputs: LatencyInputs,
-  hotKey: boolean,
   batchers: number,
-  unkeyed: ReadonlySet<string>,
+  /** Whether each step asks for a hot key, by step id. */
+  hotAt: (stepId: string) => boolean,
+  /** The request class's counts, for fan-out steps. */
+  counts: Readonly<Record<string, number>> = NO_COUNTS,
 ): Moments {
   let total = ingressLatency;
   for (const step of path.steps) {
     // The request does not wait for a message it hands to a local buffer.
     if (step.kind !== "call" || step.fireAndForget) continue;
-    const latency = callLatency(step, inputs, hotKey && !unkeyed.has(step.stepId));
+    const n = step.each === undefined ? 1 : (counts[step.each] ?? 0);
+    if (n === 0) continue;
+    const once = callLatency(step, inputs, hotAt(step.stepId));
+    const latency = fanOutLatency(once, fanOutCalls(step, n));
     if (aggregates(step)) {
       // Every item waits for its window to close, then for its batch, then for the write.
-      const batch = collectsBatch(step) ? batchWait(step, path, inputs, batchers) : NO_WAIT;
+      const batch =
+        collectsBatch(step) && !ownBatches(step)
+          ? batchWait(step, path, inputs, batchers)
+          : NO_WAIT;
       total = addMoments(
         total,
         addMoments(addMoments(windowWait(step.aggregateSec), batch), latency),
       );
-    } else if (collectsBatch(step)) {
+    } else if (collectsBatch(step) && !ownBatches(step)) {
       // Every item waits for its batch, then for the call that carries it.
       total = addMoments(total, addMoments(batchWait(step, path, inputs, batchers), latency));
     } else {
@@ -363,6 +388,19 @@ function pathLatency(
     }
   }
   return total;
+}
+
+const NO_COUNTS: Readonly<Record<string, number>> = {};
+const NEVER_HOT = () => false;
+
+/** Mean and variance of a mixture, for one figure per path. */
+function mergedMoments(components: readonly WeightedMoments[]): Moments {
+  const total = components.reduce((sum, c) => sum + c.weight, 0);
+  if (total <= 0) return components[0] ?? NO_WAIT;
+  const mean = components.reduce((sum, c) => sum + c.weight * c.mean, 0) / total;
+  const second =
+    components.reduce((sum, c) => sum + c.weight * (c.variance + c.mean ** 2), 0) / total;
+  return { mean, variance: Math.max(0, second - mean ** 2) };
 }
 
 export function summarize(components: readonly WeightedMoments[]): LatencySummary {
@@ -379,12 +417,13 @@ export function pathProbability(
   path: Path,
   cls: OperationModel["classes"][number],
   state: OutcomeState,
-  /** Steps a hot key does not make hot (keyed by something else). */
-  unkeyed: ReadonlySet<string> = NO_UNKEYED,
+  /** Which steps are hot for which classes; without it, the class's hot key applies to every step. */
+  op?: Pick<OperationModel, "unkeyed" | "hotBy">,
 ): number {
   let probability = 1;
   const steps = path.steps;
-  const cold = cls.hotKey && unkeyed.size > 0 ? { ...cls, hotKey: false } : cls;
+  const keyed = op !== undefined && (op.unkeyed.size > 0 || op.hotBy.size > 0);
+  let flipped: RequestClass | null = null;
   for (let index = 0; index < steps.length && probability > 0; index++) {
     const step = steps[index] as PathStep;
     // Only a conditional insert looks back along the path (where its key came from).
@@ -392,13 +431,15 @@ export function pathProbability(
       step.kind === "call" && step.action === "store.insertIfAbsent"
         ? steps.slice(0, index)
         : NO_STEPS;
-    const asked = cold !== cls && unkeyed.has(step.stepId) ? cold : cls;
+    let asked = cls;
+    if (keyed && op && isHotStep(op, step.stepId, cls) !== cls.hotKey) {
+      flipped ??= { ...cls, hotKey: !cls.hotKey };
+      asked = flipped;
+    }
     probability *= outcomeProbability(step, asked, state, prior);
   }
   return probability;
 }
-
-const NO_UNKEYED: ReadonlySet<string> = new Set();
 
 export function summarizeOperations(
   operations: readonly OperationModel[],
@@ -438,11 +479,29 @@ export function summarizeOperations(
     for (const path of op.analysis.paths) {
       const byClass = classes.map((cls) => ({
         hot: cls.hotKey,
-        p: cls.share * pathProbability(path, cls, state, op.unkeyed),
+        p: cls.share * pathProbability(path, cls, state, op),
       }));
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
-      const moments = pathLatency(path, ingressLatency, inputs, false, batchers, op.unkeyed);
+      // Fan-outs and fact-bound hot keys make each class wait in its own way.
+      const perClass = path.steps.some(
+        (s) => s.kind === "call" && (s.each !== undefined || op.hotBy.has(s.stepId)),
+      )
+        ? classes.map((cls, i) => ({
+            weight: byClass[i]?.p ?? 0,
+            ...pathLatency(
+              path,
+              ingressLatency,
+              inputs,
+              batchers,
+              (id) => isHotStep(op, id, cls),
+              cls.counts,
+            ),
+          }))
+        : null;
+      const moments = perClass
+        ? mergedMoments(perClass)
+        : pathLatency(path, ingressLatency, inputs, batchers, NEVER_HOT);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
@@ -457,10 +516,18 @@ export function summarizeOperations(
         });
       }
       // Latency is measured on successful requests: fast failures would otherwise pull the tail down.
-      if (succeeded) {
+      if (succeeded && perClass) {
+        for (const c of perClass) mixture.push({ ...c, weight: pass * c.weight });
+      } else if (succeeded) {
         mixture.push({ weight: pass * (probability - hotProbability), ...moments });
         if (hotProbability > 0) {
-          const hot = pathLatency(path, ingressLatency, inputs, true, batchers, op.unkeyed);
+          const hot = pathLatency(
+            path,
+            ingressLatency,
+            inputs,
+            batchers,
+            (id) => !op.unkeyed.has(id),
+          );
           mixture.push({ weight: pass * hotProbability, ...hot });
         }
       }

@@ -96,6 +96,11 @@ export const CallStepSchema = z.object({
   counterShards: z.number().int().min(2).max(MAX_SHARDS).optional(),
   /** For publishes: hand the message to a local buffer and continue without waiting. */
   fireAndForget: z.boolean().optional(),
+  /**
+   * Make the call once for each of the request's items of this count (for
+   * example `followers`), in parallel; the count comes from the request's class.
+   */
+  each: IdSchema.optional(),
   /** For fire-and-forget publishes: messages held while the queue is unreachable. */
   bufferSize: z.number().int().min(1).max(MAX_BUFFER_MESSAGES).optional(),
   next: NextSchema,

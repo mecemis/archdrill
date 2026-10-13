@@ -1,4 +1,5 @@
 import { ACTIONS, type Attempt, LOGIC, type Step } from "@archdrill/model";
+import { activePack } from "../../state/content";
 import { eventLabel, respondLabel } from "../../state/triggers";
 
 export function componentLabel(attempt: Attempt, id: string): string {
@@ -22,7 +23,11 @@ export function stepTitle(step: Step, attempt: Attempt, background = false): str
       const spread =
         step.counterShards === undefined ? "" : ` (${step.counterShards} counter shards)`;
       const handoff = step.fireAndForget ? " (fire-and-forget)" : "";
-      const details = `${ttl}${window}${batch}${spread}${coalesced}${handoff}`;
+      const fan =
+        step.each === undefined
+          ? ""
+          : ` (each of ${activePack.problem.counts.find((c) => c.id === step.each)?.label ?? step.each})`;
+      const details = `${fan}${ttl}${window}${batch}${spread}${coalesced}${handoff}`;
       return `${componentLabel(attempt, step.target)} · ${action}${details}`;
     }
     case "logic":

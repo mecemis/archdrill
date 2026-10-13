@@ -263,10 +263,45 @@ describe("validateAttempt", () => {
     expect(issue?.severity).toBe("warning");
   });
 
-  it("rejects a batch size on actions that do not allocate", () => {
+  it("rejects a request waiting for other requests to fill a batch", () => {
     const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
 
-    expect(codes(attempt)).toContain("step-unexpected-param");
+    expect(codes(attempt)).toContain("step-batch-in-request");
+  });
+
+  it("accepts a request batching its own fan-out", () => {
+    let attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
+    attempt = mutate(
+      "updateStep",
+      { operation: "redirect", stepId: "read", each: "followees" },
+      attempt,
+    );
+    const problem = {
+      ...testProblem,
+      counts: [{ id: "followees", label: "followees", default: 200 }],
+    };
+
+    expect(
+      validateAttempt(attempt, { catalog: testCatalogIndex, problem }).map((i) => i.code),
+    ).not.toContain("step-batch-in-request");
+  });
+
+  it("rejects a batch size on actions that take none", () => {
+    const attempt = mutate("updateStep", {
+      operation: "redirect",
+      stepId: "populate",
+      batchSize: 10,
+    });
+
+    expect(codes(attempt)).not.toContain("step-unexpected-param");
+    const negative = mutate("updateStep", {
+      operation: "redirect",
+      stepId: "get",
+      action: "cache.delete",
+    });
+    expect(
+      codes(mutate("updateStep", { operation: "redirect", stepId: "get", batchSize: 5 }, negative)),
+    ).toContain("step-unexpected-param");
   });
 
   it("accepts id allocation without an entity", () => {
