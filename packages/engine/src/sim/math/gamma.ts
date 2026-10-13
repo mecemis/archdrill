@@ -115,6 +115,8 @@ export interface WeightedMoments extends Moments {
 }
 
 const BISECTION_STEPS = 80;
+/** Bisection stops once the bracket is this narrow, relative to the quantile. */
+const RELATIVE_PRECISION = 1e-7;
 
 /**
  * Quantile of a mixture of moment-matched Gamma distributions, found by
@@ -132,7 +134,7 @@ export function mixtureQuantile(
   let low = 0;
   let high = Math.max(...live.map((c) => c.mean + 12 * Math.sqrt(c.variance)), 1e-9);
   while (cdf(high) < probability) high *= 2;
-  for (let i = 0; i < BISECTION_STEPS; i++) {
+  for (let i = 0; i < BISECTION_STEPS && high - low > RELATIVE_PRECISION * high; i++) {
     const mid = (low + high) / 2;
     if (cdf(mid) < probability) low = mid;
     else high = mid;

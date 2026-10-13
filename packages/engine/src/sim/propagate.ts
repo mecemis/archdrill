@@ -46,6 +46,26 @@ export function emptyLoopState(): LoopState {
 
 export type CallFor = (step: CallPathStep, hotKey: boolean) => CallModel;
 
+interface StepCall {
+  readonly connection: string;
+  readonly write: boolean;
+  readonly keys: readonly [normal: string, hot: string];
+}
+
+/** Path steps never change, so what a step's call is keyed by is worked out once. */
+const STEP_CALLS = new WeakMap<CallPathStep, StepCall>();
+
+function stepCall(step: CallPathStep): StepCall {
+  const known = STEP_CALLS.get(step);
+  if (known) return known;
+  const write = ACTIONS[step.action].effect !== "read";
+  const connection = step.connectionId ?? `-${step.target}`;
+  const prefix = `${connection}|${write ? "w" : "r"}`;
+  const call: StepCall = { connection, write, keys: [`${prefix}|n`, `${prefix}|h`] };
+  STEP_CALLS.set(step, call);
+  return call;
+}
+
 /**
  * Call models per (connection, reads or writes, hot key or not), rebuilt
  * once per iteration from the current overload and timeout shares. A
@@ -61,9 +81,8 @@ export function callModels(
   const memo = new Map<string, CallModel>();
   const shedding = new Map<string, number>();
   const get: CallFor = (step, hotKey) => {
-    const write = ACTIONS[step.action].effect !== "read";
-    const connection = step.connectionId ?? `-${step.target}`;
-    const key = `${connection}|${write ? "w" : "r"}|${hotKey ? "h" : "n"}`;
+    const { connection, write, keys } = stepCall(step);
+    const key = keys[hotKey ? 1 : 0];
     const cached = memo.get(key);
     if (cached) return cached;
     const fault = faults.get(step.target) ?? NO_FAULT;
