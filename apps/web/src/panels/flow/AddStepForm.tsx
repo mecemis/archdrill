@@ -7,6 +7,7 @@ import {
   type Flow,
   LOGIC,
   type LogicId,
+  offeredLogic,
   type StepInput,
 } from "@archdrill/model";
 import { useEffect, useMemo, useState } from "react";
@@ -55,7 +56,9 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const [entity, setEntity] = useState(activePack.problem.entities[0]?.name ?? "");
   const [params, setParams] = useState<TunableValues>({ ttlSec: 3600 });
   const [event, setEvent] = useState(activePack.problem.events[0]?.id ?? "");
-  const [logic, setLogic] = useState<LogicId>("checkExpiry");
+  const [logic, setLogic] = useState<LogicId>(
+    offeredLogic(activePack.problem.logic)[0] ?? "checkExpiry",
+  );
   const background = runsInBackground(operationById(flow.operation));
   const [status, setStatus] = useState(background ? 200 : 302);
   const [gotoStep, setGotoStep] = useState("");
@@ -195,7 +198,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
       {mode === "logic" && (
         <Field label="Decision">
           <Select value={logic} onChange={(e) => setLogic(e.target.value as LogicId)}>
-            {(Object.keys(LOGIC) as LogicId[]).map((id) => (
+            {offeredLogic(activePack.problem.logic).map((id) => (
               <option key={id} value={id}>
                 {LOGIC[id].label}
               </option>

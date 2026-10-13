@@ -1,4 +1,11 @@
-import { ACTIONS, type RequestClass } from "@archdrill/model";
+import {
+  ACTIONS,
+  getAction,
+  getLogic,
+  hasFact,
+  type LogicId,
+  type RequestClass,
+} from "@archdrill/model";
 import type { CallPathStep, PathStep } from "../paths/types";
 
 /** Model state the outcome probabilities depend on. */
@@ -174,37 +181,24 @@ export function outcomeProbability(
       if (step.outcome === "ok") return cls.exists ? served : 0;
       if (step.outcome === "notFound") return cls.exists ? 0 : served;
       return 0;
-    case "external.check":
-      if (step.outcome === "malicious") return cls.malicious ? served : 0;
-      if (step.outcome === "clean") return cls.malicious ? 0 : served;
-      return 0;
     case "store.insertIfAbsent": {
       const conflict = conflictProbability(prior, cls, state, step.entity);
       if (step.outcome === "conflict") return served * conflict;
       return step.outcome === "ok" ? served * (1 - conflict) : 0;
     }
-    default:
-      return step.outcome === "ok" ? served : 0;
+    default: {
+      const rule = getAction(step.action).decidedBy;
+      if (!rule) return step.outcome === "ok" ? served : 0;
+      // Two answers besides an error; a fact about the request picks one.
+      return (step.outcome === rule.outcome) === hasFact(cls, rule.fact) ? served : 0;
+    }
   }
 }
 
-function logicProbability(logic: string, outcome: string, cls: RequestClass): number {
-  switch (logic) {
-    case "checkExpiry":
-      return (outcome === "expired") === cls.expired ? 1 : 0;
-    case "checkStatus":
-      return (outcome === "disabled") === cls.disabled ? 1 : 0;
-    case "validateUrl":
-      return (outcome === "invalid") === cls.invalidInput ? 1 : 0;
-    case "hasCustomAlias":
-      return (outcome === "custom") === cls.customAlias ? 1 : 0;
-    case "generateRandomCode":
-    case "hashUrl":
-    case "rehashWithSalt":
-    case "encodeBase62":
-    case "obfuscateId":
-      return outcome === "ok" ? 1 : 0;
-    default:
-      return 0;
-  }
+/** A logic step's outcome follows from a fact about the request, or is its only outcome. */
+function logicProbability(logic: LogicId, outcome: string, cls: RequestClass): number {
+  const def = getLogic(logic);
+  if (def.decidedBy)
+    return (outcome === def.decidedBy.outcome) === hasFact(cls, def.decidedBy.fact) ? 1 : 0;
+  return def.outcomes.length === 1 && def.outcomes[0] === outcome ? 1 : 0;
 }

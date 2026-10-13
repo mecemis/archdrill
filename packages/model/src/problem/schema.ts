@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LogicIdSchema } from "../catalog/logic";
 import { IdSchema } from "../catalog/schema";
 import { EstimateSchema } from "./estimates";
 import { WorkloadSchema } from "./workload";
@@ -89,6 +90,8 @@ export const ProblemSchema = z
     operations: z.array(OperationSchema).min(1),
     events: z.array(EventSchema).default([]),
     decisionPoints: z.array(DecisionPointSchema).default([]),
+    /** Local decisions a handler can make in this problem; empty offers every one. */
+    logic: z.array(LogicIdSchema).default([]),
     /** Back-of-envelope questions for the estimation gym. */
     estimates: z.array(EstimateSchema).default([]),
     scenarios: z.array(IdSchema).min(1),

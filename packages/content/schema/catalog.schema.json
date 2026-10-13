@@ -1,0 +1,248 @@
+{
+  "title": "ArchDrill catalog",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "kinds": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capabilities": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "traffic-source",
+                "load-balancing",
+                "health-checking",
+                "routing",
+                "edge-cache",
+                "stateless-compute",
+                "volatile-kv",
+                "ttl",
+                "durable-store",
+                "unique-constraint",
+                "conditional-write",
+                "transactions",
+                "secondary-index",
+                "range-scan",
+                "atomic-increment",
+                "id-generation",
+                "leases",
+                "consensus",
+                "rate-limiting",
+                "authn",
+                "async-buffer",
+                "stream-processing",
+                "external"
+              ]
+            }
+          },
+          "replicable": {
+            "type": "boolean"
+          },
+          "holdsData": {
+            "type": "boolean"
+          },
+          "shardable": {
+            "default": false,
+            "type": "boolean"
+          },
+          "writeScaling": {
+            "default": "all-replicas",
+            "type": "string",
+            "enum": ["all-replicas", "primaries"]
+          },
+          "inProcess": {
+            "default": false,
+            "type": "boolean"
+          },
+          "flavors": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "capabilities": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "traffic-source",
+                      "load-balancing",
+                      "health-checking",
+                      "routing",
+                      "edge-cache",
+                      "stateless-compute",
+                      "volatile-kv",
+                      "ttl",
+                      "durable-store",
+                      "unique-constraint",
+                      "conditional-write",
+                      "transactions",
+                      "secondary-index",
+                      "range-scan",
+                      "atomic-increment",
+                      "id-generation",
+                      "leases",
+                      "consensus",
+                      "rate-limiting",
+                      "authn",
+                      "async-buffer",
+                      "stream-processing",
+                      "external"
+                    ]
+                  }
+                },
+                "managedRedundancy": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "startupSec": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sizes": {
+                  "default": {},
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "capacityPerSec": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "read": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "write": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        }
+                      },
+                      "memoryGb": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "latencyMs": {
+                        "type": "object",
+                        "properties": {
+                          "base": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "cv": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": ["base", "cv"]
+                      },
+                      "costPerHour": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": ["label", "latencyMs", "costPerHour"]
+                  }
+                },
+                "defaultSize": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "storagePricePerGbMonth": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "perKeyCapacityPerSec": {
+                  "type": "object",
+                  "properties": {
+                    "read": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "write": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "requestCost": {
+                  "type": "object",
+                  "properties": {
+                    "readPerMillion": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "writePerMillion": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["readPerMillion", "writePerMillion"]
+                },
+                "notes": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "label", "description"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "capabilities",
+          "replicable",
+          "holdsData",
+          "flavors"
+        ]
+      }
+    }
+  },
+  "required": ["version", "kinds"]
+}

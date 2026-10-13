@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: dynamodb-direct
 description: >-
   ALB → stateless Link API (25 × 8 vCPU) → DynamoDB, no cache. A valid

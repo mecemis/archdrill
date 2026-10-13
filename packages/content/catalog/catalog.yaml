@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../schema/catalog.schema.json
 # Component catalog.
 #
 # Every number is an order-of-magnitude ballpark for comparing designs, not a

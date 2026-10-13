@@ -1,7 +1,7 @@
 import { Redo2, RotateCcw, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { starterAttempt } from "../state/attempt-store";
-import { activePack } from "../state/content";
+import { activePack, openProblem, problemChoices } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { describeRegression, useRegressions } from "../state/regressions";
 import { useAttemptStore } from "../state/store";
@@ -22,8 +22,25 @@ export function Header() {
   return (
     <header className="flex h-12 items-center gap-4 border-b border-zinc-200 bg-white px-4">
       <h1 className="shrink-0 whitespace-nowrap text-sm font-semibold tracking-tight text-zinc-900">
-        ArchDrill <span className="font-normal text-zinc-500">· {activePack.problem.title}</span>
+        ArchDrill
+        {problemChoices.length <= 1 && (
+          <span className="font-normal text-zinc-500"> · {activePack.problem.title}</span>
+        )}
       </h1>
+      {problemChoices.length > 1 && (
+        <select
+          aria-label="Problem"
+          value={activePack.problem.id}
+          onChange={(e) => openProblem(e.target.value)}
+          className="shrink-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800"
+        >
+          {problemChoices.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title}
+            </option>
+          ))}
+        </select>
+      )}
       <nav aria-label="Scenarios" className="flex min-w-0 gap-1 overflow-x-auto">
         {activePack.scenarios.map((scenario) => {
           const result = scenarios.find((r) => r.scenarioId === scenario.id);

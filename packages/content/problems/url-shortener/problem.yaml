@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/problem.schema.json
 id: url-shortener
 version: 1
 title: URL Shortener
@@ -96,6 +97,8 @@ operations:
 events:
   - { id: link-created, label: Link created, entity: Link }
   - { id: link-clicked, label: Link clicked, entity: Link }
+logic:
+  [checkExpiry, validateUrl, checkStatus, hasCustomAlias, generateRandomCode, hashUrl, rehashWithSalt, encodeBase62, obfuscateId]
 decisionPoints:
   - id: code-strategy
     question: How are short codes generated?

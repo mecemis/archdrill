@@ -1,4 +1,13 @@
-import { type Problem, REPLICATION_MODES, type Scenario } from "@archdrill/model";
+import {
+  ACTION_IDS,
+  BUILT_IN_FACTS,
+  getAction,
+  getLogic,
+  LOGIC_IDS,
+  type Problem,
+  REPLICATION_MODES,
+  type Scenario,
+} from "@archdrill/model";
 import {
   eventConsumed,
   idempotentConsumerWrites,
@@ -152,6 +161,21 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
   const issues: ScenarioConfigIssue[] = [];
   const operations = new Set(problem.operations.map((o) => o.id));
   const entities = new Set(problem.entities.map((e) => e.name));
+  // A fact nothing decides on is a typo, or a class that behaves like the others.
+  const decided = new Set([
+    ...BUILT_IN_FACTS,
+    ...LOGIC_IDS.flatMap((id) => getLogic(id).decidedBy?.fact ?? []),
+    ...ACTION_IDS.flatMap((id) => getAction(id).decidedBy?.fact ?? []),
+  ]);
+  for (const [id, op] of Object.entries(workload.operations)) {
+    for (const cls of op.classes) {
+      for (const fact of cls.facts.filter((f) => !decided.has(f))) {
+        issues.push(
+          issue(`class "${cls.id}" of "${id}" has fact "${fact}" that nothing decides on`),
+        );
+      }
+    }
+  }
   for (const [id, op] of Object.entries(workload.operations)) {
     if (!operations.has(id)) issues.push(issue(`unknown operation "${id}"`));
     if (!entities.has(op.entity))

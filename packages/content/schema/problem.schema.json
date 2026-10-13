@@ -1,0 +1,345 @@
+{
+  "title": "ArchDrill problem",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+    },
+    "version": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "levels": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["senior", "staff"]
+      }
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scale": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": ["label", "value"]
+      }
+    },
+    "requirements": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(FR|NFR)-\\d+$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["functional", "non-functional"]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "kind", "text"]
+      }
+    },
+    "entities": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Za-z0-9]*$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fields": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "avgBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["name", "key", "fields", "avgBytes"]
+      }
+    },
+    "operations": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trigger": {
+            "default": {
+              "type": "request"
+            },
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "request"
+                  }
+                },
+                "required": ["type"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "event"
+                  },
+                  "event": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                  }
+                },
+                "required": ["type", "event"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "schedule"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["type", "description"]
+              }
+            ]
+          },
+          "class": {
+            "type": "string",
+            "enum": ["read", "write"]
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "successStatuses": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            }
+          },
+          "requirements": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "introducedIn": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          }
+        },
+        "required": ["id", "label", "class", "idempotent", "successStatuses"]
+      }
+    },
+    "events": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entity": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "label", "entity"]
+      }
+    },
+    "decisionPoints": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "options": {
+            "minItems": 2,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["id", "label"]
+            }
+          },
+          "requirements": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          }
+        },
+        "required": ["id", "question", "options"]
+      }
+    },
+    "logic": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "checkExpiry",
+          "validateUrl",
+          "checkStatus",
+          "hasCustomAlias",
+          "generateRandomCode",
+          "hashUrl",
+          "rehashWithSalt",
+          "encodeBase62",
+          "obfuscateId"
+        ]
+      }
+    },
+    "estimates": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["count", "rate", "bytes", "byte-rate"]
+          },
+          "answer": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "tolerance": {
+            "default": 2,
+            "type": "number",
+            "exclusiveMinimum": 1
+          },
+          "derivation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "question", "kind", "answer", "derivation"]
+      }
+    },
+    "scenarios": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "title",
+    "levels",
+    "brief",
+    "requirements",
+    "entities",
+    "operations",
+    "scenarios"
+  ]
+}

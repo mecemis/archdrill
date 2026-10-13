@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: dynamodb-redis-cache-aside
 description: >-
   ALB → Link API (8 vCPU, autoscaling from 10 to 120 instances) with a

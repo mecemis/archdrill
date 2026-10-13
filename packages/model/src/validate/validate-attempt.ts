@@ -246,6 +246,16 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
   issues.push(...validateFlowGraph(flow, attempt));
   for (const [stepId, step] of Object.entries(flow.steps)) {
     if (step.type === "call") issues.push(...validateCallStep(flow, stepId, step, attempt, ctx));
+    const offered = ctx.problem.logic;
+    if (step.type === "logic" && offered.length > 0 && !offered.includes(step.logic)) {
+      issues.push(
+        error(
+          "step-logic-not-offered",
+          `Step ${stepId} uses "${step.logic}", which this problem does not offer.`,
+          { type: "step", operation: flow.operation, stepId },
+        ),
+      );
+    }
   }
   return issues;
 }

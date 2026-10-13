@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
 id: s7-edge-cases
 problemId: url-shortener
 title: Edge cases

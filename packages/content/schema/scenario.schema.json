@@ -1,0 +1,1254 @@
+{
+  "title": "ArchDrill scenario",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+    },
+    "problemId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "order": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "story": {
+      "type": "string",
+      "minLength": 1
+    },
+    "focusOperations": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+      }
+    },
+    "prerequisites": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "correctness",
+          "concurrency",
+          "consistency",
+          "durability",
+          "latency",
+          "scalability",
+          "availability",
+          "cache-efficiency",
+          "cost",
+          "security",
+          "operability"
+        ]
+      },
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    "checks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "use": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "correctness",
+              "concurrency",
+              "consistency",
+              "durability",
+              "latency",
+              "scalability",
+              "availability",
+              "cache-efficiency",
+              "cost",
+              "security",
+              "operability"
+            ]
+          },
+          "weight": {
+            "default": 1,
+            "type": "number",
+            "minimum": 0
+          },
+          "gate": {
+            "default": false,
+            "type": "boolean"
+          },
+          "severity": {
+            "default": "major",
+            "type": "string",
+            "enum": ["critical", "major", "minor"]
+          },
+          "signal": {
+            "default": "baseline",
+            "type": "string",
+            "enum": ["baseline", "senior", "staff"]
+          },
+          "requirements": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "params": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "use", "title", "dimension", "why", "fix"]
+      }
+    },
+    "hints": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "debrief": {
+      "type": "string"
+    },
+    "workload": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "entity": {
+                "type": "string",
+                "minLength": 1
+              },
+              "classes": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                    },
+                    "share": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "exists": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "expired": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "disabled": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "invalidInput": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "customAlias": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "aliasTaken": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "hotKey": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "malicious": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "facts": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                      }
+                    }
+                  },
+                  "required": ["id", "share"]
+                }
+              }
+            },
+            "required": ["entity", "classes"]
+          }
+        },
+        "keys": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "existing": {
+                "type": "object",
+                "properties": {
+                  "distribution": {
+                    "type": "string",
+                    "const": "zipf"
+                  },
+                  "s": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "population": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": ["distribution", "s", "population"]
+              },
+              "absent": {
+                "type": "object",
+                "properties": {
+                  "distribution": {
+                    "type": "string",
+                    "const": "zipf"
+                  },
+                  "s": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "population": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": ["distribution", "s", "population"]
+              }
+            },
+            "required": ["existing"]
+          }
+        },
+        "dataset": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "keyspace": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "alphabet": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 9007199254740991
+              },
+              "lengthDecision": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              }
+            },
+            "required": ["alphabet", "lengthDecision"]
+          }
+        },
+        "replication": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+            }
+          },
+          "required": ["decision"]
+        },
+        "environments": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rates": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "classShares": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              },
+              "faults": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "down"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "traffic-source",
+                                "load-balancing",
+                                "health-checking",
+                                "routing",
+                                "edge-cache",
+                                "stateless-compute",
+                                "volatile-kv",
+                                "ttl",
+                                "durable-store",
+                                "unique-constraint",
+                                "conditional-write",
+                                "transactions",
+                                "secondary-index",
+                                "range-scan",
+                                "atomic-increment",
+                                "id-generation",
+                                "leases",
+                                "consensus",
+                                "rate-limiting",
+                                "authn",
+                                "async-buffer",
+                                "stream-processing",
+                                "external"
+                              ]
+                            },
+                            "kind": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "handlerOf": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "holds": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "mode": {
+                          "default": "crash",
+                          "type": "string",
+                          "enum": ["crash", "hang"]
+                        },
+                        "scope": {
+                          "default": "all",
+                          "type": "string",
+                          "enum": ["all", "one-node", "one-shard"]
+                        }
+                      },
+                      "required": ["kind", "target"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "slow"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "traffic-source",
+                                "load-balancing",
+                                "health-checking",
+                                "routing",
+                                "edge-cache",
+                                "stateless-compute",
+                                "volatile-kv",
+                                "ttl",
+                                "durable-store",
+                                "unique-constraint",
+                                "conditional-write",
+                                "transactions",
+                                "secondary-index",
+                                "range-scan",
+                                "atomic-increment",
+                                "id-generation",
+                                "leases",
+                                "consensus",
+                                "rate-limiting",
+                                "authn",
+                                "async-buffer",
+                                "stream-processing",
+                                "external"
+                              ]
+                            },
+                            "kind": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "handlerOf": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "holds": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "factor": {
+                          "type": "number",
+                          "minimum": 1,
+                          "maximum": 1000
+                        }
+                      },
+                      "required": ["kind", "target", "factor"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "degraded"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "traffic-source",
+                                "load-balancing",
+                                "health-checking",
+                                "routing",
+                                "edge-cache",
+                                "stateless-compute",
+                                "volatile-kv",
+                                "ttl",
+                                "durable-store",
+                                "unique-constraint",
+                                "conditional-write",
+                                "transactions",
+                                "secondary-index",
+                                "range-scan",
+                                "atomic-increment",
+                                "id-generation",
+                                "leases",
+                                "consensus",
+                                "rate-limiting",
+                                "authn",
+                                "async-buffer",
+                                "stream-processing",
+                                "external"
+                              ]
+                            },
+                            "kind": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "handlerOf": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "holds": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "capacity": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "target", "capacity"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "failover"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "traffic-source",
+                                "load-balancing",
+                                "health-checking",
+                                "routing",
+                                "edge-cache",
+                                "stateless-compute",
+                                "volatile-kv",
+                                "ttl",
+                                "durable-store",
+                                "unique-constraint",
+                                "conditional-write",
+                                "transactions",
+                                "secondary-index",
+                                "range-scan",
+                                "atomic-increment",
+                                "id-generation",
+                                "leases",
+                                "consensus",
+                                "rate-limiting",
+                                "authn",
+                                "async-buffer",
+                                "stream-processing",
+                                "external"
+                              ]
+                            },
+                            "kind": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "handlerOf": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "holds": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "mode": {
+                          "default": "hang",
+                          "type": "string",
+                          "enum": ["crash", "hang"]
+                        }
+                      },
+                      "required": ["kind", "target"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["id", "label", "rates"]
+          }
+        },
+        "timelines": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "durationSec": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1800
+              },
+              "stepSec": {
+                "default": 1,
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 10
+              },
+              "rates": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "classShares": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              },
+              "events": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "load"
+                        },
+                        "at": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "rates": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                          },
+                          "additionalProperties": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "rampSec": {
+                          "default": 0,
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "curve": {
+                          "default": "linear",
+                          "type": "string",
+                          "enum": ["linear", "exponential"]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["kind", "at", "rates"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "restart"
+                        },
+                        "at": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "traffic-source",
+                                "load-balancing",
+                                "health-checking",
+                                "routing",
+                                "edge-cache",
+                                "stateless-compute",
+                                "volatile-kv",
+                                "ttl",
+                                "durable-store",
+                                "unique-constraint",
+                                "conditional-write",
+                                "transactions",
+                                "secondary-index",
+                                "range-scan",
+                                "atomic-increment",
+                                "id-generation",
+                                "leases",
+                                "consensus",
+                                "rate-limiting",
+                                "authn",
+                                "async-buffer",
+                                "stream-processing",
+                                "external"
+                              ]
+                            },
+                            "kind": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "handlerOf": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "holds": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["kind", "at", "target"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "fault"
+                        },
+                        "at": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "until": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "fault": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "down"
+                                },
+                                "target": {
+                                  "type": "object",
+                                  "properties": {
+                                    "capability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "traffic-source",
+                                        "load-balancing",
+                                        "health-checking",
+                                        "routing",
+                                        "edge-cache",
+                                        "stateless-compute",
+                                        "volatile-kv",
+                                        "ttl",
+                                        "durable-store",
+                                        "unique-constraint",
+                                        "conditional-write",
+                                        "transactions",
+                                        "secondary-index",
+                                        "range-scan",
+                                        "atomic-increment",
+                                        "id-generation",
+                                        "leases",
+                                        "consensus",
+                                        "rate-limiting",
+                                        "authn",
+                                        "async-buffer",
+                                        "stream-processing",
+                                        "external"
+                                      ]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "handlerOf": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "holds": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "mode": {
+                                  "default": "crash",
+                                  "type": "string",
+                                  "enum": ["crash", "hang"]
+                                },
+                                "scope": {
+                                  "default": "all",
+                                  "type": "string",
+                                  "enum": ["all", "one-node", "one-shard"]
+                                }
+                              },
+                              "required": ["kind", "target"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "slow"
+                                },
+                                "target": {
+                                  "type": "object",
+                                  "properties": {
+                                    "capability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "traffic-source",
+                                        "load-balancing",
+                                        "health-checking",
+                                        "routing",
+                                        "edge-cache",
+                                        "stateless-compute",
+                                        "volatile-kv",
+                                        "ttl",
+                                        "durable-store",
+                                        "unique-constraint",
+                                        "conditional-write",
+                                        "transactions",
+                                        "secondary-index",
+                                        "range-scan",
+                                        "atomic-increment",
+                                        "id-generation",
+                                        "leases",
+                                        "consensus",
+                                        "rate-limiting",
+                                        "authn",
+                                        "async-buffer",
+                                        "stream-processing",
+                                        "external"
+                                      ]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "handlerOf": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "holds": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "factor": {
+                                  "type": "number",
+                                  "minimum": 1,
+                                  "maximum": 1000
+                                }
+                              },
+                              "required": ["kind", "target", "factor"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "degraded"
+                                },
+                                "target": {
+                                  "type": "object",
+                                  "properties": {
+                                    "capability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "traffic-source",
+                                        "load-balancing",
+                                        "health-checking",
+                                        "routing",
+                                        "edge-cache",
+                                        "stateless-compute",
+                                        "volatile-kv",
+                                        "ttl",
+                                        "durable-store",
+                                        "unique-constraint",
+                                        "conditional-write",
+                                        "transactions",
+                                        "secondary-index",
+                                        "range-scan",
+                                        "atomic-increment",
+                                        "id-generation",
+                                        "leases",
+                                        "consensus",
+                                        "rate-limiting",
+                                        "authn",
+                                        "async-buffer",
+                                        "stream-processing",
+                                        "external"
+                                      ]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "handlerOf": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "holds": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "capacity": {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 1
+                                }
+                              },
+                              "required": ["kind", "target", "capacity"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "failover"
+                                },
+                                "target": {
+                                  "type": "object",
+                                  "properties": {
+                                    "capability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "traffic-source",
+                                        "load-balancing",
+                                        "health-checking",
+                                        "routing",
+                                        "edge-cache",
+                                        "stateless-compute",
+                                        "volatile-kv",
+                                        "ttl",
+                                        "durable-store",
+                                        "unique-constraint",
+                                        "conditional-write",
+                                        "transactions",
+                                        "secondary-index",
+                                        "range-scan",
+                                        "atomic-increment",
+                                        "id-generation",
+                                        "leases",
+                                        "consensus",
+                                        "rate-limiting",
+                                        "authn",
+                                        "async-buffer",
+                                        "stream-processing",
+                                        "external"
+                                      ]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "handlerOf": {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                    },
+                                    "holds": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "mode": {
+                                  "default": "hang",
+                                  "type": "string",
+                                  "enum": ["crash", "hang"]
+                                }
+                              },
+                              "required": ["kind", "target"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["kind", "at", "fault"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "predictions": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                    },
+                    "question": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "measure": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "peak-utilization"
+                            },
+                            "target": {
+                              "type": "object",
+                              "properties": {
+                                "capability": {
+                                  "type": "string",
+                                  "enum": [
+                                    "traffic-source",
+                                    "load-balancing",
+                                    "health-checking",
+                                    "routing",
+                                    "edge-cache",
+                                    "stateless-compute",
+                                    "volatile-kv",
+                                    "ttl",
+                                    "durable-store",
+                                    "unique-constraint",
+                                    "conditional-write",
+                                    "transactions",
+                                    "secondary-index",
+                                    "range-scan",
+                                    "atomic-increment",
+                                    "id-generation",
+                                    "leases",
+                                    "consensus",
+                                    "rate-limiting",
+                                    "authn",
+                                    "async-buffer",
+                                    "stream-processing",
+                                    "external"
+                                  ]
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                },
+                                "handlerOf": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                },
+                                "holds": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": ["kind", "target"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "lowest-success"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            }
+                          },
+                          "required": ["kind", "operation"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "recovery-seconds"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            },
+                            "threshold": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 1
+                            },
+                            "after": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          },
+                          "required": ["kind", "operation", "threshold", "after"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "options": {
+                      "minItems": 2,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "below": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["id", "label"]
+                      }
+                    }
+                  },
+                  "required": ["id", "question", "measure", "options"]
+                }
+              }
+            },
+            "required": ["id", "label", "durationSec", "rates"]
+          }
+        }
+      },
+      "required": ["operations", "keys", "environments"]
+    }
+  },
+  "required": [
+    "id",
+    "problemId",
+    "title",
+    "order",
+    "story",
+    "focusOperations",
+    "dimensions",
+    "checks"
+  ]
+}

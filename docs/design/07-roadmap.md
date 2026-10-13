@@ -351,6 +351,14 @@ The original plan was a sampled per-request discrete-event engine. [ADR 0008](..
 
 New problems are chosen to cover *different* patterns, not more of the same.
 
+Milestones:
+- **M12: Problem packs.** Facts that decide logic and calls (no more URL-specific flags in the engine), the logic each problem offers, a problem picker, and JSON Schemas for editors.
+- **M13: Distributed rate limiter.** Shared counters on the request path, window algorithms, failing open or closed, a hot abusive client.
+- **M14: News feed.** Fan-out on write or read, celebrity accounts, timelines in a cache, pagination.
+- **M15: Chat and notifications.** Connections as a resource, ordering, delivery and deduplication, presence, offline delivery.
+- **M16: Orders and payments.** Idempotency keys, a transactional outbox, sagas with compensation, reconciliation.
+- **M17: Back to the URL shortener, and compare mode.** Store TTLs instead of a purge job, an outbox for `link-created`, exactly-once counting, and two designs side by side.
+
 | Problem | Patterns |
 |---|---|
 | Distributed rate limiter | counters, consistency vs accuracy, sliding windows, multi-region |

@@ -19,7 +19,8 @@
     "check": "biome check . && pnpm typecheck",
     "e2e": "playwright test",
     "report": "pnpm --filter @archdrill/content report",
-    "serve": "pnpm build && pnpm --filter @archdrill/web exec vite preview"
+    "serve": "pnpm build && pnpm --filter @archdrill/web exec vite preview",
+    "schemas": "pnpm --filter @archdrill/content schemas"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
