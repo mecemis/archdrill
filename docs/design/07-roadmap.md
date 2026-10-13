@@ -289,10 +289,26 @@ The original plan was a sampled per-request discrete-event engine. [ADR 0008](..
 - **Linear ramps are a poor model of a spreading link.** A linear ramp grows fastest relative to load at its start, where no autoscaler can follow. An exponential one tests the real constraint: growth during the minute an instance takes to start.
 - **The call model had a shortcut for healthy calls.** It skipped the breaker, so a breaker held open over a recovered dependency failed nothing until the shortcut learned about it.
 
-### M10: Timeline UI (M)
+### M10: Timeline UI (M) ✅
 - Charts with event markers, and a scrubber that shows the canvas at a moment in time.
 - A request trace explorer: example requests sampled from each step, with step-by-step timings.
 - Predict, then reveal: before a timeline runs, the candidate can predict what will happen, and sees the prediction next to the result.
+
+**Delivered (2026-10-13):**
+- **Engine.** Each step records component latency and active faults, connection traffic, and the path mix of every operation. Timelines can carry predictions, which the engine answers from the series it records.
+- **Content.** S4, S5, S6 and S7 each ask two questions before their timeline is shown, about peak load, the lowest success rate, or time to recover.
+- **Web.**
+  - The results dock enlarges for timelines.
+  - Predict, then reveal, with answers kept per timeline.
+  - A scrubber, with click-to-jump on charts and events, and a cursor with values on every chart.
+  - The canvas at the picked moment.
+  - The path mix at that moment.
+- **Tests.** Engine tests for predictions and the new series, and a corpus test that every question gets at least two different answers across the goldens and the scenario's mutants. Unit tests cover the canvas snapshot and stored predictions, and browser tests cover predicting and picking a moment.
+
+**Learned along the way:**
+- **A path mix teaches more than sampled traces.** The plan was to sample example requests from each step. The engine already knows every path's exact share and latency at every step, so the timeline shows those instead, deterministic and complete, including the rare paths a sample would miss. Each path expands to per-call timings, which is what a trace would have shown.
+- **A snapshot needs a stable identity.** The canvas re-projects whenever its load changes, and the first version built a new snapshot on every render, which looped. Each moment now builds its snapshot once.
+- **Predictions need bounds that separate designs.** A question is only worth asking if designs answer it differently. Running every question against the corpus showed a wide spread, for example S4's store load ranges from calm (DynamoDB) to overloaded (MySQL with Memcached, and the retry storm). It also caught a bound in the wrong place: most designs lose 49.8% of creates during S6's failover, right at a 50% bound. The options now sit away from where designs land.
 
 ### M11: Click analytics and the estimation gym (L)
 - S8 click analytics: logs and streams, stream aggregation, counters that stay fresh within a minute, hot counters, and idempotent consumers whose writes are not naturally idempotent.

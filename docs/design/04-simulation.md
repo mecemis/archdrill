@@ -273,6 +273,22 @@ Lease waste on crash is not modelled yet.
   - Steps after the first solve to 1e-5, in at most 40 iterations. A step that has not settled by then is approximate either way, and the next step carries on from its state.
   - A dynamic step costs about 0.7 ms; S5's twelve-minute surge in 5 s steps costs about 150 ms.
 
+**What a moment shows (as built, M10).** Each step also records what the canvas and the path mix need to show that moment:
+
+- per component, its mean latency and the faults active on it;
+- per connection, the requests per second over it;
+- per operation, the path mix: every path with at least 0.01% of requests, with its share and mean latency.
+
+Recording the path mix reuses the moments the step already computes for its summary, so it adds no measurable time.
+
+**Predictions.** A timeline can ask questions before it is shown. The engine answers them once the timeline has run, from the same series the charts draw:
+
+- `peak-utilization` of selected components (by role, as faults select them);
+- `lowest-success` of an operation, over the steps it has traffic;
+- `recovery-seconds`: how long after a moment an operation's success rate is back at a threshold and stays there (infinite if it never is).
+
+Options are increasing ranges (`below`), and the answer is the first range the value falls in.
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:

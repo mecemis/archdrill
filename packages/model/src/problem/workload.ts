@@ -174,6 +174,59 @@ export const TimelineEventSchema = z.discriminatedUnion("kind", [
 ]);
 export type TimelineEvent = z.infer<typeof TimelineEventSchema>;
 
+/** What a prediction is about, measured on the timeline once it has run. */
+export const PredictionMeasureSchema = z.discriminatedUnion("kind", [
+  /** The highest utilisation any selected component reaches. */
+  z.strictObject({ kind: z.literal("peak-utilization"), target: ComponentSelectorSchema }),
+  /** The lowest success rate of an operation, over the steps it has traffic. */
+  z.strictObject({ kind: z.literal("lowest-success"), operation: IdSchema }),
+  /** Seconds after `after` until an operation's success rate is back at `threshold` for good. */
+  z.strictObject({
+    kind: z.literal("recovery-seconds"),
+    operation: IdSchema,
+    threshold: z.number().gt(0).max(1),
+    after: z.number().min(0),
+  }),
+]);
+export type PredictionMeasure = z.infer<typeof PredictionMeasureSchema>;
+
+/**
+ * Predict, then reveal: a question the candidate answers before a timeline
+ * runs. Options are ranges of the measure in increasing order, each up to
+ * `below`; the last one takes everything above.
+ */
+export const PredictionSchema = z
+  .object({
+    id: IdSchema,
+    question: z.string().min(1),
+    measure: PredictionMeasureSchema,
+    options: z
+      .array(z.object({ id: IdSchema, label: z.string().min(1), below: z.number().optional() }))
+      .min(2),
+  })
+  .superRefine((prediction, ctx) => {
+    const bounds = prediction.options.map((o) => o.below);
+    const last = bounds.length - 1;
+    bounds.forEach((bound, i) => {
+      if (i < last !== (bound !== undefined)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "every option but the last needs `below`; the last takes everything above",
+          path: ["options", i, "below"],
+        });
+      }
+      const previous = bounds[i - 1];
+      if (i > 0 && bound !== undefined && previous !== undefined && bound <= previous) {
+        ctx.addIssue({
+          code: "custom",
+          message: "option bounds must increase",
+          path: ["options", i, "below"],
+        });
+      }
+    });
+  });
+export type Prediction = z.infer<typeof PredictionSchema>;
+
 /**
  * How a design behaves over time: the scenario's workload, starting at
  * `rates`, with load changes and faults at given moments. The engine works in
@@ -189,6 +242,8 @@ export const TimelineSchema = z
     rates: z.record(IdSchema, z.number().nonnegative()),
     classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
     events: z.array(TimelineEventSchema).default([]),
+    /** Questions to answer before the timeline is revealed. */
+    predictions: z.array(PredictionSchema).default([]),
   })
   .superRefine((timeline, ctx) => {
     timeline.events.forEach((event, i) => {

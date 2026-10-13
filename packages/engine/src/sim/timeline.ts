@@ -1,6 +1,13 @@
-import type { Environment, Fault, Timeline, TimelineEvent, Workload } from "@archdrill/model";
+import type {
+  Environment,
+  Fault,
+  Prediction,
+  Timeline,
+  TimelineEvent,
+  Workload,
+} from "@archdrill/model";
 import type { ComponentFault } from "./faults";
-import { resolveFaults } from "./faults";
+import { resolveFaults, selectComponents } from "./faults";
 import {
   buildFixtures,
   createModel,
@@ -49,6 +56,23 @@ export interface ComponentSeries {
   /** Utilisation of the busiest part: the whole tier, or its hottest shard. */
   readonly utilization: readonly number[];
   readonly instances: readonly number[];
+  /** Mean latency of a call to the component, queueing included. */
+  readonly latencyMs: readonly number[];
+  /** What the faults active at each step do to the component, as on the canvas. */
+  readonly faults: readonly (readonly string[])[];
+}
+
+/** One way requests went at a step, with its share of all requests and its mean latency. */
+export interface PathShare {
+  readonly pathId: string;
+  readonly share: number;
+  readonly meanMs: number;
+}
+
+/** The answer a timeline gives to a prediction, and the value behind it. */
+export interface PredictionAnswer {
+  readonly value: number;
+  readonly optionId: string;
 }
 
 /** Something worth marking on the timeline. */
@@ -74,9 +98,18 @@ export interface TimelineMetrics {
   /** Hit ratio per cache and entity, keyed `component|entity`. */
   readonly caches: ReadonlyMap<string, readonly number[]>;
   readonly marks: readonly TimelineMark[];
+  /** Requests per second over each connection at each step. */
+  readonly connections: ReadonlyMap<string, readonly number[]>;
+  /** Per operation and step: the paths requests took that carry a visible share. */
+  readonly paths: ReadonlyMap<string, readonly (readonly PathShare[])[]>;
+  /** The right answer to each of the timeline's predictions, by prediction id. */
+  readonly predictions: ReadonlyMap<string, PredictionAnswer>;
   /** Steps whose load model did not settle; their numbers are approximate. */
   readonly unsettledSteps: number;
 }
+
+/** Paths below this share of requests are left out of a step's path mix. */
+const VISIBLE_PATH_SHARE = 1e-4;
 
 /** How tightly steps after the first are solved: shares to within 1e-5. */
 const STEP_TOLERANCE = 1e-5;
@@ -132,6 +165,8 @@ interface StepSummary {
   readonly hitRatios: readonly { readonly key: string; readonly hitRatio: number }[];
   /** Per connection with a circuit breaker: share of calls it fails without calling. */
   readonly breakers: ReadonlyMap<string, number>;
+  readonly traffic: ReadonlyMap<string, number>;
+  readonly paths: ReadonlyMap<string, readonly PathShare[]>;
 }
 
 interface Segment {
@@ -186,7 +221,17 @@ export function simulateTimeline(
   // Latency of the stores behind caches, which sets how long a cold key's first miss takes.
   let missLatencyMs: (entity: string) => number = () => 0;
   const operations = new Map<string, OperationSeriesBuilder>();
-  const components = new Map<string, { utilization: number[]; instances: number[] }>();
+  const components = new Map<
+    string,
+    {
+      utilization: number[];
+      instances: number[];
+      latencyMs: number[];
+      faults: (readonly string[])[];
+    }
+  >();
+  const trafficSeries = new Map<string, number[]>();
+  const pathSeries = new Map<string, (readonly PathShare[])[]>();
   const caches = new Map<string, number[]>();
   const marks: TimelineMark[] = [];
   const overloaded = new Set<string>();
@@ -288,6 +333,7 @@ export function simulateTimeline(
   }
 
   function summarizeStep(model: Model, fixtures: Fixtures): StepSummary {
+    const paths = new Map<string, PathShare[]>();
     const profiles = profilesOf(model, fixtures, true);
     const flow = propagateModel(model, fixtures);
     const metrics = summarizeComponents(profiles, flow, model.loop.drop, stored, fixtures.faults);
@@ -306,6 +352,12 @@ export function simulateTimeline(
         batchArrivals: flow.batchArrivals,
       },
       false,
+      (operation, pathId, share, meanMs) => {
+        if (share < VISIBLE_PATH_SHARE) return;
+        const list = paths.get(operation) ?? [];
+        list.push({ pathId, share, meanMs });
+        paths.set(operation, list);
+      },
     );
     const hitRatios = fixtures.caches.map((spec) => ({
       key: cacheKey(spec.componentId, spec.entity),
@@ -320,15 +372,32 @@ export function simulateTimeline(
         tally && tally.calls > 0 ? tally.shortCircuited / tally.calls : 0,
       );
     }
-    return { operations: summary, components: metrics, hitRatios, breakers: breakerShares };
+    return {
+      operations: summary,
+      components: metrics,
+      hitRatios,
+      breakers: breakerShares,
+      traffic: flow.traffic,
+      paths: new Map([...paths].map(([op, list]) => [op, list.sort((a, b) => b.share - a.share)])),
+    };
   }
 
   function record(
     t: number,
     step: number,
-    { operations: summary, components: metrics, hitRatios }: StepSummary,
+    { operations: summary, components: metrics, hitRatios, traffic, paths }: StepSummary,
     drains: ReadonlyMap<string, number>,
   ) {
+    for (const connection of connections) {
+      const series = trafficSeries.get(connection.id) ?? [];
+      series.push(traffic.get(connection.id) ?? 0);
+      trafficSeries.set(connection.id, series);
+    }
+    for (const id of new Set([...pathSeries.keys(), ...paths.keys()])) {
+      const series = pathSeries.get(id) ?? Array.from({ length: step }, () => []);
+      series.push(paths.get(id) ?? []);
+      pathSeries.set(id, series);
+    }
     for (const [id, op] of summary) {
       const series = operations.get(id) ?? emptyOperationSeries(op.trigger, step);
       // New work only; working through a backlog shows in the backlog series.
@@ -340,10 +409,17 @@ export function simulateTimeline(
       operations.set(id, series);
     }
     for (const [id, c] of metrics) {
-      const series = components.get(id) ?? { utilization: [], instances: [] };
+      const series = components.get(id) ?? {
+        utilization: [],
+        instances: [],
+        latencyMs: [],
+        faults: [],
+      };
       const busiest = Math.max(c.utilization, c.hottestShardUtilization);
       series.utilization.push(busiest);
       series.instances.push(c.instances);
+      series.latencyMs.push(c.latency.mean);
+      series.faults.push(c.faults);
       components.set(id, series);
       if (busiest > 1 && !overloaded.has(id)) {
         overloaded.add(id);
@@ -384,8 +460,50 @@ export function simulateTimeline(
     components,
     caches,
     marks: marks.sort((a, b) => a.at - b.at),
+    connections: trafficSeries,
+    paths: pathSeries,
+    predictions: answerPredictions(timeline, times, operations, components, ctx),
     unsettledSteps,
   };
+}
+
+/** Measures each prediction on the finished timeline and picks the option its value falls in. */
+function answerPredictions(
+  timeline: Timeline,
+  times: readonly number[],
+  operations: ReadonlyMap<string, OperationSeriesBuilder>,
+  components: ReadonlyMap<string, { utilization: readonly number[] }>,
+  ctx: SimulationContext,
+): Map<string, PredictionAnswer> {
+  const answers = new Map<string, PredictionAnswer>();
+  for (const prediction of timeline.predictions) {
+    const value = measure(prediction.measure);
+    const option =
+      prediction.options.find((o) => o.below === undefined || value < o.below) ??
+      prediction.options.at(-1);
+    if (option) answers.set(prediction.id, { value, optionId: option.id });
+  }
+  return answers;
+
+  function measure(m: Prediction["measure"]): number {
+    if (m.kind === "peak-utilization") {
+      const ids = selectComponents(m.target, ctx.attempt, ctx.catalog).map((c) => c.id);
+      return Math.max(0, ...ids.flatMap((id) => components.get(id)?.utilization ?? []));
+    }
+    const series = operations.get(m.operation);
+    if (!series) return m.kind === "lowest-success" ? 1 : 0;
+    const judged = series.successRate.filter((_, i) => (series.rate[i] ?? 0) > 0);
+    if (m.kind === "lowest-success") return Math.min(1, ...judged);
+    // The first moment from which the success rate stays at the threshold.
+    let recovered = Number.POSITIVE_INFINITY;
+    for (let i = times.length - 1; i >= 0; i--) {
+      const t = times[i] ?? 0;
+      if (t < m.after) break;
+      if ((series.rate[i] ?? 0) > 0 && (series.successRate[i] ?? 0) < m.threshold) break;
+      recovered = t;
+    }
+    return recovered - m.after;
+  }
 }
 
 interface OperationSeriesBuilder {

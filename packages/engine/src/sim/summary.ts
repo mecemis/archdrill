@@ -366,6 +366,8 @@ export function summarizeOperations(
   inputs: LatencyInputs,
   /** Per-path metrics cost a quantile search per path; timelines leave them out. */
   withPaths = true,
+  /** Sees every path's probability and mean latency, cheaply (timelines keep them per step). */
+  observePath?: (operation: string, pathId: string, probability: number, meanMs: number) => void,
 ): Map<string, OperationMetrics> {
   const result = new Map<string, OperationMetrics>();
   for (const op of operations) {
@@ -404,6 +406,7 @@ export function summarizeOperations(
       if (status === null) unhandled += probability;
       else if (succeeded) success += probability;
       else errorStatus += probability;
+      observePath?.(op.operation.id, path.id, pass * probability, moments.mean);
       if (withPaths) {
         paths.push({
           pathId: path.id,

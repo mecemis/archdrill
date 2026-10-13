@@ -1,31 +1,5 @@
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { expect, type Page, test } from "@playwright/test";
-
-// The content package owns the YAML parser; golden designs are YAML.
-const require = createRequire(new URL("../packages/content/package.json", import.meta.url));
-const yaml = require("yaml") as { parse(text: string): { attempt: unknown } };
-
-/** A golden design as the export file the app reads. */
-function goldenFile(name: string) {
-  const source = new URL(
-    `../packages/content/problems/url-shortener/corpus/golden/${name}.yaml`,
-    import.meta.url,
-  );
-  const { attempt } = yaml.parse(readFileSync(source, "utf8"));
-  const text = JSON.stringify({
-    format: "archdrill-attempt",
-    exportedAt: new Date().toISOString(),
-    attempt,
-  });
-  return { name: `${name}.json`, mimeType: "application/json", buffer: Buffer.from(text) };
-}
-
-async function importGolden(page: Page, name: string) {
-  await page.goto("/");
-  await page.getByLabel("Design file").setInputFiles(goldenFile(name));
-  await expect(page.getByText(`Loaded ${name}.json.`)).toBeVisible();
-}
+import { expect, test } from "@playwright/test";
+import { importGolden } from "./golden";
 
 test("imports a design and evaluates it in every scenario", async ({ page }) => {
   await importGolden(page, "postgres-redis-cache-aside");
@@ -62,25 +36,4 @@ test("explains a consumer's lag and redeliveries when its dependency is down", a
 
   await expect(page.getByText("Scan new link · consumer")).toBeVisible();
   await expect(page.getByText(/failed messages again; after 5 deliveries/)).toBeVisible();
-});
-
-test("shows a failover second by second on the S6 timeline", async ({ page }) => {
-  await importGolden(page, "postgres-redis-cache-aside");
-  await page.getByRole("button", { name: /S6 / }).click();
-  await page.getByRole("tab", { name: "Timeline" }).click();
-
-  await expect(page.getByRole("img", { name: "Success rate" })).toBeVisible();
-  await expect(page.getByText("Primary failing over starts (Links DB)")).toBeVisible();
-  await expect(page.getByText("Primary failing over ends (Links DB)")).toBeVisible();
-});
-
-test("shows autoscaling catching up with a spreading link on the S5 timeline", async ({ page }) => {
-  await importGolden(page, "postgres-redis-cache-aside");
-  await page.getByRole("button", { name: /S5 / }).click();
-  await page.getByRole("tab", { name: "Timeline" }).click();
-
-  await expect(page.getByRole("img", { name: "Running instances" })).toBeVisible();
-  await expect(
-    page.getByText(/Redirect API: scaling out to \d+ instances, ready at/).first(),
-  ).toBeVisible();
 });

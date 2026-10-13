@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { type KeyboardEvent, type MouseEvent, useId } from "react";
 
 export interface LineSeries {
   readonly label: string;
@@ -44,6 +44,8 @@ export function LineChart({
   format,
   limit,
   bands = [],
+  cursor,
+  onPick,
 }: {
   readonly title: string;
   readonly times: readonly number[];
@@ -52,6 +54,10 @@ export function LineChart({
   readonly format: (value: number) => string;
   readonly limit?: { readonly value: number; readonly label: string };
   readonly bands?: readonly TimeBand[];
+  /** A moment to mark, in seconds; the legend shows each series' value there. */
+  readonly cursor?: number | undefined;
+  /** Picks the moment under a click, in seconds. */
+  readonly onPick?: ((t: number) => void) | undefined;
 }) {
   const id = useId();
   const end = times.at(-1) ?? 1;
@@ -62,6 +68,31 @@ export function LineChart({
   const step = niceTimeStep(end);
   const ticks = Array.from({ length: Math.floor(end / step) + 1 }, (_, i) => i * step);
   const levels = [low, (low + high) / 2, high];
+  const cursorIndex =
+    cursor === undefined
+      ? -1
+      : times.reduce(
+          (best, t, i) => (Math.abs(t - cursor) < Math.abs((times[best] ?? 0) - cursor) ? i : best),
+          0,
+        );
+  const pick = (event: MouseEvent<SVGSVGElement>) => {
+    if (!onPick) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - box.left) / box.width) * WIDTH;
+    const fraction = (x - LEFT) / (WIDTH - LEFT - RIGHT);
+    onPick(Math.min(end, Math.max(0, fraction * end)));
+  };
+  // Arrow keys move the picked moment one step, for keyboard users.
+  const nudge = (event: KeyboardEvent<SVGSVGElement>) => {
+    if (!onPick || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+    event.preventDefault();
+    const from = Math.max(0, cursorIndex);
+    const next = event.key === "ArrowRight" ? from + 1 : from - 1;
+    onPick(times[Math.min(times.length - 1, Math.max(0, next))] ?? 0);
+  };
+  const valueText = `${times[cursorIndex] ?? 0} s: ${series
+    .map((s) => `${s.label} ${formatAt(s.values[cursorIndex], format)}`)
+    .join(", ")}`;
   const pathOf = (values: readonly (number | null)[]) => {
     let d = "";
     let drawing = false;
@@ -84,9 +115,21 @@ export function LineChart({
       </figcaption>
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="h-auto w-full"
-        role="img"
         aria-labelledby={id}
+        className={`h-auto w-full ${onPick ? "cursor-crosshair" : ""}`}
+        {...(onPick
+          ? {
+              // Picking a moment on a chart works like a slider over time.
+              role: "slider",
+              tabIndex: 0,
+              "aria-valuemin": 0,
+              "aria-valuemax": end,
+              "aria-valuenow": times[Math.max(0, cursorIndex)] ?? 0,
+              "aria-valuetext": cursorIndex < 0 ? "no moment picked" : valueText,
+              onClick: pick,
+              onKeyDown: nudge,
+            }
+          : { role: "img" })}
       >
         <title>{title}</title>
         {bands.map((band) => (
@@ -145,6 +188,16 @@ export function LineChart({
             </text>
           </g>
         )}
+        {cursorIndex >= 0 && (
+          <line
+            x1={x(times[cursorIndex] ?? 0)}
+            x2={x(times[cursorIndex] ?? 0)}
+            y1={TOP}
+            y2={HEIGHT - BOTTOM}
+            stroke="#0c4a6e"
+            strokeWidth="1"
+          />
+        )}
         {series.map((s, i) => {
           const style = STYLES[i % STYLES.length] ?? STYLES[0];
           return (
@@ -175,11 +228,22 @@ export function LineChart({
                   strokeDasharray={style.dash}
                 />
               </svg>
-              {s.label}
+              <span>
+                {s.label}
+                {cursorIndex >= 0 && (
+                  <span className="text-zinc-500 tabular-nums">
+                    : {formatAt(s.values[cursorIndex], format)}
+                  </span>
+                )}
+              </span>
             </li>
           );
         })}
       </ul>
     </figure>
   );
+}
+
+function formatAt(value: number | null | undefined, format: (v: number) => string): string {
+  return value === null || value === undefined || !Number.isFinite(value) ? "—" : format(value);
 }

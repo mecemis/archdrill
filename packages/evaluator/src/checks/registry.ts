@@ -183,6 +183,15 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
       ...Object.keys(timeline.rates),
       ...timeline.events.flatMap((e) => (e.kind === "load" ? Object.keys(e.rates) : [])),
     ];
+    for (const prediction of timeline.predictions) {
+      const m = prediction.measure;
+      if (m.kind !== "peak-utilization" && !problem.operations.some((o) => o.id === m.operation))
+        issues.push(
+          issue(
+            `${where} prediction "${prediction.id}" measures unknown operation "${m.operation}"`,
+          ),
+        );
+    }
     for (const id of new Set(rated)) {
       const trigger = problem.operations.find((o) => o.id === id)?.trigger;
       if (!trigger) issues.push(issue(`${where} sets a rate for unknown operation "${id}"`));

@@ -1,4 +1,4 @@
-import type { EnvironmentMetrics, OperationAnalysis } from "@archdrill/engine";
+import type { OperationAnalysis } from "@archdrill/engine";
 import {
   type Attempt,
   type CatalogIndex,
@@ -57,7 +57,25 @@ export interface ProjectionInput {
   readonly highlight: Highlight | null;
   readonly selection: Selection;
   readonly slotArmed: boolean;
-  readonly metrics?: EnvironmentMetrics | undefined;
+  readonly metrics?: CanvasLoad | undefined;
+}
+
+/**
+ * What the canvas shows about load: an environment's steady state, or one
+ * moment of a timeline.
+ */
+export interface CanvasLoad {
+  readonly components: ReadonlyMap<
+    string,
+    {
+      readonly utilization: number;
+      readonly hottestShardUtilization: number;
+      readonly instances: number;
+      readonly faults: readonly string[];
+    }
+  >;
+  /** Requests per second over each connection. */
+  readonly connections: ReadonlyMap<string, number>;
 }
 
 /**

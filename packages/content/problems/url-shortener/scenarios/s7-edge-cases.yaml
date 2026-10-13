@@ -72,6 +72,21 @@ workload:
           at: 180
           label: The import ends
           rates: { create-link: 3000 }
+      predictions:
+        - id: api-load
+          question: How busy does the URL-safety API get during the import?
+          measure: { kind: peak-utilization, target: { capability: external } }
+          options:
+            - { id: room, label: Well within its quota, below: 0.85 }
+            - { id: near, label: Close to its quota, below: 1 }
+            - { id: over, label: Over its quota }
+        - id: scans
+          question: How long after the import are scans back to normal?
+          measure: { kind: recovery-seconds, operation: scan-link, threshold: 0.999, after: 180 }
+          options:
+            - { id: minute, label: Within a minute, below: 60 }
+            - { id: minutes, label: Within five minutes, below: 300 }
+            - { id: longer, label: Longer, or not before the timeline ends }
 dimensions:
   correctness: 0.45
   security: 0.25

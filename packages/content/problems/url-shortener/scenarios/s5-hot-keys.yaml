@@ -60,6 +60,21 @@ workload:
           curve: exponential
           label: The link starts spreading
           rates: { redirect: 1000000, create-link: 3000 }
+      predictions:
+        - id: redirects
+          question: How low do redirects go while the link spreads?
+          measure: { kind: lowest-success, operation: redirect }
+          options:
+            - { id: most-fail, label: Most of them fail, below: 0.5 }
+            - { id: some-fail, label: Some of them fail, below: 0.999 }
+            - { id: unaffected, label: Almost none fail }
+        - id: service-load
+          question: How busy does the redirect service get?
+          measure: { kind: peak-utilization, target: { handlerOf: redirect } }
+          options:
+            - { id: headroom, label: Under three quarters of its capacity, below: 0.75 }
+            - { id: busy, label: Busy but within capacity, below: 1 }
+            - { id: overloaded, label: Over capacity }
 dimensions:
   scalability: 0.35
   availability: 0.25
