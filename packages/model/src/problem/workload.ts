@@ -298,7 +298,7 @@ export type Timeline = z.infer<typeof TimelineSchema>;
 
 export const WorkloadSchema = z.object({
   operations: z.record(IdSchema, OperationWorkloadSchema),
-  keys: z.record(z.string().min(1), KeyPopularitySchema),
+  keys: z.record(z.string().min(1), KeyPopularitySchema).default({}),
   /** Number of stored entities per entity type, for storage cost and capacity. */
   dataset: z.record(z.string().min(1), z.number().nonnegative()).default({}),
   /**

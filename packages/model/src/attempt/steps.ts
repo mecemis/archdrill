@@ -28,7 +28,8 @@ function outcomesGiven(step: Step, enabled: ReadonlySet<string>): readonly strin
   const declared = stepOutcomes(step);
   if (step.type !== "call") return declared;
   // A fire-and-forget publish hands the message to a local buffer: the request never sees it fail.
-  if (step.fireAndForget) return declared.filter((outcome) => outcome !== "error");
+  // So does an outbox message: it is part of the write before it, and the relay retries it.
+  if (step.fireAndForget || step.outbox) return declared.filter((outcome) => outcome !== "error");
   const conditional = CONDITIONAL_OUTCOMES[step.action];
   if (!conditional) return declared;
   return declared.filter(

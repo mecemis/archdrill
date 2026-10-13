@@ -437,3 +437,16 @@ kinds:
             costPerHour: 0
         defaultSize: quota
         notes: Providers throttle senders above their rate and deliver on a best-effort basis. One request can address many devices (multicast), which is how large groups are notified.
+      - id: card-payments
+        label: Card payments
+        description: A payment service provider (for example Stripe or Adyen) that charges and refunds cards and records every payment.
+        capabilities: [payments]
+        managedRedundancy: true
+        sizes:
+          quota:
+            label: "5,000 requests/s"
+            capacityPerSec: { read: 5000, write: 5000 }
+            latencyMs: { base: 300, cv: 0.6 }
+            costPerHour: 0
+        defaultSize: quota
+        notes: A charge takes a few hundred milliseconds and sometimes times out without saying whether it went through. Idempotency keys make repeats safe; the provider's records are the source of truth for what was charged.

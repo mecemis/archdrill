@@ -1,0 +1,167 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: publish-after-commit
+description: >-
+  The same checkout publishing order-confirmed in its own call after the
+  confirmation commits, answering 503 if the publish fails. Sound for money
+  and stock; the order and its event can disagree.
+expect:
+  s1-checkout: { minScore: 90 }
+  s3-provider-trouble: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: payments
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: shoppers, kind: client, flavor: browser, label: Shoppers }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - id: orders-api
+        kind: service
+        flavor: generic
+        label: Order service
+        size: m
+        replicas: 2
+        autoscale: { max: 20, targetUtilization: 0.7 }
+      - id: orders-db
+        kind: relational-db
+        flavor: postgres
+        label: Orders
+        size: l
+        shards: 2
+        replicas: 2
+        data: [{ entity: Order }, { entity: Reservation }, { entity: Shipment }]
+      - { id: events, kind: queue, flavor: managed-queue, label: Order events, size: on-demand }
+      - id: fulfilment
+        kind: service
+        flavor: generic
+        label: Fulfilment worker
+        size: s
+        replicas: 2
+        autoscale: { max: 10, targetUtilization: 0.7 }
+      - { id: warehouse, kind: service, flavor: generic, label: Warehouse system, size: m, replicas: 2 }
+      - { id: psp, kind: external-api, flavor: card-payments, label: Payment provider, size: quota }
+    connections:
+      - { id: shoppers--lb, from: shoppers, to: lb }
+      - { id: lb--orders-api, from: lb, to: orders-api }
+      - id: orders-api--orders-db
+        from: orders-api
+        to: orders-db
+        policy: { timeoutMs: 200 }
+      - { id: orders-api--events, from: orders-api, to: events }
+      - id: orders-api--psp
+        from: orders-api
+        to: psp
+        policy: { timeoutMs: 1500, retries: 1, circuitBreaker: true }
+      - { id: fulfilment--events, from: fulfilment, to: events }
+      - id: fulfilment--orders-db
+        from: fulfilment
+        to: orders-db
+        policy: { timeoutMs: 200 }
+      - id: fulfilment--warehouse
+        from: fulfilment
+        to: warehouse
+        policy: { timeoutMs: 1000 }
+      - id: fulfilment--psp
+        from: fulfilment
+        to: psp
+        policy: { timeoutMs: 1500, circuitBreaker: true }
+  flows:
+    - operation: place-order
+      handler: orders-api
+      root: create
+      steps:
+        create:
+          type: call
+          target: orders-db
+          action: store.insertIfAbsent
+          entity: Order
+          next: { ok: reserve, conflict: o201, error: o503 }
+        reserve:
+          type: call
+          target: orders-db
+          action: store.insert
+          entity: Reservation
+          next: { ok: charge, error: o503 }
+        charge:
+          type: call
+          target: psp
+          action: external.charge
+          idempotencyKey: true
+          next: { approved: confirm, declined: release, error: pending }
+        confirm:
+          type: call
+          target: orders-db
+          action: store.update
+          entity: Order
+          next: { ok: publish, notFound: refund, error: refund }
+        publish:
+          type: call
+          target: events
+          action: queue.publish
+          event: order-confirmed
+          next: { ok: o201, error: o503 }
+        refund:
+          type: call
+          target: psp
+          action: external.refund
+          idempotencyKey: true
+          next: { ok: o503, error: o503 }
+        release:
+          type: call
+          target: orders-db
+          action: store.delete
+          entity: Reservation
+          next: { ok: o402, error: o402 }
+        pending:
+          type: call
+          target: orders-db
+          action: store.update
+          entity: Order
+          next: { ok: o202, notFound: o202, error: o202 }
+        o201: { type: respond, status: 201 }
+        o202: { type: respond, status: 202 }
+        o402: { type: respond, status: 402 }
+        o503: { type: respond, status: 503 }
+    - operation: fulfil-order
+      handler: fulfilment
+      root: record
+      steps:
+        record:
+          type: call
+          target: orders-db
+          action: store.insertIfAbsent
+          entity: Shipment
+          next: { ok: book, conflict: f200, error: f503 }
+        book:
+          type: call
+          target: warehouse
+          action: service.call
+          next: { ok: f200, error: f503 }
+        f200: { type: respond, status: 200 }
+        f503: { type: respond, status: 503 }
+    - operation: reconcile-payments
+      handler: fulfilment
+      root: lookup
+      steps:
+        lookup:
+          type: call
+          target: psp
+          action: payments.lookup
+          next: { found: settle, notFound: settle, error: c503 }
+        settle:
+          type: call
+          target: orders-db
+          action: store.update
+          entity: Order
+          next: { ok: c200, notFound: c200, error: c503 }
+        c200: { type: respond, status: 200 }
+        c503: { type: respond, status: 503 }
+  layout:
+    shoppers: { x: 0, y: 160 }
+    lb: { x: 200, y: 160 }
+    orders-api: { x: 420, y: 160 }
+    orders-db: { x: 680, y: 40 }
+    events: { x: 680, y: 260 }
+    psp: { x: 420, y: 380 }
+    fulfilment: { x: 920, y: 260 }
+    warehouse: { x: 1140, y: 260 }

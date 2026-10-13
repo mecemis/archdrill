@@ -27,7 +27,9 @@ export type OptionalActionParam =
   | "counterShards"
   | "fireAndForget"
   | "bufferSize"
-  | "each";
+  | "each"
+  | "idempotencyKey"
+  | "outbox";
 
 export interface ActionDef {
   readonly label: string;
@@ -141,9 +143,9 @@ export const ACTIONS = {
     effect: "publish",
     outcomes: ["ok", "error"],
     params: ["event"],
-    optionalParams: ["fireAndForget", "bufferSize", "batchSize", "each"],
+    optionalParams: ["fireAndForget", "bufferSize", "batchSize", "each", "outbox"],
     description:
-      "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice. Fire-and-forget hands the message to a local buffer and continues at once: the request never waits for the queue or fails with it, and while the queue is unreachable the buffer holds messages up to its size and drops the rest. With a batch size, the buffer sends that many messages in one call.",
+      "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice. Fire-and-forget hands the message to a local buffer and continues at once: the request never waits for the queue or fails with it, and while the queue is unreachable the buffer holds messages up to its size and drops the rest. With a batch size, the buffer sends that many messages in one call. Through a transactional outbox, the message is written in the same transaction as the store write before it and relayed afterwards: it is published if and only if that write committed.",
   },
   "counter.increment": {
     label: "increment",
@@ -186,6 +188,41 @@ export const ACTIONS = {
     optionalParams: ["each", "batchSize"],
     description:
       "Ask a mobile push service to notify a device that is not connected. With a batch size, one call notifies that many devices.",
+  },
+  "external.charge": {
+    label: "charge",
+    capability: "payments",
+    effect: "write",
+    outcomes: ["approved", "declined", "error"],
+    params: [],
+    optionalParams: ["idempotencyKey"],
+    description:
+      "Ask a payment provider to charge the customer's card. With an idempotency key, the provider charges a repeated request only once and returns the first answer.",
+    unsafeToRetry:
+      "A timed-out charge may have gone through. Retried without an idempotency key, it charges the customer twice.",
+    decidedBy: { fact: "cardDeclined", outcome: "declined" },
+  },
+  "external.refund": {
+    label: "refund",
+    capability: "payments",
+    effect: "write",
+    outcomes: ["ok", "error"],
+    params: [],
+    optionalParams: ["idempotencyKey"],
+    description:
+      "Ask the payment provider to refund a charge, for example when the order cannot be confirmed.",
+    unsafeToRetry:
+      "A timed-out refund may have gone through. Retried without an idempotency key, it refunds twice.",
+  },
+  "payments.lookup": {
+    label: "look up payment",
+    capability: "payments",
+    effect: "read",
+    outcomes: ["found", "notFound", "error"],
+    params: [],
+    optionalParams: ["batchSize"],
+    description:
+      "Ask the payment provider what it recorded for an order (charged or not), for example to settle orders whose charge timed out.",
   },
   "external.check": {
     label: "check URL",

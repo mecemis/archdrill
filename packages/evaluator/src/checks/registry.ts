@@ -18,6 +18,7 @@ import { invalidationOnWrite } from "./consistency";
 import { populateAfterMiss } from "./dataflow";
 import { decisionExcludes } from "./decisions";
 import { noAcknowledgedDataLoss } from "./durability";
+import { noDualWrite } from "./events";
 import { ingressHasCapability } from "./ingress";
 import { limitsAreGlobal } from "./limits";
 import {
@@ -78,6 +79,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     idempotentConsumerWrites,
     eventConsumed,
     limitsAreGlobal,
+    noDualWrite,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -169,6 +171,8 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
     ...LOGIC_IDS.flatMap((id) => getLogic(id).decidedBy?.fact ?? []),
     ...ACTION_IDS.flatMap((id) => getAction(id).decidedBy?.fact ?? []),
     ...problem.entities.flatMap((e) => [e.existsFor, e.hotFor].filter((f) => f !== undefined)),
+    // The engine knows these without a rule in the catalog.
+    "duplicate",
   ]);
   const counts = new Set(problem.counts.map((c) => c.id));
   for (const [id, op] of Object.entries(workload.operations)) {

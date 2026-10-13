@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s2-fulfilment
+problemId: payments
+title: Fulfilment
+order: 2
+story: |
+  "A confirmed order is handed to fulfilment, which books a shipment with the
+  warehouse system. The order store and the event queue are two different
+  systems: what if the order commits and the publish fails? Or the queue is
+  down for ten minutes? The queue delivers at least once; the warehouse must
+  ship once."
+focusOperations: [place-order, fulfil-order]
+prerequisites: [s1-checkout]
+workload:
+  operations:
+    place-order:
+      entity: Order
+      classes:
+        - { id: paid, share: 0.94 }
+        - { id: declined, share: 0.05, facts: [cardDeclined] }
+        - { id: resent, share: 0.01, facts: [duplicate] }
+  environments:
+    - id: peak
+      label: Peak
+      description: Peak traffic.
+      rates: { place-order: 2000 }
+    - id: queue-down
+      label: Peak, event queue down
+      description: The event queue refuses connections at peak.
+      rates: { place-order: 2000 }
+      faults:
+        - { kind: down, target: { capability: async-buffer } }
+dimensions:
+  correctness: 0.6
+  availability: 0.25
+  scalability: 0.15
+checks:
+  - id: orders-reach-fulfilment
+    use: event-consumed
+    title: Confirmed orders reach fulfilment
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-3]
+    params: { operation: place-order, event: order-confirmed }
+    why: >-
+      A paid order that nobody hands to fulfilment never ships.
+    fix: >-
+      Publish order-confirmed and consume it in a fulfilment worker.
+
+  - id: no-dual-write
+    use: no-dual-write
+    title: An order and its event commit together
+    dimension: correctness
+    weight: 3
+    severity: major
+    requirements: [FR-3]
+    params: { operation: place-order, event: order-confirmed }
+    why: >-
+      Publishing after the commit loses the event whenever the publish fails;
+      publishing before it announces orders that may never commit. Paid orders
+      that never ship are found only by angry customers.
+    fix: >-
+      Write the event to an outbox table in the same transaction as the order,
+      and let a relay publish it.
+
+  - id: ships-once
+    use: all-success-paths-contain
+    title: A redelivered order is shipped once
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-3]
+    params:
+      operation: fulfil-order
+      statuses: [200]
+      step: { action: store.insertIfAbsent, entity: Shipment }
+    why: >-
+      The queue delivers at least once. Booking a shipment for every delivery
+      ships a redelivered order twice.
+    fix: >-
+      Record the shipment with a conditional insert keyed by the order; a
+      conflict means it was booked already.
+
+  - id: checkout-survives-queue-down
+    use: success-rate-above
+    title: Checkout keeps 99.9% while the event queue is down
+    dimension: availability
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params: { operation: place-order, environment: queue-down, min: 0.999 }
+    why: >-
+      Taking orders does not need the queue right now, only eventually.
+    fix: >-
+      With an outbox, the order commits with its event and the relay catches
+      up when the queue is back.
+
+  - id: fulfilment-keeps-up
+    use: backlog-stable
+    title: Fulfilment keeps up at peak
+    dimension: scalability
+    requirements: [FR-3]
+    params: { environment: peak }
+    why: >-
+      A fulfilment backlog delays every shipment behind it.
+    fix: >-
+      Size the fulfilment workers for peak orders.
+hints:
+  - "The order commits, then the publish fails. Which of the two does the customer's money follow?"
+  - "Can the event be written in the same transaction as the order?"
+  - "Write order-confirmed to an outbox in the order's transaction and relay it; in fulfilment, record the shipment with a conditional insert before calling the warehouse."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - The relay publishes an event and crashes before marking it sent. What happens?
+  - How would you replay a day of events into a new consumer?
+  - The warehouse call times out. Did it book the shipment?

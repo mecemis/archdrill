@@ -117,6 +117,8 @@ export const updateStep = defineCommand(
     counterShards: CallStepSchema.shape.counterShards.unwrap().nullable().optional(),
     fireAndForget: z.boolean().nullable().optional(),
     each: IdSchema.nullable().optional(),
+    idempotencyKey: z.boolean().nullable().optional(),
+    outbox: z.boolean().nullable().optional(),
     bufferSize: CallStepSchema.shape.bufferSize.unwrap().nullable().optional(),
     status: HttpStatusSchema.optional(),
   }),
@@ -154,6 +156,8 @@ const TUNABLE_PARAMS = [
   "fireAndForget",
   "bufferSize",
   "each",
+  "idempotencyKey",
+  "outbox",
 ] as const;
 type TunableParam = (typeof TUNABLE_PARAMS)[number];
 

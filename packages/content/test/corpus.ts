@@ -7,6 +7,9 @@ import chatMutants from "../problems/chat/corpus/mutants.yaml";
 import hybridFanOut from "../problems/news-feed/corpus/golden/hybrid-fan-out.yaml";
 import pushPostgres from "../problems/news-feed/corpus/golden/push-postgres.yaml";
 import newsFeedMutants from "../problems/news-feed/corpus/mutants.yaml";
+import outboxSaga from "../problems/payments/corpus/golden/outbox-saga.yaml";
+import publishAfterCommit from "../problems/payments/corpus/golden/publish-after-commit.yaml";
+import paymentsMutants from "../problems/payments/corpus/mutants.yaml";
 import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sliding-counter.yaml";
 import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
 import rateLimiterMutants from "../problems/rate-limiter/corpus/mutants.yaml";
@@ -93,5 +96,10 @@ export const corpora: readonly ProblemCorpus[] = [
     problemId: "chat",
     golden: [gatewaysAndSequences, fixedGateways].map((g) => GoldenSchema.parse(g)),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(chatMutants).mutants,
+  },
+  {
+    problemId: "payments",
+    golden: [outboxSaga, publishAfterCommit].map((g) => GoldenSchema.parse(g)),
+    mutants: z.object({ mutants: z.array(MutantSchema) }).parse(paymentsMutants).mutants,
   },
 ];

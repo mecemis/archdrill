@@ -330,6 +330,12 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
   - Beyond capacity the excess is refused like any overload.
   - Autoscaling follows whichever is fuller, so it sizes the fleet for connections.
 
+## Money and events (as built, M16)
+
+- **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.
+- **Idempotency keys.** Payment calls can carry an idempotency key. The engine treats them like any call; the evaluator stops treating their retries as unsafe.
+- **Duplicates.** Requests with the `duplicate` fact (a resent order) make a conditional insert on their key conflict.
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:

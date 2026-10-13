@@ -246,6 +246,7 @@
           }
         },
         "keys": {
+          "default": {},
           "type": "object",
           "propertyNames": {
             "type": "string",
@@ -435,6 +436,7 @@
                                 "stream-processing",
                                 "persistent-connections",
                                 "push-notifications",
+                                "payments",
                                 "external"
                               ]
                             },
@@ -504,6 +506,7 @@
                                 "stream-processing",
                                 "persistent-connections",
                                 "push-notifications",
+                                "payments",
                                 "external"
                               ]
                             },
@@ -568,6 +571,7 @@
                                 "stream-processing",
                                 "persistent-connections",
                                 "push-notifications",
+                                "payments",
                                 "external"
                               ]
                             },
@@ -632,6 +636,7 @@
                                 "stream-processing",
                                 "persistent-connections",
                                 "push-notifications",
+                                "payments",
                                 "external"
                               ]
                             },
@@ -817,6 +822,7 @@
                                 "stream-processing",
                                 "persistent-connections",
                                 "push-notifications",
+                                "payments",
                                 "external"
                               ]
                             },
@@ -897,6 +903,7 @@
                                         "stream-processing",
                                         "persistent-connections",
                                         "push-notifications",
+                                        "payments",
                                         "external"
                                       ]
                                     },
@@ -966,6 +973,7 @@
                                         "stream-processing",
                                         "persistent-connections",
                                         "push-notifications",
+                                        "payments",
                                         "external"
                                       ]
                                     },
@@ -1030,6 +1038,7 @@
                                         "stream-processing",
                                         "persistent-connections",
                                         "push-notifications",
+                                        "payments",
                                         "external"
                                       ]
                                     },
@@ -1094,6 +1103,7 @@
                                         "stream-processing",
                                         "persistent-connections",
                                         "push-notifications",
+                                        "payments",
                                         "external"
                                       ]
                                     },
@@ -1187,6 +1197,7 @@
                                     "stream-processing",
                                     "persistent-connections",
                                     "push-notifications",
+                                    "payments",
                                     "external"
                                   ]
                                 },
@@ -1280,7 +1291,7 @@
           }
         }
       },
-      "required": ["operations", "keys", "environments"]
+      "required": ["operations", "environments"]
     }
   },
   "required": [

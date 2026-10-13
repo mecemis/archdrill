@@ -18,6 +18,10 @@ import newsFeedProblem from "../problems/news-feed/problem.yaml";
 import newsFeedS1 from "../problems/news-feed/scenarios/s1-timeline.yaml";
 import newsFeedS2 from "../problems/news-feed/scenarios/s2-celebrities.yaml";
 import newsFeedS3 from "../problems/news-feed/scenarios/s3-timelines-lost.yaml";
+import paymentsProblem from "../problems/payments/problem.yaml";
+import paymentsS1 from "../problems/payments/scenarios/s1-checkout.yaml";
+import paymentsS2 from "../problems/payments/scenarios/s2-fulfilment.yaml";
+import paymentsS3 from "../problems/payments/scenarios/s3-provider-trouble.yaml";
 import rateLimiterProblem from "../problems/rate-limiter/problem.yaml";
 import rateLimiterS1 from "../problems/rate-limiter/scenarios/s1-enforce.yaml";
 import rateLimiterS2 from "../problems/rate-limiter/scenarios/s2-limiter-down.yaml";
@@ -99,6 +103,7 @@ export const problemPacks: readonly ProblemPack[] = [
   loadProblemPack(rateLimiterProblem, [rateLimiterS1, rateLimiterS2, rateLimiterS3]),
   loadProblemPack(newsFeedProblem, [newsFeedS1, newsFeedS2, newsFeedS3]),
   loadProblemPack(chatProblem, [chatS1, chatS2, chatS3]),
+  loadProblemPack(paymentsProblem, [paymentsS1, paymentsS2, paymentsS3]),
 ];
 
 export function getProblemPack(problemId: string): ProblemPack | undefined {

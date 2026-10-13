@@ -56,3 +56,12 @@ test("passes every chat scenario with gateways sized for connections", async ({ 
     await expect(page.getByTestId("scenario-score")).toHaveText("100");
   }
 });
+
+test("passes every payments scenario with an outbox and a saga", async ({ page }) => {
+  await importGolden(page, "outbox-saga", "payments");
+
+  for (const scenario of [/S1 /, /S2 /, /S3 /]) {
+    await page.getByRole("button", { name: scenario }).click();
+    await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  }
+});

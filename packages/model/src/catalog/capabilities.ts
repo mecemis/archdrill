@@ -30,6 +30,7 @@ export const CAPABILITIES = [
   "stream-processing",
   "persistent-connections",
   "push-notifications",
+  "payments",
   "external",
 ] as const;
 

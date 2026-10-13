@@ -263,6 +263,30 @@ describe("validateAttempt", () => {
     expect(issue?.severity).toBe("warning");
   });
 
+  it("accepts an outbox publish only after a transactional write", () => {
+    const behind = applyCommand(asyncAttempt(), "updateStep", {
+      operation: "create-link",
+      stepId: "publish",
+      outbox: true,
+    }).attempt;
+    const alone = applyCommand(behind, "addStep", {
+      operation: "purge-expired",
+      id: "announce",
+      step: {
+        type: "call",
+        target: "queue",
+        action: "queue.publish",
+        event: "link-created",
+        outbox: true,
+      },
+      attach: { to: "root" },
+      continueWith: { outcome: "ok" },
+    }).attempt;
+
+    expect(codes(behind)).not.toContain("step-outbox-without-transaction");
+    expect(codes(alone)).toContain("step-outbox-without-transaction");
+  });
+
   it("rejects a request waiting for other requests to fill a batch", () => {
     const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
 

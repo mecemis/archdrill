@@ -27,6 +27,10 @@ export interface CallPathStep {
   readonly bufferSize?: number;
   /** The call is made once for each of the request's items of this count, in parallel. */
   readonly each?: string;
+  /** For payments: repeats carry an idempotency key. */
+  readonly idempotencyKey?: boolean;
+  /** For publishes: written in the transaction of the store write before it, relayed afterwards. */
+  readonly outbox?: boolean;
   readonly outcome: string;
 }
 

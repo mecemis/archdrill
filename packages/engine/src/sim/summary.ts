@@ -367,7 +367,7 @@ function pathLatency(
   let total = ingressLatency;
   for (const step of path.steps) {
     // The request does not wait for a message it hands to a local buffer.
-    if (step.kind !== "call" || step.fireAndForget) continue;
+    if (step.kind !== "call" || step.fireAndForget || step.outbox) continue;
     const n = step.each === undefined ? 1 : (counts[step.each] ?? 0);
     if (n === 0) continue;
     const once = callLatency(step, inputs, hotAt(step.stepId));

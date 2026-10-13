@@ -77,6 +77,8 @@ export function enumeratePaths(
               ...(step.fireAndForget === undefined ? {} : { fireAndForget: step.fireAndForget }),
               ...(step.bufferSize === undefined ? {} : { bufferSize: step.bufferSize }),
               ...(step.each === undefined ? {} : { each: step.each }),
+              ...(step.idempotencyKey === undefined ? {} : { idempotencyKey: step.idempotencyKey }),
+              ...(step.outbox === undefined ? {} : { outbox: step.outbox }),
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };

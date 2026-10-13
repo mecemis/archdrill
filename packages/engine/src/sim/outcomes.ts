@@ -9,6 +9,9 @@ import {
 } from "@archdrill/model";
 import type { CallPathStep, PathStep } from "../paths/types";
 
+/** Requests sent again with the same key: a conditional insert finds their first copy. */
+export const DUPLICATE_FACT = "duplicate";
+
 /** Model state the outcome probabilities depend on. */
 export interface OutcomeState {
   /**
@@ -156,7 +159,8 @@ function conflictProbability(
       // Unique among generated keys, but a custom alias may already hold the code.
       return state.aliasOccupancy(entity);
     default:
-      return 0;
+      // A request sent again (same idempotency key) finds its first copy.
+      return hasFact(cls, DUPLICATE_FACT) ? 1 : 0;
   }
 }
 
@@ -173,7 +177,7 @@ export function outcomeProbability(
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
   // The request hands a fire-and-forget message to its buffer and moves on.
-  if (step.fireAndForget) return step.outcome === "ok" ? 1 : 0;
+  if (step.fireAndForget || step.outbox) return step.outcome === "ok" ? 1 : 0;
   // A batched allocation is only made once per batch, so only then can it fail.
   const once = state.callFailure(step, cls.hotKey) * (prefetches(step) ? batchShare(step) : 1);
   // A fan-out fails if any of its calls fails; with nothing to fan out over, it cannot fail.

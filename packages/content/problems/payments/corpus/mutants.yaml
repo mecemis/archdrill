@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../../schema/mutants.schema.json
+# Each mutant breaks a golden design in one specific way; CI asserts that the
+# evaluator catches it.
+mutants:
+  - id: plain-order-insert
+    base: outbox-saga
+    description: Orders are created with a plain insert, so a resent order is a new order.
+    apply:
+      - updateStep: { operation: place-order, stepId: create, action: store.insert }
+    expect:
+      scenario: s1-checkout
+      fails: [resent-recognised]
+      band: not-passing
+
+  - id: retried-without-key
+    base: outbox-saga
+    description: Charges are retried without an idempotency key.
+    apply:
+      - updateStep: { operation: place-order, stepId: charge, idempotencyKey: null }
+    expect:
+      scenario: s1-checkout
+      fails: [charges-retried-safely]
+      band: not-passing
+
+  - id: resent-charged-again
+    base: outbox-saga
+    description: A resent order carries on to the charge.
+    apply:
+      - linkOutcome: { operation: place-order, stepId: create, outcome: conflict, target: reserve }
+    expect:
+      scenario: s1-checkout
+      fails: [resent-not-charged]
+
+  - id: stock-kept-after-decline
+    base: outbox-saga
+    description: A declined card answers 402 without releasing the reservation.
+    apply:
+      - removeStep: { operation: place-order, stepId: release, bypass: ok }
+    expect:
+      scenario: s1-checkout
+      fails: [declined-released]
+
+  - id: decline-as-error
+    base: outbox-saga
+    description: A declined card answers 503.
+    apply:
+      - linkOutcome: { operation: place-order, stepId: release, outcome: ok, target: o503 }
+      - linkOutcome: { operation: place-order, stepId: release, outcome: error, target: o503 }
+    expect:
+      scenario: s1-checkout
+      fails: [declined-402]
+
+  - id: no-refund
+    base: outbox-saga
+    description: A confirmation that fails after the charge just answers 503.
+    apply:
+      - linkOutcome: { operation: place-order, stepId: confirm, outcome: error, target: o503 }
+      - linkOutcome: { operation: place-order, stepId: confirm, outcome: notFound, target: o503 }
+    expect:
+      scenario: s1-checkout
+      fails: [refund-if-unconfirmed]
+
+  - id: fulfilment-not-consumed
+    base: outbox-saga
+    description: Order events are written, but nothing fulfils them.
+    apply:
+      - removeFlow: { operation: fulfil-order }
+    expect:
+      scenario: s2-fulfilment
+      fails: [orders-reach-fulfilment]
+      band: not-passing
+
+  - id: shipped-per-delivery
+    base: outbox-saga
+    description: Fulfilment books a shipment for every delivery of the event.
+    apply:
+      - removeStep: { operation: fulfil-order, stepId: record, bypass: ok }
+    expect:
+      scenario: s2-fulfilment
+      fails: [ships-once]
+
+  - id: unknown-charge-confirmed
+    base: outbox-saga
+    description: A timed-out charge is treated as approved.
+    apply:
+      - linkOutcome: { operation: place-order, stepId: charge, outcome: error, target: confirm }
+    expect:
+      scenario: s3-provider-trouble
+      fails: [unknown-left-pending]
+      band: not-passing
+
+  - id: patient-charges
+    base: outbox-saga
+    description: Charges wait ten seconds before timing out.
+    apply:
+      - setConnectionPolicy: { id: orders-api--psp, timeoutMs: 10000 }
+    expect:
+      scenario: s3-provider-trouble
+      fails: [charge-timeout]
