@@ -23,7 +23,8 @@ Register a new pack in `packages/content/src/index.ts`, and its corpus in `packa
 ## problem.yaml
 
 - `requirements`: functional (`FR-n`) and non-functional (`NFR-n`) requirements; checks cite them.
-- `entities`: what is stored, with its key, fields and average size.
+- `entities`: what is stored, with its key, fields and average size. `ephemeral: true` marks short-lived entities (rate counters, block markers) that may live in memory-only stores. `existsFor: <fact>` says entries exist only for requests with that fact.
+- `client`: the client a new design starts with (`{ flavor: api-client, label: API clients }`; visitors in a browser by default).
 - `operations`: each with `id`, `label`, `class` (`read`/`write`), `idempotent`, `successStatuses` and `requirements`. How it starts is its `trigger`:
   - a client request (the default) needs a `method` and a `path`;
   - `{ type: event, event: link-created }` makes it a consumer of that event;

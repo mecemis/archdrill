@@ -10,6 +10,10 @@ import {
 } from "@archdrill/model";
 import type { z } from "zod";
 import catalogData from "../catalog/catalog.yaml";
+import rateLimiterProblem from "../problems/rate-limiter/problem.yaml";
+import rateLimiterS1 from "../problems/rate-limiter/scenarios/s1-enforce.yaml";
+import rateLimiterS2 from "../problems/rate-limiter/scenarios/s2-limiter-down.yaml";
+import rateLimiterS3 from "../problems/rate-limiter/scenarios/s3-rogue-client.yaml";
 import urlShortenerProblem from "../problems/url-shortener/problem.yaml";
 import urlShortenerS1 from "../problems/url-shortener/scenarios/s1-create.yaml";
 import urlShortenerS2 from "../problems/url-shortener/scenarios/s2-redirect.yaml";
@@ -84,6 +88,7 @@ export const problemPacks: readonly ProblemPack[] = [
     urlShortenerS7,
     urlShortenerS8,
   ]),
+  loadProblemPack(rateLimiterProblem, [rateLimiterS1, rateLimiterS2, rateLimiterS3]),
 ];
 
 export function getProblemPack(problemId: string): ProblemPack | undefined {

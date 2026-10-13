@@ -21,6 +21,9 @@ kinds:
       - id: mobile-app
         label: Mobile app
         description: Users of a native mobile app.
+      - id: api-client
+        label: API clients
+        description: Programs that call a public API with an API key.
 
   - id: load-balancer
     label: Load balancer
@@ -116,7 +119,7 @@ kinds:
   - id: near-cache
     label: Near cache
     description: In-process cache inside a service. No network hop, but every instance holds its own copy, so it can only be kept fresh with a short TTL.
-    capabilities: [volatile-kv, ttl]
+    capabilities: [volatile-kv, ttl, atomic-increment]
     replicable: false
     holdsData: false
     inProcess: true
@@ -155,6 +158,7 @@ kinds:
       - id: redis
         label: Redis
         description: In-memory data store with rich data types and optional replication.
+        capabilities: [atomic-increment]
         sizes:
           s:
             label: 13 GB
@@ -175,7 +179,7 @@ kinds:
             latencyMs: { base: 0.5, cv: 0.6 }
             costPerHour: 0.87
         defaultSize: m
-        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover. Counts that must survive a restart belong in a durable store, since a restart empties the cache.
+        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.

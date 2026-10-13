@@ -58,6 +58,15 @@ Most system design practice tools reward placing familiar components (a cache, a
 
 ![Write path: with 7-character random codes and a single retry, 0.2% of creates collide twice at 5-year occupancy; the finding names the conflict step, and the Decisions panel shows the recognised approach](docs/media/m3-write-path.png)
 
+## Problems
+
+| Problem | Scenarios | What it teaches |
+|---|---|---|
+| [URL Shortener](docs/problems/url-shortener.md) | S1–S8 | Unique codes, caching under Zipf popularity, outages, hot keys, failover, asynchronous work, timelines, click analytics |
+| [Distributed Rate Limiter](docs/problems/rate-limiter.md) | S1–S3 | Counting on every request, fleet-wide limits, window algorithms, failing open with a fallback, a runaway client on one shard |
+
+Switch problems from the picker in the header; each problem keeps its own design in the browser.
+
 ## Guides
 
 | Guide | Contents |

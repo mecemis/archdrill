@@ -1,6 +1,9 @@
 /// <reference path="../src/yaml.d.ts" />
 import { AttemptSchema, isCommandName } from "@archdrill/model";
 import { z } from "zod";
+import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sliding-counter.yaml";
+import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
+import rateLimiterMutants from "../problems/rate-limiter/corpus/mutants.yaml";
 import dynamodbDirect from "../problems/url-shortener/corpus/golden/dynamodb-direct.yaml";
 import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redis-cache-aside.yaml";
 import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
@@ -69,5 +72,10 @@ export const corpora: readonly ProblemCorpus[] = [
       postgresFixedFleet,
     ].map((g) => GoldenSchema.parse(g)),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(urlShortenerMutants).mutants,
+  },
+  {
+    problemId: "rate-limiter",
+    golden: [redisSlidingCounter, redisTokenBucket].map((g) => GoldenSchema.parse(g)),
+    mutants: z.object({ mutants: z.array(MutantSchema) }).parse(rateLimiterMutants).mutants,
   },
 ];

@@ -19,6 +19,7 @@ import { populateAfterMiss } from "./dataflow";
 import { decisionExcludes } from "./decisions";
 import { noAcknowledgedDataLoss } from "./durability";
 import { ingressHasCapability } from "./ingress";
+import { limitsAreGlobal } from "./limits";
 import {
   backlogStable,
   costWithinBudget,
@@ -76,6 +77,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     publishesWithoutWaiting,
     idempotentConsumerWrites,
     eventConsumed,
+    limitsAreGlobal,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

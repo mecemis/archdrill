@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=../../schema/problem.schema.json
+id: rate-limiter
+version: 1
+title: Distributed Rate Limiter
+levels: [senior, staff]
+brief: |
+  A public API platform serves its customers through a fleet of API servers.
+  Every customer calls with an API key, and every key has a limit (most keys
+  100 requests a second). A request over its key's limit gets 429 Too Many
+  Requests with a Retry-After header; every other request is handed to the
+  backend that does the work. Limits must hold across the whole fleet, the
+  limiter must cost a request almost nothing, and a broken limiter must never
+  take the API down.
+scale:
+  - { label: API requests, value: "400,000 /s avg, 1,000,000 /s peak", note: "about 2% of requests come from keys over their limit" }
+  - { label: API keys, value: "50,000 active keys", note: "a few hundred keys send most of the traffic" }
+  - { label: Limits, value: "100 requests /s per key (most keys)", note: "per-minute windows; some enterprise keys get more" }
+  - { label: API servers, value: "dozens to hundreds, autoscaled", note: "any request can land on any server" }
+requirements:
+  - { id: FR-1, kind: functional, text: "A request over its key's limit is rejected with 429 and a Retry-After header." }
+  - { id: FR-2, kind: functional, text: "Limits hold across the whole fleet: a key gets its limit, not its limit on every server." }
+  - { id: NFR-1, kind: non-functional, text: "API p99 < 50 ms server-side; the limiter adds at most a few milliseconds." }
+  - { id: NFR-2, kind: non-functional, text: "API availability 99.99%, also while the limiter's store fails." }
+  - { id: NFR-3, kind: non-functional, text: "A client far over its limit cannot overload the backend for everyone else." }
+  - { id: NFR-4, kind: non-functional, text: "Bursts at window boundaries never let a client through at more than 1.5 times its limit." }
+entities:
+  - name: ApiKey
+    key: apiKey
+    fields: [apiKey, ownerId, limitPerSecond, tier]
+    avgBytes: 200
+  - name: RateCounter
+    key: apiKey
+    fields: [apiKey, window, count]
+    avgBytes: 64
+    ephemeral: true
+  - name: Block
+    key: apiKey
+    fields: [apiKey, until]
+    avgBytes: 32
+    ephemeral: true
+    existsFor: overLimit
+operations:
+  - id: api-request
+    label: API request
+    method: GET
+    path: "/v1/{resource}"
+    class: read
+    idempotent: true
+    successStatuses: [200, 429]
+    requirements: [FR-1, FR-2, NFR-1, NFR-2, NFR-3]
+    introducedIn: s1-enforce
+client: { flavor: api-client, label: API clients }
+logic: [checkLimit, checkLocalLimit]
+decisionPoints:
+  - id: window-algorithm
+    question: How does the limiter count requests over time?
+    options:
+      - { id: fixed-window, label: Fixed window (one counter per key per minute) }
+      - { id: sliding-log, label: Sliding window log (a timestamp per request) }
+      - { id: sliding-counter, label: Sliding window counter (this and the previous window, weighted) }
+      - { id: token-bucket, label: Token bucket (tokens refill at the limit's rate) }
+    requirements: [NFR-4]
+estimates:
+  - id: counter-updates
+    question: Every request updates its key's counter. How many counter updates a second at peak?
+    kind: rate
+    answer: 1000000
+    derivation: >-
+      One update per request, allowed or not: 1,000,000 a second at peak. Even
+      the rejected requests have to be counted.
+  - id: redis-shards
+    question: >-
+      A Redis shard takes about 120,000 writes a second. How many shards keep
+      1,000,000 increments a second at 70% of capacity?
+    kind: count
+    answer: 12
+    tolerance: 1.5
+    derivation: >-
+      1,000,000 ÷ (120,000 × 0.7) ≈ 12 shards. Keys spread over shards by
+      hash, so this holds as long as no single key is hot.
+  - id: sliding-log-memory
+    question: >-
+      A sliding window log keeps every request of the last 60 seconds, about
+      100 bytes each in Redis. How much memory does it need at peak?
+    kind: bytes
+    answer: 6000000000
+    derivation: >-
+      1,000,000 requests a second × 60 seconds × 100 bytes = 6 GB, against a
+      few megabytes for counters: 50,000 keys × 2 windows × 64 bytes ≈ 6 MB.
+  - id: boundary-burst
+    question: >-
+      With fixed one-second windows and a limit of 100, how many requests can a
+      client get through in the second that straddles two windows?
+    kind: count
+    answer: 200
+    derivation: >-
+      100 at the very end of one window and 100 at the very start of the next:
+      twice the limit within one second. Sliding windows and token buckets
+      smooth this out.
+  - id: local-limit-leak
+    question: >-
+      With 400 servers each enforcing the full limit of 100 a second on its own
+      count, how many requests a second can one client get through?
+    kind: rate
+    answer: 40000
+    derivation: >-
+      400 × 100 = 40,000 a second, 400 times the limit, once its requests
+      spread over the fleet. A limit only holds if the count covers every
+      server.
+scenarios: [s1-enforce, s2-limiter-down, s3-rogue-client]

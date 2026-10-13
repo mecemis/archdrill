@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s3-rogue-client
+problemId: rate-limiter
+title: A client goes rogue
+order: 3
+story: |
+  "A customer's script goes into a loop: one key sends 300,000 requests a
+  second, three thousand times its limit. Every one of them gets a 429, so the
+  backend is safe. Or is it? Every 429 still costs an increment on the one
+  Redis key that counts this client."
+focusOperations: [api-request]
+prerequisites: [s1-enforce]
+workload:
+  operations:
+    api-request:
+      entity: ApiKey
+      classes:
+        - { id: within, share: 0.68 }
+        - { id: over, share: 0.02, facts: [overLimit] }
+        - { id: runaway, share: 0.3, hotKey: true, facts: [overLimit, farOverLimit] }
+  keys:
+    ApiKey:
+      existing: { distribution: zipf, s: 1.1, population: 50000 }
+  environments:
+    - id: runaway
+      label: A runaway client
+      description: Peak traffic, and one key sends 300,000 requests a second.
+      rates: { api-request: 1000000 }
+dimensions:
+  scalability: 0.4
+  availability: 0.35
+  latency: 0.25
+checks:
+  - id: headroom-runaway
+    use: utilization-below
+    title: Nothing runs above 85% with a runaway client
+    dimension: scalability
+    weight: 3
+    severity: major
+    requirements: [NFR-3]
+    params: { environment: runaway, max: 0.85 }
+    why: >-
+      All 300,000 increments a second land on the one shard that holds the
+      runaway key. More shards do not help: it is one key.
+    fix: >-
+      Once a key is over its limit, remember that on each server for a moment
+      (a block with a short TTL) and reject its requests without counting
+      them.
+
+  - id: others-unaffected
+    use: success-rate-above
+    title: Everyone else keeps 99.99% with a runaway client
+    dimension: availability
+    weight: 2
+    requirements: [NFR-2, NFR-3]
+    params: { operation: api-request, environment: runaway, min: 0.9999 }
+    why: >-
+      The keys that share the runaway key's shard time out with it. A noisy
+      neighbour becomes everyone's outage.
+    fix: >-
+      Keep the runaway key off the shared store, and keep the backend sized for
+      allowed traffic only.
+
+  - id: others-fast
+    use: latency-below
+    title: API p99 stays under 50 ms with a runaway client
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: api-request, environment: runaway, percentile: p99, ms: 50 }
+    why: >-
+      Requests whose keys share the hot shard queue behind the runaway client.
+    fix: >-
+      Reject a blocked key locally, before it reaches the counter store.
+hints:
+  - "Which component sees all 300,000 of the runaway client's requests, even though every one of them is rejected?"
+  - "Once you know a key is over its limit, do you need to count its next request to reject it?"
+  - "Look up a block marker in an in-process cache before counting; when a key goes over, store a block with a one-second TTL."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - The block lasts a second. What does the client see, and what Retry-After do you send?
+  - How would you rate-limit at the edge (a CDN or load balancer) before requests reach your servers?
+  - Should a client that keeps hammering after 429s be blocked for longer?

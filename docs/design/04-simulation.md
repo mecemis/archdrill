@@ -305,6 +305,14 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
 - **Increments and duplicates.** Increments write like any other write; a dedupe step's conflict outcome has probability zero in steady state. Whether a redelivered message counts twice is a property of the flow, which the evaluator checks.
 - **Stream processors.** Flink-like processors only take messages from a queue, and are sized for small messages with per-key state (100,000 a second per 8 vCPU).
 
+## Facts and existence (as built, M12–M13)
+
+- **Facts decide outcomes.** A request class carries facts (`expired`, `overLimit`, …). A logic step or a call with two answers names the fact that decides it, so new problems add logic without engine changes.
+- **Existence per entity.** Whether an entry exists for a request is the class's `exists`, unless the entity names a fact (`existsFor`). A block marker exists only for clients over their limit, so lookups for everyone else miss.
+- **The hot key needs writes.** A hot key stays cached only while its misses write it back. The engine counts the writes that land and lowers the hot key's hit ratio when they stop, with h_eff = h·f / (h·f + 1 − h) for a share f of misses that write.
+  - Environments judge the first five minutes of a fault. An entry whose TTL is long against that (an hour-long link entry) persists from before the fault without writes.
+  - A one-second block marker does not persist. While the counter store is down, a rate limiter cannot rely on blocks it can no longer write.
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:

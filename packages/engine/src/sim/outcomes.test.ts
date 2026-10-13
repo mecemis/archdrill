@@ -12,6 +12,7 @@ const state: OutcomeState = {
   negativeHitRatio: () => 0,
   occupancy: () => OCCUPANCY,
   aliasOccupancy: () => ALIAS_OCCUPANCY,
+  exists: (_entity, cls) => cls.exists,
 };
 
 const generated: RequestClass = {

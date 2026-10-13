@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s2-limiter-down
+problemId: rate-limiter
+title: When the limiter fails
+order: 2
+story: |
+  "The Redis cluster behind the limiter goes down, or worse, it hangs. The API
+  must stay up: 99.99%. But a scraper that sends a thousand times its limit
+  does not stop because our limiter did. What do your servers do when they
+  cannot count?"
+focusOperations: [api-request]
+prerequisites: [s1-enforce]
+workload:
+  operations:
+    api-request:
+      entity: ApiKey
+      classes:
+        - { id: within, share: 0.98 }
+        - { id: over, share: 0.02, facts: [overLimit] }
+        - { id: scraper, share: 0, hotKey: true, facts: [overLimit, farOverLimit] }
+  keys:
+    ApiKey:
+      existing: { distribution: zipf, s: 1.1, population: 50000 }
+  environments:
+    - id: store-down
+      label: Peak, counter store down
+      description: The counter store refuses connections.
+      rates: { api-request: 1000000 }
+      faults:
+        - { kind: down, target: { capability: atomic-increment, kind: cache } }
+    - id: store-hanging
+      label: Peak, counter store hanging
+      description: The counter store accepts connections and never answers.
+      rates: { api-request: 1000000 }
+      faults:
+        - { kind: down, target: { capability: atomic-increment, kind: cache }, mode: hang }
+    - id: scraper-while-down
+      label: A scraper while the store is down
+      description: >-
+        The counter store is down at peak, and on top of the usual traffic one
+        key sends 500,000 requests a second, thousands of times its limit.
+      rates: { api-request: 1500000 }
+      classShares:
+        api-request: { within: 0.653, over: 0.014, scraper: 0.333 }
+      faults:
+        - { kind: down, target: { capability: atomic-increment, kind: cache } }
+dimensions:
+  availability: 0.5
+  latency: 0.3
+  correctness: 0.2
+checks:
+  - id: api-survives-store-down
+    use: success-rate-above
+    title: The API keeps 99.99% while the counter store is down
+    dimension: availability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: api-request, environment: store-down, min: 0.9999 }
+    why: >-
+      The limiter protects the API; it must not become the reason the API is
+      down. Rejecting everything when the counter is unavailable (failing
+      closed) turns a Redis outage into a full outage.
+    fix: >-
+      Fail open: when the counter store errors, let the request through, or
+      fall back to a count on the server itself.
+
+  - id: api-fast-store-hanging
+    use: latency-below
+    title: API p99 stays under 50 ms while the counter store hangs
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1, NFR-2]
+    params: { operation: api-request, environment: store-hanging, percentile: p99, ms: 50 }
+    why: >-
+      A hanging store holds every request that waits for it. Without a short
+      timeout, each one waits for the client's default.
+    fix: >-
+      Give counter calls a timeout of a few milliseconds, and a circuit
+      breaker that stops calling a store that keeps failing.
+
+  - id: counter-timeout
+    use: dependency-timeout-bounded
+    title: Counter calls time out within 10 ms
+    dimension: latency
+    requirements: [NFR-1]
+    params: { capability: atomic-increment, maxMs: 10 }
+    why: >-
+      The count is worth a few milliseconds at most; past that, failing open
+      is better than waiting.
+    fix: >-
+      Set a timeout of 5 to 10 ms on calls to the counter store.
+
+  - id: backend-protected
+    use: success-rate-above
+    title: A scraper cannot take the API down while the store is down
+    dimension: availability
+    weight: 2
+    severity: major
+    requirements: [NFR-3]
+    params: { operation: api-request, environment: scraper-while-down, min: 0.999 }
+    why: >-
+      Failing open without any limit hands a scraper the backend. Every
+      client then shares its overload.
+    fix: >-
+      When the shared count is unavailable, fall back to a count on each
+      server against the limit divided by the number of servers. It is
+      approximate, but it stops clients far over their limit.
+
+  - id: fallback-limits
+    use: limits-are-global
+    title: Server-local counts are only a fallback
+    dimension: correctness
+    weight: 2
+    requirements: [FR-2]
+    params: { operation: api-request, entity: RateCounter }
+    why: >-
+      A server's own count is a fine stand-in while the shared count fails, and
+      a bad limit the rest of the time.
+    fix: >-
+      Decide on the local count only on the path where the shared counter
+      returned an error.
+
+  - id: breaker-on-counter
+    use: circuit-breaker-on-dependency
+    title: A circuit breaker guards the counter store
+    dimension: latency
+    signal: senior
+    requirements: [NFR-1]
+    params: { capability: atomic-increment }
+    why: >-
+      A breaker stops paying the timeout on every request once the store is
+      known to be down.
+    fix: >-
+      Put a circuit breaker on the connection to the counter store.
+hints:
+  - "What should a request do when the counter store does not answer: wait, fail, or go through?"
+  - "If every request goes through while Redis is down, what happens when a scraper notices?"
+  - "Time out counter calls after a few milliseconds behind a circuit breaker, and on an error count on the server itself against the limit divided by the number of servers."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Your fallback divides the limit by the number of servers. What happens when the fleet autoscales?
+  - Which clients should be allowed to fail closed, for example for paid quotas that are billed?
+  - How would you know the limiter has been failing open for an hour?

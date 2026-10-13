@@ -18,6 +18,17 @@ export const EntitySchema = z.object({
   key: z.string().min(1),
   fields: z.array(z.string().min(1)).min(1),
   avgBytes: z.number().int().positive(),
+  /**
+   * Kept only briefly (a rate counter, a block marker), so a store that keeps
+   * data in memory only is a fine place for it.
+   */
+  ephemeral: z.boolean().default(false),
+  /**
+   * Entries exist only for requests with this fact: a block marker exists
+   * only for clients over their limit. Without it, the request class's
+   * `exists` decides.
+   */
+  existsFor: IdSchema.optional(),
 });
 export type Entity = z.infer<typeof EntitySchema>;
 
@@ -90,6 +101,10 @@ export const ProblemSchema = z
     operations: z.array(OperationSchema).min(1),
     events: z.array(EventSchema).default([]),
     decisionPoints: z.array(DecisionPointSchema).default([]),
+    /** Where traffic comes from: the client a new design starts with. */
+    client: z
+      .object({ flavor: IdSchema, label: z.string().min(1) })
+      .default({ flavor: "browser", label: "Visitors" }),
     /** Local decisions a handler can make in this problem; empty offers every one. */
     logic: z.array(LogicIdSchema).default([]),
     /** Back-of-envelope questions for the estimation gym. */

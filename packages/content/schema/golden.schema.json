@@ -251,6 +251,7 @@
                             "store.delete",
                             "queue.publish",
                             "counter.increment",
+                            "service.call",
                             "external.check",
                             "ids.allocate",
                             "coord.leaseRange"
@@ -328,6 +329,8 @@
                             "hashUrl",
                             "rehashWithSalt",
                             "encodeBase62",
+                            "checkLimit",
+                            "checkLocalLimit",
                             "obfuscateId"
                           ]
                         },

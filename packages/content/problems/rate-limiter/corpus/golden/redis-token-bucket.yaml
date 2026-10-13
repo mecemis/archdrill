@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: redis-token-bucket
+description: >-
+  The same fleet with a token bucket per key in Redis and no block marker:
+  every request, rejected or not, is counted in Redis. When Redis fails, the
+  server counts on its own against the limit divided by the fleet. Valid at
+  peak and through an outage, but a runaway client saturates the shard that
+  holds its key.
+expect:
+  s1-enforce: { minScore: 90 }
+  s2-limiter-down: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: rate-limiter
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: clients, kind: client, flavor: api-client, label: API clients }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - id: api
+        kind: service
+        flavor: generic
+        label: API servers
+        size: l
+        replicas: 20
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: local, kind: near-cache, flavor: in-process-lru, label: Local state, size: s }
+      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 12, replicas: 2 }
+      - id: backend
+        kind: service
+        flavor: generic
+        label: Backend
+        size: l
+        replicas: 20
+        autoscale: { max: 90, targetUtilization: 0.7 }
+    connections:
+      - { id: clients--lb, from: clients, to: lb }
+      - { id: lb--api, from: lb, to: api }
+      - { id: api--local, from: api, to: local }
+      - id: api--redis
+        from: api
+        to: redis
+        policy: { timeoutMs: 5, circuitBreaker: true }
+      - id: api--backend
+        from: api
+        to: backend
+        policy: { timeoutMs: 500 }
+  flows:
+    - operation: api-request
+      handler: api
+      root: count
+      steps:
+        count:
+          type: call
+          target: redis
+          action: counter.increment
+          entity: RateCounter
+          next: { ok: check, error: local-count }
+        check:
+          type: logic
+          logic: checkLimit
+          next: { under: forward, over: r429 }
+        local-count:
+          type: call
+          target: local
+          action: counter.increment
+          entity: RateCounter
+          next: { ok: local-check, error: r429 }
+        local-check:
+          type: logic
+          logic: checkLocalLimit
+          next: { under: forward, over: r429 }
+        forward:
+          type: call
+          target: backend
+          action: service.call
+          next: { ok: r200, error: r503 }
+        r200: { type: respond, status: 200 }
+        r429: { type: respond, status: 429 }
+        r503: { type: respond, status: 503 }
+  decisions:
+    window-algorithm: token-bucket
+  layout:
+    clients: { x: 0, y: 120 }
+    lb: { x: 220, y: 120 }
+    api: { x: 440, y: 120 }
+    local: { x: 440, y: -40 }
+    redis: { x: 700, y: 0 }
+    backend: { x: 700, y: 220 }

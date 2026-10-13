@@ -5,6 +5,7 @@ import {
   type CommandName,
   type CommandReturn,
   emptyAttempt,
+  type Problem,
 } from "@archdrill/model";
 import { applyPatches, type Patch, produceWithPatches } from "immer";
 import { ZodError } from "zod";
@@ -47,12 +48,13 @@ export interface AttemptState {
 }
 
 /** A new attempt starts with a client, because every operation needs somewhere for traffic to come from. */
-export function starterAttempt(problemId: string, problemVersion: number): Attempt {
-  const result = applyCommand(emptyAttempt(problemId, problemVersion), "addComponent", {
-    id: "visitors",
+/** A new design: the problem's client, ready to be connected. */
+export function starterAttempt(problem: Problem): Attempt {
+  const result = applyCommand(emptyAttempt(problem.id, problem.version), "addComponent", {
+    id: problem.client.flavor === "browser" ? "visitors" : "clients",
     kind: "client",
-    flavor: "browser",
-    label: "Visitors",
+    flavor: problem.client.flavor,
+    label: problem.client.label,
     position: { x: 0, y: 160 },
   });
   return result.attempt;
