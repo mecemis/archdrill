@@ -2,6 +2,7 @@ import type { DecisionPoint } from "@archdrill/model";
 import { activePack } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
+import { useUi } from "../state/ui-store";
 import { SectionTitle } from "../ui/primitives";
 
 /** Decisions the workloads read, so the UI can say a choice changes the numbers. */
@@ -27,11 +28,15 @@ export function DecisionsPanel() {
 
 function Decision({ point }: { readonly point: DecisionPoint }) {
   const chosen = useAttemptStore((s) => s.attempt.decisions[point.id]);
+  // A finding about this decision is hovered or pinned.
+  const highlighted = useUi((s) => (s.hover ?? s.pinned?.highlight)?.decisions.has(point.id));
   const dispatch = useAttemptStore((s) => s.dispatch);
   const implemented = useImplementedStrategy(point.id);
   const assumed = point.options.find((o) => o.id === point.default);
   return (
-    <fieldset className="flex flex-col gap-1.5">
+    <fieldset
+      className={`flex flex-col gap-1.5 rounded-md ${highlighted ? "bg-amber-50 p-2 ring-2 ring-amber-400" : ""}`}
+    >
       <legend className="mb-1">
         <SectionTitle>{point.question}</SectionTitle>
       </legend>

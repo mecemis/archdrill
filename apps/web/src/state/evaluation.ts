@@ -1,7 +1,9 @@
 import type { Analysis, EnvironmentMetrics, OperationAnalysis } from "@archdrill/engine";
 import { type AttemptEvaluation, type Evidence, evaluateAttempt } from "@archdrill/evaluator";
 import type { Attempt } from "@archdrill/model";
+import { create } from "zustand";
 import { activePack, catalogIndex } from "./content";
+import { createWorkerClient, type EvaluationReply } from "./evaluation-client";
 import { useAttemptStore } from "./store";
 import { type Highlight, useUi } from "./ui-store";
 
@@ -27,8 +29,69 @@ export function evaluate(attempt: Attempt): AttemptEvaluation {
   return cached.evaluation;
 }
 
+interface EvaluationState {
+  /** The newest evaluation the worker returned, and the version of the design it belongs to. */
+  readonly latest: { readonly attempt: Attempt; readonly evaluation: AttemptEvaluation } | null;
+  /** True while the results shown belong to an older version of the design. */
+  readonly pending: boolean;
+  /** How long the worker took for the latest evaluation. */
+  readonly durationMs: number | null;
+}
+
+export const useEvaluationStore = create<EvaluationState>(() => ({
+  latest: null,
+  pending: false,
+  durationMs: null,
+}));
+
+function accept(attempt: Attempt, reply: EvaluationReply): void {
+  let evaluation: AttemptEvaluation;
+  if (reply.error === undefined) {
+    evaluation = reply.evaluation;
+  } else {
+    // Results must never go silently stale: evaluate on the main thread instead.
+    console.error(`Evaluation failed in the worker: ${reply.error}`);
+    evaluation = evaluate(attempt);
+  }
+  useEvaluationStore.setState({
+    latest: { attempt, evaluation },
+    pending: !sameEvaluationInputs(attempt, useAttemptStore.getState().attempt),
+    durationMs: reply.error === undefined ? reply.durationMs : null,
+  });
+}
+
+/**
+ * Edits are evaluated in a worker, so the canvas never waits for the
+ * simulation; until a new result arrives, the previous one stays on screen,
+ * marked as updating. Where workers are missing (tests), evaluation runs
+ * synchronously on render.
+ */
+const client = createWorkerClient(accept);
+
+if (client) {
+  const initial = useAttemptStore.getState().attempt;
+  useEvaluationStore.setState({ latest: { attempt: initial, evaluation: evaluate(initial) } });
+  useAttemptStore.subscribe((state, previous) => {
+    if (state.attempt === previous.attempt) return;
+    const latest = useEvaluationStore.getState().latest;
+    if (latest && sameEvaluationInputs(latest.attempt, state.attempt)) {
+      useEvaluationStore.setState({ pending: false });
+      return;
+    }
+    useEvaluationStore.setState({ pending: true });
+    client.request(state.attempt);
+  });
+}
+
 export function useEvaluation(): AttemptEvaluation {
-  return evaluate(useAttemptStore((s) => s.attempt));
+  const attempt = useAttemptStore((s) => s.attempt);
+  const latest = useEvaluationStore((s) => s.latest);
+  return latest?.evaluation ?? evaluate(attempt);
+}
+
+/** Whether the results on screen are about to be replaced by those of a newer edit. */
+export function useEvaluationPending(): boolean {
+  return useEvaluationStore((s) => s.pending);
 }
 
 export function highlightFromEvidence(
@@ -38,7 +101,9 @@ export function highlightFromEvidence(
   const components = new Set<string>();
   const connections = new Set<string>();
   const steps = new Set<string>();
+  const decisions = new Set<string>();
   for (const item of evidence) {
+    if (item.type === "decision") decisions.add(item.decision);
     if (item.type === "component") components.add(item.componentId);
     if (item.type === "connection") connections.add(item.connectionId);
     if (item.type === "step") steps.add(item.stepId);
@@ -50,7 +115,7 @@ export function highlightFromEvidence(
       for (const step of path.steps) steps.add(step.stepId);
     }
   }
-  return { components, connections, steps };
+  return { components, connections, steps, decisions };
 }
 
 export function highlightFromPath(op: OperationAnalysis, pathId: string): Highlight {
@@ -59,6 +124,7 @@ export function highlightFromPath(op: OperationAnalysis, pathId: string): Highli
     components: new Set(path?.components ?? []),
     connections: new Set(path?.connections ?? []),
     steps: new Set(path?.steps.map((s) => s.stepId) ?? []),
+    decisions: new Set(),
   };
 }
 

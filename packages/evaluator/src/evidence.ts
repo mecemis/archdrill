@@ -8,4 +8,6 @@ export type Evidence =
       readonly stepId: string;
       readonly outcome?: string;
     }
-  | { readonly type: "path"; readonly operation: string; readonly pathId: string };
+  | { readonly type: "path"; readonly operation: string; readonly pathId: string }
+  /** A decision under Decisions, for findings about trade-offs a diagram cannot show. */
+  | { readonly type: "decision"; readonly decision: string };

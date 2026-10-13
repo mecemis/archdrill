@@ -9,3 +9,5 @@ coverage/
 !.env.example
 playwright-report/
 test-results/
+packages/content/report/out/
+dist-e2e/

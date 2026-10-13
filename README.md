@@ -4,7 +4,7 @@ Scenario-based system design practice with deterministic simulation and evaluati
 
 You design **one architecture** for a problem, then drive it through **scenarios**: write path, read path, caching, peak traffic, failures, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. The analysis covers paths, data flow, configuration, and simulated load and faults, and every finding points at the part of the canvas that caused it.
 
-> **Status:** milestones M1 to M6 are complete: walking skeleton, analytic simulation, write path and strategies, faults, timeouts and retries, scale (hot keys, near caches, autoscaling), and asynchronous work (queues, consumers, scheduled jobs, a third-party API). Seven URL Shortener scenarios run end to end (write path, read path, caching, cache outage and invalidation, peak traffic and hot keys, dependency failure, edge cases): design, record, analyse, simulate, score, explain. See the [roadmap](docs/design/07-roadmap.md).
+> **Status:** milestones M1 to M7 are complete: walking skeleton, analytic simulation, write path and strategies, faults, timeouts and retries, scale (hot keys, near caches, autoscaling), asynchronous work (queues, consumers, scheduled jobs, a third-party API), and hardening (evaluation in a worker, budgets, reports and browser tests in CI). Seven URL Shortener scenarios run end to end (write path, read path, caching, cache outage and invalidation, peak traffic and hot keys, dependency failure, edge cases): design, record, analyse, simulate, score, explain. See the [roadmap](docs/design/07-roadmap.md).
 
 ![A gate finding: the cache-miss path answers 302 without reading the store; the offending path is highlighted on the canvas and in the step tree](docs/media/m1-gate-finding.png)
 
@@ -40,9 +40,10 @@ Most system design practice tools reward placing familiar components (a cache, a
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Working across scenarios:** a change that lowers another scenario's score raises a warning on that scenario's tab; a pinned baseline shows how every score moved and what changed; debriefs pose the follow-up questions once a scenario passes; designs export and import as JSON, upgraded by versioned migrations.
 - **Tests:**
-  - over 440 unit, integration and property tests;
+  - over 450 unit, integration and property tests, including the product's success criteria;
   - a golden corpus of seven valid designs and sixty-six mutants that CI must catch;
-  - Playwright tests that walk the core loop in a real browser.
+  - Playwright tests that walk the core loop in a real browser, and run the production build under its security headers;
+  - a corpus report and an evaluation-time budget published by CI.
 
 ![Load view at peak: utilisation on every component, request rates on connections, and the cost breakdown](docs/media/m2-load.png)
 
@@ -53,6 +54,14 @@ Most system design practice tools reward placing familiar components (a cache, a
 ![Cache outage: Redis hangs, the redirect service sheds load at its 60,000 calls/s bulkhead, so redirects degrade to 20% while link creation on the same database stays at 100%](docs/media/m4-cache-outage.png)
 
 ![Write path: with 7-character random codes and a single retry, 0.2% of creates collide twice at 5-year occupancy; the finding names the conflict step, and the Decisions panel shows the recognised approach](docs/media/m3-write-path.png)
+
+## Guides
+
+| Guide | Contents |
+|---|---|
+| [How scoring works](docs/guides/scoring.md) | Checks, dimensions, gates and caps, bands, signals |
+| [About the model](docs/guides/model.md) | What the simulation computes, what it assumes, and when numbers are approximate |
+| [Authoring a problem pack](docs/guides/authoring.md) (draft) | Problems, scenarios, workloads, checks, golden designs and mutants |
 
 ## Design documents
 
@@ -77,6 +86,16 @@ pnpm install
 pnpm dev         # web app on http://localhost:5173
 pnpm test        # unit, integration and corpus tests (Vitest)
 pnpm e2e         # browser tests (Playwright; uses the installed Chrome locally)
+pnpm report      # corpus report and the evaluation-time budget (Markdown in packages/content/report/out)
 pnpm check       # Biome lint/format check + TypeScript
 pnpm build       # production build
 ```
+
+### Deployment
+
+The web app is a static site. `.github/workflows/deploy.yml` builds it and deploys `apps/web/dist` to Cloudflare Pages on every push to `main`, with the response headers in `apps/web/public/_headers` (a strict content security policy and long caching for hashed assets). A Playwright test runs the production build under those headers. To enable it:
+
+1. Create the Pages project once: `pnpm dlx wrangler pages project create <name> --production-branch=main`.
+2. In the repository settings, add the variable `CLOUDFLARE_PAGES_PROJECT` (the project name) and the secrets `CLOUDFLARE_API_TOKEN` (with *Cloudflare Pages: Edit*) and `CLOUDFLARE_ACCOUNT_ID`.
+
+Until then the workflow is skipped.

@@ -1,5 +1,8 @@
 import { ACTIONS, type RequestClass } from "@archdrill/model";
-import type { CallPathStep, Path } from "../paths/types";
+import type { CallPathStep, Path, PathStep } from "../paths/types";
+
+const NO_STEPS: readonly PathStep[] = [];
+
 import type { CallModel } from "./calls";
 import { NETWORK_RTT_MS } from "./calls";
 import { type ComponentProfile, HOURS_PER_MONTH, SECONDS_PER_MONTH } from "./capacity";
@@ -342,10 +345,16 @@ export function pathProbability(
   state: OutcomeState,
 ): number {
   let probability = 1;
-  path.steps.forEach((step, index) => {
-    if (probability === 0) return;
-    probability *= outcomeProbability(step, cls, state, path.steps.slice(0, index));
-  });
+  const steps = path.steps;
+  for (let index = 0; index < steps.length && probability > 0; index++) {
+    const step = steps[index] as PathStep;
+    // Only a conditional insert looks back along the path (where its key came from).
+    const prior =
+      step.kind === "call" && step.action === "store.insertIfAbsent"
+        ? steps.slice(0, index)
+        : NO_STEPS;
+    probability *= outcomeProbability(step, cls, state, prior);
+  }
   return probability;
 }
 

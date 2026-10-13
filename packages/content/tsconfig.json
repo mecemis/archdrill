@@ -4,5 +4,12 @@
     // Vite's native config loader needs explicit extensions on relative imports.
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "vite-plugin.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "report",
+    "vite-plugin.ts",
+    "vitest.config.ts",
+    "vitest.report.config.ts"
+  ]
 }

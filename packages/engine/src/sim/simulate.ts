@@ -45,8 +45,15 @@ export { OVERLOAD_WAIT_MS } from "./summary";
 
 const MAX_ITERATIONS = 200;
 const TOLERANCE = 1e-7;
-/** Iterations that warm the caches before the fixed point starts. */
+/** Iterations that warm the caches before the fixed point starts, at most. */
 const WARM_UP_ITERATIONS = 40;
+/** Warm enough: the fixed point finishes relaxing the caches anyway. */
+const WARM_UP_TOLERANCE = 1e-4;
+/**
+ * Below this utilisation at a cold start, nothing is close enough to
+ * capacity for retries to tip it over, so the shock test can be skipped.
+ */
+const SHOCK_UTILIZATION = 0.8;
 
 /** Damping per iteration: strong feedback (breakers, overload) needs smaller steps if it has not settled. */
 function dampingAt(iteration: number): number {
@@ -109,8 +116,23 @@ const instancesIn =
 function warmCaches(model: Model, fixtures: Fixtures): void {
   const instances = instancesIn(profilesOf(model, fixtures));
   for (let i = 0; i < WARM_UP_ITERATIONS; i++) {
-    relaxCaches(fixtures.caches, propagateModel(model, fixtures), model.loop, 0.5, instances);
+    const flow = propagateModel(model, fixtures);
+    if (relaxCaches(fixtures.caches, flow, model.loop, 0.5, instances) < WARM_UP_TOLERANCE) return;
   }
+}
+
+/**
+ * Whether a cold start brings any component near capacity. Caches only warm
+ * from there and autoscaling only adds instances, so a design that stays well
+ * below capacity with every cache empty cannot be tipped into overload by it.
+ */
+function nearCapacityWhenCold(fixtures: Fixtures): boolean {
+  const cold = createModel(fixtures);
+  const profiles = profilesOf(cold, fixtures);
+  const flow = propagateModel(cold, fixtures);
+  return [...profiles].some(
+    ([id, profile]) => utilizationOf(flow.loads.get(id), profile) > SHOCK_UTILIZATION,
+  );
 }
 
 function solve(model: Model, fixtures: Fixtures): { converged: boolean; iterations: number } {
@@ -144,6 +166,7 @@ function shockTest(
   healthyProfiles: ReadonlyMap<string, ComponentProfile>,
 ): MetastableComponent[] {
   if (!fixtures.connections.some((c) => c.policy.retries > 0)) return [];
+  if (!nearCapacityWhenCold(fixtures)) return [];
   const shocked = createModel(fixtures);
   // An unsettled cold solve proves nothing either way.
   if (!solve(shocked, fixtures).converged) return [];
@@ -305,15 +328,20 @@ function relaxConnections(
   damping: number,
 ): number {
   let delta = 0;
+  // Several callers may time out on the same target; its latency is the same for all.
+  const latencies = new Map<string, ReturnType<typeof componentLatency>>();
+  const latencyOf = (id: string, profile: ComponentProfile) => {
+    const known = latencies.get(id);
+    if (known) return known;
+    const latency = componentLatency(flow.loads.get(id), profile, flow.hotLoads.get(id));
+    latencies.set(id, latency);
+    return latency;
+  };
   for (const connection of connections) {
     const { timeoutMs, maxRps } = connection.policy;
     const profile = profiles.get(connection.to);
     if (timeoutMs !== undefined && profile) {
-      const latency = componentLatency(
-        flow.loads.get(connection.to),
-        profile,
-        flow.hotLoads.get(connection.to),
-      );
+      const latency = latencyOf(connection.to, profile);
       delta = Math.max(
         delta,
         relax(loop.timedOut, connection.id, timeoutShare(latency, timeoutMs), damping),

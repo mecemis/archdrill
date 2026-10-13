@@ -50,6 +50,7 @@ describe("projection", () => {
       components: new Set(["db"]),
       connections: new Set<string>(),
       steps: new Set<string>(),
+      decisions: new Set<string>(),
     };
     const nodes = projectNodes(inputFor(undefined, { highlight }));
 
@@ -86,5 +87,17 @@ describe("projection", () => {
     const nodes = projectNodes(inputFor(attempt));
 
     expect(nodes.find((n) => n.id === "lb")?.data.hasError).toBe(true);
+  });
+
+  it("leaves the canvas alone for a finding about a decision", () => {
+    const highlight = {
+      components: new Set<string>(),
+      connections: new Set<string>(),
+      steps: new Set<string>(),
+      decisions: new Set(["code-reuse"]),
+    };
+    const nodes = projectNodes(inputFor(undefined, { highlight }));
+
+    expect(nodes.every((n) => n.data.emphasis === "normal")).toBe(true);
   });
 });

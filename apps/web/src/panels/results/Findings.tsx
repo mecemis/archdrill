@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { highlightFromEvidence } from "../../state/evaluation";
-import { useUi } from "../../state/ui-store";
+import { type Highlight, useUi } from "../../state/ui-store";
 
 const SEVERITY_ORDER = { critical: 0, major: 1, minor: 2 } as const;
 
@@ -71,6 +71,10 @@ export function Findings({
       )}
     </div>
   );
+}
+
+function onCanvas(highlight: Highlight): boolean {
+  return highlight.components.size + highlight.connections.size + highlight.steps.size > 0;
 }
 
 function FindingCard({
@@ -135,10 +139,15 @@ function FindingCard({
         {highlight && (
           <button
             type="button"
-            onClick={() => togglePin(check.instance.id, highlight)}
+            onClick={() => {
+              togglePin(check.instance.id, highlight);
+              // Trade-offs live under Decisions, not on the canvas.
+              if (!pinned && highlight.decisions.size > 0)
+                useUi.getState().setRightTab("decisions");
+            }}
             aria-pressed={pinned}
-            aria-label="Show on canvas"
-            title="Show on canvas"
+            aria-label={onCanvas(highlight) ? "Show on canvas" : "Show under Decisions"}
+            title={onCanvas(highlight) ? "Show on canvas" : "Show under Decisions"}
             className={`rounded p-1 ${pinned ? "bg-amber-100 text-amber-900" : "text-zinc-500 hover:bg-zinc-100"}`}
           >
             <Crosshair className="h-4 w-4" />

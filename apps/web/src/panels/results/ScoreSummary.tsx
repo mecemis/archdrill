@@ -1,5 +1,6 @@
 import type { Readiness, ScenarioResult } from "@archdrill/evaluator";
 import { activePack } from "../../state/content";
+import { useEvaluationPending } from "../../state/evaluation";
 
 const BAND_STYLES = {
   "not-passing": { label: "Not passing", className: "bg-rose-100 text-rose-800" },
@@ -27,6 +28,7 @@ function titleCase(id: string): string {
 }
 
 export function ScoreSummary({ result }: { readonly result: ScenarioResult | undefined }) {
+  const pending = useEvaluationPending();
   if (!result) return null;
   if (result.status === "invalid") {
     return (
@@ -72,6 +74,9 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
         </span>
         <span className={`rounded-full px-2.5 py-0.5 text-sm font-semibold ${band.className}`}>
           {band.label}
+        </span>
+        <span className="text-xs text-zinc-500" aria-live="polite">
+          {pending ? "Updating…" : ""}
         </span>
       </div>
       {scorecard.cap && (

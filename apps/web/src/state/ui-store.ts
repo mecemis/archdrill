@@ -22,9 +22,12 @@ export interface Highlight {
   readonly components: ReadonlySet<string>;
   readonly connections: ReadonlySet<string>;
   readonly steps: ReadonlySet<string>;
+  /** Decision points under Decisions. */
+  readonly decisions: ReadonlySet<string>;
 }
 
 export type ResultsTab = "findings" | "paths" | "load" | "issues" | "compare";
+export type RightTab = "flow" | "inspector" | "decisions";
 
 interface UiState {
   readonly scenarioId: string;
@@ -36,6 +39,7 @@ interface UiState {
   readonly hover: Highlight | null;
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
+  readonly rightTab: RightTab;
   /** Simulated environment shown on the canvas and in the results; null means the scenario's last (heaviest). */
   readonly environmentId: string | null;
   setScenario: (id: string) => void;
@@ -48,6 +52,7 @@ interface UiState {
   togglePin: (key: string, highlight: Highlight) => void;
   clearPin: () => void;
   setResultsTab: (tab: ResultsTab) => void;
+  setRightTab: (tab: RightTab) => void;
 }
 
 const firstScenario = activePack.scenarios[0];
@@ -61,6 +66,7 @@ export const useUi = create<UiState>((set, get) => ({
   hover: null,
   pinned: null,
   resultsTab: "findings",
+  rightTab: "flow",
   environmentId: null,
   setScenario: (scenarioId) => {
     const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
@@ -81,10 +87,12 @@ export const useUi = create<UiState>((set, get) => ({
     set({ pinned: get().pinned?.key === key ? null : { key, highlight } }),
   clearPin: () => set({ pinned: null }),
   setResultsTab: (resultsTab) => set({ resultsTab }),
+  setRightTab: (rightTab) => set({ rightTab }),
 }));
 
 export const EMPTY_HIGHLIGHT: Highlight = {
   components: new Set(),
   connections: new Set(),
   steps: new Set(),
+  decisions: new Set(),
 };

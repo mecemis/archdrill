@@ -16,7 +16,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "check": "biome check . && pnpm typecheck",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "report": "pnpm --filter @archdrill/content report"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

@@ -65,6 +65,15 @@ user action
 - Evaluation results are memoised per `(attemptHash, scenarioId, engineVersion)`.
 - A new edit cancels any in-flight evaluation.
 
+**As built (M7).**
+
+- **The worker.** Evaluation runs in a module worker (`apps/web/src/state/evaluation.worker.ts`).
+  - The first evaluation runs once on the main thread at startup, so the first screen has results.
+  - While the worker runs, the previous results stay on screen, marked *Updating…*.
+  - The worker cannot be interrupted mid-evaluation. Edits made while it runs are coalesced: only the latest design is evaluated next.
+- **Fallback.** Without workers (tests, a policy that forbids them) or after a worker error, evaluation runs synchronously on the main thread.
+- **Memoisation.** Results are memoised by reference on the evaluated parts of the attempt (architecture, flows, decisions), so moving nodes never re-evaluates.
+
 ## Persistence and versioning
 
 - **Schema versions.** `Attempt.schemaVersion` is an integer. `packages/model/migrations/` holds `vN → vN+1` pure functions, each with fixture tests.
@@ -106,6 +115,15 @@ The mutation report and the engine golden-numbers diff are uploaded as artefacts
 | DES scenario run | < 2 s |
 | Canvas interaction with 100 nodes | 60 fps; no evaluation on the main thread |
 | Initial load | < 300 KB gzipped JS before the canvas route chunk |
+
+**Verified (M7).**
+
+- `pnpm report` measures the first budget on every golden design padded to 30 components, after JIT warm-up.
+  - Locally: p95 54–64 ms for the two designs that pass every scenario.
+  - CI enforces 250 ms, because shared runners are slower and noisier.
+- The canvas no longer evaluates on the main thread.
+- Initial load: 244 KB gzipped JS. Libraries are in separate cached chunks: React 68 KB, React Flow 57 KB, others 36 KB.
+- The evaluation worker (about 90 KB gzipped) loads alongside the page.
 
 ## Error handling
 

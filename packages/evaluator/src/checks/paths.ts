@@ -178,7 +178,7 @@ export const statusForCondition = defineCheck({
         return {
           ...failed(
             `Not decided yet: ${point?.question ?? params.decision} Record it under Decisions.`,
-            [],
+            [{ type: "decision", decision: params.decision }],
           ),
           status: "partial",
           fraction: 0.5,

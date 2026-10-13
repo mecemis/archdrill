@@ -20,3 +20,34 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      # Corpus report and evaluation-time budget, published to the run summary.
+      # Shared runners are slower and noisier than a laptop, so CI guards
+      # against regressions with a looser budget than the 100 ms target.
+      - run: pnpm report
+        env:
+          PERF_BUDGET_MS: "250"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: packages/content/report/out/
+          if-no-files-found: ignore
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
