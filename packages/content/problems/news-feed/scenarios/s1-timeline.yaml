@@ -1,0 +1,185 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s1-timeline
+problemId: news-feed
+title: Home timeline
+order: 1
+story: |
+  "300,000 people open their home timeline every second at peak, and 10,000
+  new posts arrive. Each reader follows about 200 accounts. Do you gather the
+  timeline when someone reads it, or when someone posts? A new post should
+  reach followers within five seconds, and scrolling back must not repeat or
+  skip posts."
+focusOperations: [create-post, read-timeline, fan-out-post]
+workload:
+  operations:
+    create-post:
+      entity: Post
+      classes:
+        - { id: regular, share: 1 }
+    read-timeline:
+      entity: Timeline
+      classes:
+        - { id: reader, share: 1 }
+  keys:
+    Timeline:
+      existing: { distribution: zipf, s: 0.9, population: 5.0e7 }
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day.
+      rates: { create-post: 5000, read-timeline: 150000 }
+    - id: peak
+      label: Peak
+      description: Peak traffic.
+      rates: { create-post: 10000, read-timeline: 300000 }
+dimensions:
+  scalability: 0.3
+  latency: 0.3
+  correctness: 0.25
+  cost: 0.15
+checks:
+  - id: posts-reach-timelines
+    use: event-consumed
+    title: New posts reach followers' timelines
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-post, event: post-created }
+    why: >-
+      A timeline that only changes when it is rebuilt shows new posts late or
+      never. Something has to act on every new post.
+    fix: >-
+      Publish post-created and consume it with a worker that adds the post to
+      followers' cached timelines.
+
+  - id: timeline-fast
+    use: latency-below
+    title: Timeline p99 under 200 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: read-timeline, environment: peak, percentile: p99, ms: 200 }
+    why: >-
+      Assembling a timeline from 200 followed accounts at read time waits for
+      the slowest of 200 reads.
+    fix: >-
+      Serve timelines from a cache that new posts are written into, and read
+      the store in batches only to rebuild a missing timeline.
+
+  - id: posting-fast
+    use: latency-below
+    title: Posting p99 under 500 ms at peak
+    dimension: latency
+    requirements: [NFR-1]
+    params: { operation: create-post, environment: peak, percentile: p99, ms: 500 }
+    why: >-
+      The author waits for the post to be stored, not for it to reach every
+      follower.
+    fix: >-
+      Store the post, publish an event, and answer; fan out in the background.
+
+  - id: fresh-timelines
+    use: latency-below
+    title: New posts reach timelines within 5 seconds
+    dimension: correctness
+    weight: 2
+    requirements: [NFR-2]
+    params: { operation: fan-out-post, environment: peak, percentile: p99, ms: 5000 }
+    why: >-
+      Followers notice when a reply shows up before the post it answers.
+    fix: >-
+      Give the fan-out workers enough capacity, and write timelines in
+      batches.
+
+  - id: headroom-peak
+    use: utilization-below
+    title: Nothing runs above 85% at peak
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-1]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      Reading 200 accounts for each of 300,000 timelines a second is 60 million
+      reads; copying 10,000 posts to 200 followers is 2 million writes. One of
+      them has to be cheap.
+    fix: >-
+      Fan out on write into a sharded cache, batch the writes, and size the
+      store for rebuilds only.
+
+  - id: fan-out-keeps-up
+    use: backlog-stable
+    title: Fan-out keeps up at peak
+    dimension: scalability
+    requirements: [NFR-2]
+    params: { environment: peak }
+    why: >-
+      A fan-out that falls behind delays every post a little more each second.
+    fix: >-
+      Scale the fan-out workers and batch timeline writes.
+
+  - id: timelines-cached
+    use: hit-ratio-above
+    title: 90% of timeline reads are served from the cache
+    dimension: scalability
+    requirements: [NFR-1]
+    params: { entity: Timeline, environment: peak, min: 0.9 }
+    why: >-
+      Every miss rebuilds a timeline from 200 accounts' recent posts.
+    fix: >-
+      Give the timeline cache enough memory for the active users; let inactive
+      users' timelines expire and rebuild them when they come back.
+
+  - id: stable-pages
+    use: decision-excludes
+    title: Scrolling back neither repeats nor skips posts
+    dimension: correctness
+    requirements: [FR-2]
+    params:
+      decision: pagination
+      forbidden:
+        - option: offset
+          reason: New posts push older ones down while a reader scrolls, so page 2 by offset repeats posts from page 1, and deleted posts make it skip some.
+    why: >-
+      Timelines change at the top all the time; offsets count from the top.
+    fix: >-
+      Page with a cursor: the id or time of the last post seen.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $60,000 a month
+    dimension: cost
+    requirements: [NFR-1]
+    params: { environment: avg, monthlyUsd: 60000 }
+    why: >-
+      Timelines are the product, but memory for 50 million of them is not
+      free.
+    fix: >-
+      Cache the active users' timelines only, and autoscale the services.
+
+  - id: batched-fan-out
+    use: no-path
+    title: Timeline writes are batched
+    dimension: scalability
+    signal: senior
+    requirements: [NFR-2]
+    params:
+      operation: fan-out-post
+      where: { hasStep: { action: cache.set, entity: Timeline, batched: false } }
+      applicableWhen: { hasStep: { action: cache.set, entity: Timeline } }
+    why: >-
+      Pipelining a post's 200 timeline writes in a few calls cuts the cache's
+      work several times over.
+    fix: >-
+      Give the timeline write a batch size.
+hints:
+  - "Count the reads if every timeline is assembled when it is read: 300,000 timelines × 200 accounts."
+  - "If posts are copied into followers' timelines when they are written, what do you store per user, and where?"
+  - "Store the post and publish post-created; a worker writes the post id into each follower's cached timeline in batches; reads hit the cache and rebuild from authors' recent posts only on a miss."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - A user unfollows someone. What happens to the posts already in their timeline?
+  - How would you rank the timeline instead of sorting by time?
+  - A user with 5,000 followees comes back after a month. How fast is the first timeline?

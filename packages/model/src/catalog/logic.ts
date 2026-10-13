@@ -80,6 +80,13 @@ export const LOGIC = {
       "Compare this server's own count with the client's limit divided by the number of servers. It only catches clients far over their limit, and only if their traffic spreads evenly.",
     decidedBy: { fact: "farOverLimit", outcome: "over" },
   },
+  isCelebrity: {
+    label: "celebrity author?",
+    outcomes: ["regular", "celebrity"],
+    description:
+      "Branch on whether the post's author has millions of followers, too many to copy the post to each of them.",
+    decidedBy: { fact: "celebrity", outcome: "celebrity" },
+  },
   obfuscateId: {
     label: "obfuscate id",
     outcomes: ["ok"],

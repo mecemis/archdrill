@@ -39,6 +39,8 @@ export const RequestClassSchema = z
      * (for example `overLimit` for a client above its rate limit).
      */
     facts: z.array(IdSchema).default([]),
+    /** Counts that size fan-out steps, overriding the problem's defaults (`followers: 50000000`). */
+    counts: z.record(IdSchema, z.number().min(0)).default({}),
   })
   .refine((cls) => cls.customAlias || !cls.aliasTaken, {
     message: "aliasTaken only applies to requests with customAlias",

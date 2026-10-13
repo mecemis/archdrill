@@ -3,6 +3,7 @@ import {
   type CatalogIndex,
   type Component,
   type Environment,
+  hasFact,
   liveStepIds,
   type Operation,
   type Problem,
@@ -40,6 +41,7 @@ const DEFAULT_CLASS: RequestClass = {
   hotKey: false,
   malicious: false,
   facts: [],
+  counts: {},
 };
 
 export interface SimulationContext {
@@ -70,6 +72,19 @@ export interface OperationModel {
    * event id rather than a link code): a hot key does not make them hot.
    */
   readonly unkeyed: ReadonlySet<string>;
+  /** Steps on entities with one hot key for requests with a fact (`hotFor`), by step id. */
+  readonly hotBy: ReadonlyMap<string, string>;
+}
+
+/** Whether a step asks for a hot key, for a request of this class. */
+export function isHotStep(
+  op: Pick<OperationModel, "unkeyed" | "hotBy">,
+  stepId: string,
+  cls: RequestClass,
+): boolean {
+  const fact = op.hotBy.get(stepId);
+  if (fact !== undefined && hasFact(cls, fact)) return true;
+  return cls.hotKey && !op.unkeyed.has(stepId);
 }
 
 export interface CacheSpec {
@@ -127,15 +142,24 @@ export function buildProfiles(
   return profiles;
 }
 
-/** The operation's request classes, with this environment's share overrides. */
+/**
+ * The operation's request classes, with this environment's share overrides
+ * and every count the problem defines (the class's own, or the default).
+ */
 function classesIn(
   workload: Workload,
   environment: Environment,
   operationId: string,
+  problem: Problem,
 ): RequestClass[] {
   const classes = workload.operations[operationId]?.classes ?? [DEFAULT_CLASS];
   const shares = environment.classShares[operationId] ?? {};
-  return classes.map((cls) => ({ ...cls, share: shares[cls.id] ?? cls.share }));
+  const defaults = Object.fromEntries(problem.counts.map((c) => [c.id, c.default]));
+  return classes.map((cls) => ({
+    ...cls,
+    share: shares[cls.id] ?? cls.share,
+    counts: { ...defaults, ...cls.counts },
+  }));
 }
 
 export function buildOperations(
@@ -163,7 +187,7 @@ export function buildOperations(
   for (const [operationId, rate] of Object.entries(environment.rates)) {
     const analysis = ready(operationId);
     if (rate <= 0 || !analysis || analysis.operation.trigger.type === "event") continue;
-    models.push(model(analysis, rate, classesIn(workload, environment, operationId)));
+    models.push(model(analysis, rate, classesIn(workload, environment, operationId, ctx.problem)));
   }
   for (const operation of ctx.problem.operations) {
     const analysis = ready(operation.id);
@@ -189,20 +213,23 @@ function requestKeys(
   analysis: OperationAnalysis,
   workload: Workload,
   problem: Problem,
-): Pick<OperationModel, "keyPopularity" | "unkeyed"> {
+): Pick<OperationModel, "keyPopularity" | "unkeyed" | "hotBy"> {
   const entity = requestEntity(analysis.operation, workload, problem);
-  const keyOf = (name: string) => problem.entities.find((e) => e.name === name)?.key;
+  const definition = (name: string) => problem.entities.find((e) => e.name === name);
   const unkeyed = new Set<string>();
+  const hotBy = new Map<string, string>();
   for (const path of analysis.paths) {
     for (const step of path.steps) {
-      if (step.kind === "call" && step.entity && entity && keyOf(step.entity) !== entity.key) {
-        unkeyed.add(step.stepId);
-      }
+      if (step.kind !== "call" || !step.entity) continue;
+      const stepEntity = definition(step.entity);
+      if (entity && stepEntity?.key !== entity.key) unkeyed.add(step.stepId);
+      if (stepEntity?.hotFor) hotBy.set(step.stepId, stepEntity.hotFor);
     }
   }
   return {
     keyPopularity: entity ? workload.keys[entity.name]?.existing : undefined,
     unkeyed,
+    hotBy,
   };
 }
 

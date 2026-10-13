@@ -25,6 +25,8 @@ export interface CallPathStep {
   readonly fireAndForget?: boolean;
   /** For fire-and-forget publishes: messages held while the queue is unreachable. */
   readonly bufferSize?: number;
+  /** The call is made once for each of the request's items of this count, in parallel. */
+  readonly each?: string;
   readonly outcome: string;
 }
 

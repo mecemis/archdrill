@@ -313,6 +313,15 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
   - Environments judge the first five minutes of a fault. An entry whose TTL is long against that (an hour-long link entry) persists from before the fault without writes.
   - A one-second block marker does not persist. While the counter store is down, a rate limiter cannot rely on blocks it can no longer write.
 
+## Fan-out (as built, M14)
+
+- **Counts.** A request class carries counts (`followers`, `followees`), with defaults set by the problem.
+- **Calls per request.** A call step with `each: <count>` is made once per item, in parallel. Load and connection traffic multiply by the count, and a count of zero makes no call.
+- **Failure.** A fan-out fails if any of its calls fails: 1 − (1 − p)ⁿ. A fan-out of cache lookups only hits when every lookup does (hⁿ).
+- **Latency.** Calls go out in waves of at most 100. Each wave waits for its slowest call, placed at the 1 − 1/(g + 1) quantile of one call for a wave of g calls.
+- **Own batches.** A fan-out with a batch size fills its batches with the request's own calls, so it waits for nobody else: ⌈n / size⌉ calls, each costing one call plus 5% per extra item.
+- **Hot by fact.** An entity can be hot for requests with a fact (`hotFor`): every follower of a celebrity reads that celebrity's entry.
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:

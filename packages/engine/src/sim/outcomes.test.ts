@@ -27,6 +27,7 @@ const generated: RequestClass = {
   hotKey: false,
   malicious: false,
   facts: [],
+  counts: {},
 };
 
 const logic = (name: LogicPathStep["logic"], outcome = "ok"): LogicPathStep => ({

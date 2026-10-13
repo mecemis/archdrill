@@ -105,6 +105,10 @@
           "existsFor": {
             "type": "string",
             "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "hotFor": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
           }
         },
         "required": ["name", "key", "fields", "avgBytes"]
@@ -295,6 +299,28 @@
       },
       "required": ["flavor", "label"]
     },
+    "counts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": ["id", "label", "default"]
+      }
+    },
     "logic": {
       "default": [],
       "type": "array",
@@ -311,6 +337,7 @@
           "encodeBase62",
           "checkLimit",
           "checkLocalLimit",
+          "isCelebrity",
           "obfuscateId"
         ]
       }

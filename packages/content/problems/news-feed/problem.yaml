@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../../schema/problem.schema.json
+id: news-feed
+version: 1
+title: News Feed
+levels: [senior, staff]
+brief: |
+  People post short updates and follow each other. The home timeline shows
+  the newest posts from everyone you follow, 20 at a time, and you can keep
+  scrolling back. Most people follow a few hundred accounts and are followed
+  by a few hundred; a handful of accounts are followed by tens of millions.
+  A new post should show up in followers' timelines within seconds.
+scale:
+  - { label: Daily users, value: "200 million", note: "50 million active in any hour" }
+  - { label: Timeline reads, value: "150,000 /s avg, 300,000 /s peak", note: "20 posts a page" }
+  - { label: New posts, value: "5,000 /s avg, 10,000 /s peak", note: "about 432 million a day" }
+  - { label: Follows, value: "200 followers and 200 followees on average", note: "celebrities: up to 50 million followers" }
+requirements:
+  - { id: FR-1, kind: functional, text: "Post an update." }
+  - { id: FR-2, kind: functional, text: "Read the home timeline: the newest posts from followed accounts, 20 a page, scrolling back without repeated or skipped posts." }
+  - { id: NFR-1, kind: non-functional, text: "Timeline p99 < 200 ms; posting p99 < 500 ms." }
+  - { id: NFR-2, kind: non-functional, text: "A new post reaches followers' timelines within 5 seconds." }
+  - { id: NFR-3, kind: non-functional, text: "Posting stays available (99.9%) even when timelines cannot be served." }
+entities:
+  - name: Post
+    key: postId
+    fields: [postId, authorId, text, createdAt]
+    avgBytes: 1000
+  - name: AuthorPosts
+    key: authorId
+    fields: [authorId, recentPostIds]
+    avgBytes: 1600
+  - name: Timeline
+    key: userId
+    fields: [userId, postIds]
+    avgBytes: 6400
+    ephemeral: true
+  - name: CelebrityPosts
+    key: authorId
+    fields: [authorId, recentPostIds]
+    avgBytes: 1600
+    ephemeral: true
+    hotFor: followsCelebrity
+operations:
+  - id: create-post
+    label: Create post
+    method: POST
+    path: /posts
+    class: write
+    idempotent: false
+    successStatuses: [201]
+    requirements: [FR-1, NFR-1, NFR-3]
+    introducedIn: s1-timeline
+  - id: read-timeline
+    label: Read timeline
+    method: GET
+    path: /timeline
+    class: read
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-2, NFR-1]
+    introducedIn: s1-timeline
+  - id: fan-out-post
+    label: Fan out post
+    trigger: { type: event, event: post-created }
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [NFR-2]
+    introducedIn: s1-timeline
+events:
+  - { id: post-created, label: Post created, entity: Post }
+counts:
+  - { id: followers, label: followers of the author, default: 200 }
+  - { id: followees, label: accounts the reader follows, default: 200 }
+  - { id: celebritiesFollowed, label: celebrities the reader follows, default: 0 }
+logic: [isCelebrity]
+decisionPoints:
+  - id: pagination
+    question: How does a client ask for the next page of the timeline?
+    options:
+      - { id: offset, label: "Offset: skip the first 20, 40, … posts" }
+      - { id: cursor, label: "Cursor: posts older than the last one seen" }
+    requirements: [FR-2]
+estimates:
+  - id: posts-per-day
+    question: How many posts a day on average?
+    kind: count
+    answer: 432000000
+    derivation: 5,000 posts a second × 86,400 seconds ≈ 432 million posts a day.
+  - id: fan-out-writes
+    question: Copying every post into each follower's timeline, how many timeline writes a second at peak?
+    kind: rate
+    answer: 2000000
+    derivation: >-
+      10,000 posts a second × 200 followers = 2 million timeline writes a
+      second, before batching.
+  - id: celebrity-fan-out
+    question: At a million timeline writes a second, how long does it take to copy one post to 50 million followers?
+    kind: count
+    answer: 50
+    derivation: >-
+      50,000,000 ÷ 1,000,000 = 50 seconds for one post, while every other post
+      waits. Celebrity posts are better merged in when a follower reads.
+  - id: timeline-memory
+    question: >-
+      A cached timeline keeps 800 post ids of 8 bytes. How much memory holds
+      the timelines of 50 million active users?
+    kind: bytes
+    answer: 320000000000
+    derivation: >-
+      800 × 8 bytes = 6.4 KB a timeline × 50 million ≈ 320 GB, before cache
+      overhead. Inactive users' timelines are rebuilt when they come back.
+  - id: pull-reads
+    question: If every timeline read fetched the recent posts of 200 followed accounts, how many reads a second at peak?
+    kind: rate
+    answer: 60000000
+    derivation: >-
+      300,000 timeline reads × 200 followed accounts = 60 million reads a
+      second, which is why timelines are assembled when posts are written.
+scenarios: [s1-timeline, s2-celebrities, s3-timelines-lost]

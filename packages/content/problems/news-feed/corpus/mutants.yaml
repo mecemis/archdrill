@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=../../../schema/mutants.schema.json
+# Each mutant breaks a golden design in one specific way; CI asserts that the
+# evaluator catches it.
+mutants:
+  - id: pull-every-read
+    base: hybrid-fan-out
+    description: Every timeline read gathers 200 accounts' recent posts; nothing is cached.
+    apply:
+      - removeStep: { operation: read-timeline, stepId: timeline, bypass: miss }
+    expect:
+      scenario: s1-timeline
+      fails: [timeline-fast]
+
+  - id: posts-not-fanned-out
+    base: hybrid-fan-out
+    description: Posts are published, but nothing consumes them.
+    apply:
+      - removeFlow: { operation: fan-out-post }
+    expect:
+      scenario: s1-timeline
+      fails: [posts-reach-timelines]
+      band: not-passing
+
+  - id: posts-not-published
+    base: hybrid-fan-out
+    description: New posts are stored but never published.
+    apply:
+      - removeStep: { operation: create-post, stepId: publish, bypass: ok }
+    expect:
+      scenario: s1-timeline
+      fails: [posts-reach-timelines]
+      band: not-passing
+
+  - id: unbatched-fan-out
+    base: hybrid-fan-out
+    description: Each follower's timeline is written in its own call.
+    apply:
+      - updateStep: { operation: fan-out-post, stepId: push, batchSize: null }
+    expect:
+      scenario: s1-timeline
+      fails: [batched-fan-out]
+
+  - id: offset-pagination
+    base: hybrid-fan-out
+    description: Pages are fetched by offset.
+    apply:
+      - setDecision: { decision: pagination, option: offset }
+    expect:
+      scenario: s1-timeline
+      fails: [stable-pages]
+
+  - id: small-timeline-cache
+    base: hybrid-fan-out
+    description: Two cache shards for 50 million timelines.
+    apply:
+      - updateComponent: { id: redis, shards: 2 }
+    expect:
+      scenario: s1-timeline
+      fails: [timelines-cached]
+
+  - id: celebrities-pushed
+    base: hybrid-fan-out
+    description: Celebrities' posts are copied to their 50 million followers like everyone else's.
+    apply:
+      - linkOutcome: { operation: fan-out-post, stepId: who, outcome: celebrity, target: push }
+    expect:
+      scenario: s2-celebrities
+      fails: [fresh-with-celebrities, celebrities-pulled]
+      band: not-passing
+
+  - id: celebrities-from-shared-cache
+    base: hybrid-fan-out
+    description: Every reader fetches celebrities' posts from the shared cache.
+    apply:
+      - removeStep: { operation: read-timeline, stepId: celebs-local, bypass: miss }
+    expect:
+      scenario: s2-celebrities
+      fails: [headroom-celebrities]
+
+  - id: unbounded-rebuilds
+    base: hybrid-fan-out
+    description: Rebuilds are not capped while the cache is down.
+    apply:
+      - setConnectionPolicy: { id: timeline-api--posts-db, maxRps: null }
+    expect:
+      scenario: s3-timelines-lost
+      fails: [posting-survives]
+      band: not-passing
+
+  - id: slow-cache-timeout
+    base: hybrid-fan-out
+    description: Cache calls wait two seconds before giving up.
+    apply:
+      - setConnectionPolicy: { id: timeline-api--redis, timeoutMs: 2000 }
+    expect:
+      scenario: s3-timelines-lost
+      fails: [cache-timeout]

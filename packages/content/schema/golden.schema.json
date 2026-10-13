@@ -291,6 +291,10 @@
                         "fireAndForget": {
                           "type": "boolean"
                         },
+                        "each": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                        },
                         "bufferSize": {
                           "type": "integer",
                           "minimum": 1,
@@ -331,6 +335,7 @@
                             "encodeBase62",
                             "checkLimit",
                             "checkLocalLimit",
+                            "isCelebrity",
                             "obfuscateId"
                           ]
                         },
