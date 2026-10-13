@@ -45,6 +45,7 @@ debrief: |                 # follow-up questions, shown once the scenario passes
 - `operations.<id>`: the entity the requests address and their **classes** with shares that sum to 1. Class flags shape outcomes: `exists: false` (unknown keys), `expired`, `disabled`, `invalidInput`, `customAlias`, `aliasTaken`, `hotKey` (every request asks for one key), `malicious`. Consumers get no workload: they receive the classes of the messages published to them.
 - `keys`: Zipf popularity of existing and absent keys, which drives cache hit ratios.
 - `dataset`, `keyspace`, `replication`: stored entities (for storage cost and collisions), the keyspace and the decision that sets code length, and the decision that sets the replication mode.
+- `timelines` (optional): how the design behaves over time. Each has a `durationSec`, starting `rates`, and `events`: `load` (new rates, at once or over `rampSec`) and `fault` (from `at` until `until`). Checks `timeline-holds` and `timeline-recovers` refer to them by id.
 - `environments`: each with `rates` (requests or job items per second; never for consumers), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
 
 ### Checks
@@ -62,6 +63,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 | `populate-after-miss`, `invalidation-on-write` | Cache data flow and staleness after writes |
 | `latency-below`, `success-rate-above`, `utilization-below`, `hit-ratio-above`, `cost-within-budget` | Simulated metrics per environment (latency reads as lag for consumers and jobs) |
 | `backlog-stable` | Consumers and jobs keep up |
+| `timeline-holds`, `timeline-recovers` | A metric stays within bounds over a window of a timeline, or recovers soon after a moment |
 | `dependency-timeout-bounded`, `retries-bounded-with-jitter`, `retry-only-idempotent`, `circuit-breaker-on-dependency`, `stable-under-retries` | Call policies and retry storms |
 | `no-acknowledged-data-loss` | What a failover loses under the chosen replication |
 | `no-single-point-of-failure`, `unused-components`, `ingress-has-capability` | Topology |

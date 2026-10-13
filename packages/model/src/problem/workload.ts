@@ -134,6 +134,70 @@ export const EnvironmentSchema = z.object({
 });
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
+/** Longest timeline, in seconds; longer runs show nothing new and cost evaluation time. */
+export const MAX_TIMELINE_SEC = 600;
+
+/**
+ * Something that happens at a moment of a timeline: the load moves to new
+ * rates (at once, or over a ramp), or a fault starts and, optionally, ends.
+ */
+export const TimelineEventSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("load"),
+    at: z.number().min(0),
+    /** New requests (or job items) per second; operations left out keep their rate. */
+    rates: z.record(IdSchema, z.number().nonnegative()),
+    /** Seconds over which the rates move linearly to the new values; 0 is a step. */
+    rampSec: z.number().min(0).default(0),
+    label: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("fault"),
+    at: z.number().min(0),
+    /** When the fault ends; without it, it lasts to the end of the timeline. */
+    until: z.number().positive().optional(),
+    fault: FaultSchema,
+    label: z.string().min(1).optional(),
+  }),
+]);
+export type TimelineEvent = z.infer<typeof TimelineEventSchema>;
+
+/**
+ * How a design behaves over time: the scenario's workload, starting at
+ * `rates`, with load changes and faults at given moments. The engine works in
+ * steps of `stepSec` seconds.
+ */
+export const TimelineSchema = z
+  .object({
+    id: IdSchema,
+    label: z.string().min(1),
+    description: z.string().min(1).optional(),
+    durationSec: z.number().positive().max(MAX_TIMELINE_SEC),
+    stepSec: z.number().min(0.1).max(10).default(1),
+    rates: z.record(IdSchema, z.number().nonnegative()),
+    classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
+    events: z.array(TimelineEventSchema).default([]),
+  })
+  .superRefine((timeline, ctx) => {
+    timeline.events.forEach((event, i) => {
+      if (event.at > timeline.durationSec) {
+        ctx.addIssue({
+          code: "custom",
+          message: `event ${i} starts after the timeline ends`,
+          path: ["events", i, "at"],
+        });
+      }
+      if (event.kind === "fault" && event.until !== undefined && event.until <= event.at) {
+        ctx.addIssue({
+          code: "custom",
+          message: `event ${i} ends before it starts`,
+          path: ["events", i, "until"],
+        });
+      }
+    });
+  });
+export type Timeline = z.infer<typeof TimelineSchema>;
+
 export const WorkloadSchema = z.object({
   operations: z.record(IdSchema, OperationWorkloadSchema),
   keys: z.record(z.string().min(1), KeyPopularitySchema),
@@ -156,6 +220,8 @@ export const WorkloadSchema = z.object({
    */
   replication: z.object({ decision: IdSchema }).optional(),
   environments: z.array(EnvironmentSchema).min(1),
+  /** How the design behaves over time; each runs separately from the environments. */
+  timelines: z.array(TimelineSchema).default([]),
 });
 
 /** Options a replication decision may offer. */

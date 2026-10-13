@@ -1,6 +1,6 @@
 # ADR 0005 — Analytic simulation first, discrete-event later
 
-**Status:** accepted · 2026-10-12
+**Status:** accepted · 2026-10-12 · the v0.2 engine is a time-stepped model instead of a per-request DES; see [ADR 0008](0008-time-stepped-timelines-instead-of-per-request-des.md)
 
 ## Decision
 v0.1 ships an analytic steady-state engine:

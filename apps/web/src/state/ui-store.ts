@@ -26,7 +26,7 @@ export interface Highlight {
   readonly decisions: ReadonlySet<string>;
 }
 
-export type ResultsTab = "findings" | "paths" | "load" | "issues" | "compare";
+export type ResultsTab = "findings" | "paths" | "load" | "timeline" | "issues" | "compare";
 export type RightTab = "flow" | "inspector" | "decisions";
 
 interface UiState {

@@ -210,6 +210,14 @@ Attempt
 
 Two capabilities arrive with them: `async-buffer` (a queue: a managed queue or Kafka) and `external` (a third-party API, here a URL-safety API with a request quota). `external.check` answers `clean`, `malicious` or `error`, and request classes can be `malicious`. A batch size on a step that is not an id allocation collects items: the step waits for the batch, so only consumers and jobs may use one.
 
+**As built (M8).** A workload may define `timelines`. Each one has:
+- `id`, `label`, `durationSec`, `stepSec` (default 1), starting `rates`, and optional `classShares`;
+- `events`, each one of:
+  - `{ kind: load, at, rates, rampSec }`: rates move to new values, at once or over a ramp;
+  - `{ kind: fault, at, until?, fault }`: a fault starts and, optionally, ends.
+
+Timelines run separately from environments, and checks refer to them by id.
+
 `data[]` binds entities to stores, for example `{ entity: Link, key: code, constraints: [unique(code)] }`. A `store.read(Link)` against a store that does not hold `Link` is a validation error.
 
 ### Connection policy

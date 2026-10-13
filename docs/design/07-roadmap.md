@@ -234,12 +234,46 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 ---
 
 ## v0.2: Time and failure dynamics
-- Discrete-event engine in a worker: seeded, scaled, with traces.
-- Timeline UI: fault events, per-second charts, request trace explorer.
-- Cold cache and stampede, request coalescing, retry storms without jitter, autoscaling lag, failover timeline.
-- S8 click analytics (logs, stream aggregation).
-- Predict-then-reveal.
-- Estimation gym (back-of-envelope checks with tolerance bands).
+
+The original plan was a sampled per-request discrete-event engine. [ADR 0008](../adr/0008-time-stepped-timelines-instead-of-per-request-des.md) replaces it with time-stepped timelines built on the analytic engine: deterministic, fast, and in agreement with the steady state by construction.
+
+### M8: Timeline engine (L) ✅
+- Scenarios can define timelines: a duration, load shapes (steps, ramps, spikes) and timed events (faults that start and end).
+- The engine advances in steps. In each step it re-solves loads, overload, timeouts and latency, warm-started from the previous step, and records per-step series: rate, success, p50 and p99 per operation; utilisation and instances per component; hit ratio per cache; backlog per consumer; an event log.
+- Constant load without events settles on the analytic steady state (tested). Runs are deterministic, and a two-minute timeline stays well within budget.
+- A first timeline view, and timeline checks (a metric within bounds over a window; recovery within a time after an event).
+
+**Delivered (2026-10-13):**
+- **Model.** Workloads define timelines: a duration, a step, starting rates, and `load` and `fault` events. Validation catches unknown operations, rates set for consumers, and events outside the timeline.
+- **Engine.** `simulateTimeline` re-solves the fixed point at every step from the previous step's state. The fixed point now lives in its own module, shared with steady-state environments.
+  - Each step records series per operation, component and cache, and marks faults, load changes and components crossing capacity.
+  - Unchanged steps repeat the previous results: S6's two-minute timeline adds about 8 ms to an evaluation.
+- **Evaluator.** `timeline-holds` and `timeline-recovers` run against the timelines, which every evaluation now simulates.
+- **Content.** S6 gets `failover-over-time`. The replica-less database mutant now also fails the timeline check.
+- **Web.** A Timeline tab with charts that need no chart library:
+  - success rate, p99, utilisation, cache hit ratio and backlog;
+  - fault windows shaded, and lines told apart by dash pattern as well as colour;
+  - an event log.
+
+**Learned along the way:**
+- **The planned engine did not fit the problem.** A sampled per-request engine would have needed capacities scaled down to about one server per store at S2's peak, which changes the queueing it exists to show. Re-solving the analytic model per step keeps the queueing exact; ADR 0008 records the trade-off.
+- **Most steps change nothing.** The first version summarised every step and added 40 ms to an evaluation. Repeating results for steps whose inputs and state did not move cut it to 8 ms.
+
+### M9: Transient dynamics (L)
+- Cold caches after a flush or restart warm up over time; thundering herds on hot keys; request coalescing (single-flight) as a design choice.
+- Autoscaling with a metric window, provisioning delay and cooldown.
+- Circuit breakers as state machines: window, threshold, open time, half-open probes.
+- Retries spread over time by backoff and jitter; failovers with detection, promotion and reconnection; backlogs that build and drain.
+- Timeline variants of S4 (cache restart), S5 (spike with autoscaling lag) and S6 (failover), with goldens and mutants.
+
+### M10: Timeline UI (M)
+- Charts with event markers, and a scrubber that shows the canvas at a moment in time.
+- A request trace explorer: example requests sampled from each step, with step-by-step timings.
+- Predict, then reveal: before a timeline runs, the candidate can predict what will happen, and sees the prediction next to the result.
+
+### M11: Click analytics and the estimation gym (L)
+- S8 click analytics: logs and streams, stream aggregation, counters that stay fresh within a minute, hot counters, and idempotent consumers whose writes are not naturally idempotent.
+- Estimation gym: back-of-envelope questions per problem, with tolerance bands.
 
 ## v0.3: Pattern breadth
 
