@@ -35,12 +35,6 @@ workload:
       label: Peak
       description: Peak traffic. Every redirect to a live link is a click.
       rates: { redirect: 300000 }
-    - id: viral
-      label: A viral link
-      description: Peak traffic, with one link taking a third of it, 100,000 clicks a second.
-      rates: { redirect: 300000 }
-      classShares:
-        redirect: { live: 0.647, viral: 0.333 }
     - id: queue-down
       label: Peak, click queue not answering
       description: >-
@@ -49,6 +43,12 @@ workload:
       rates: { redirect: 300000 }
       faults:
         - { kind: down, target: { capability: async-buffer }, mode: hang }
+    - id: viral
+      label: A viral link
+      description: Peak traffic, with one link taking a third of it, 100,000 clicks a second.
+      rates: { redirect: 300000 }
+      classShares:
+        redirect: { live: 0.647, viral: 0.333 }
 dimensions:
   correctness: 0.3
   scalability: 0.25

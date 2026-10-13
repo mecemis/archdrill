@@ -200,6 +200,15 @@ export const setDecision = defineCommand(
   },
 );
 
+/** Records (or with null, clears) the candidate's answer to an estimate. */
+export const setEstimate = defineCommand(
+  z.object({ estimate: IdSchema, value: z.number().positive().nullable() }),
+  (draft, { estimate, value }) => {
+    if (value === null) delete draft.estimates[estimate];
+    else draft.estimates[estimate] = value;
+  },
+);
+
 function connectionId(from: string, to: string): string {
   return `${from}--${to}`;
 }

@@ -18,7 +18,12 @@ export function stepTitle(step: Step, attempt: Attempt, background = false): str
       const batch =
         step.batchSize === undefined ? "" : ` (batch ${step.batchSize.toLocaleString("en-US")})`;
       const coalesced = step.coalesce ? " (coalesced)" : "";
-      return `${componentLabel(attempt, step.target)} · ${action}${ttl}${batch}${coalesced}`;
+      const window = step.aggregateSec === undefined ? "" : ` (per ${step.aggregateSec}s)`;
+      const spread =
+        step.counterShards === undefined ? "" : ` (${step.counterShards} counter shards)`;
+      const handoff = step.fireAndForget ? " (fire-and-forget)" : "";
+      const details = `${ttl}${window}${batch}${spread}${coalesced}${handoff}`;
+      return `${componentLabel(attempt, step.target)} · ${action}${details}`;
     }
     case "logic":
       return LOGIC[step.logic].label;

@@ -3,11 +3,12 @@ import { useUi } from "../state/ui-store";
 import { Tabs } from "../ui/primitives";
 import { BriefPanel } from "./BriefPanel";
 import { DecisionsPanel } from "./DecisionsPanel";
+import { EstimatePanel } from "./EstimatePanel";
 import { FlowPanel } from "./flow/FlowPanel";
 import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
 
-type LeftTab = "brief" | "palette";
+type LeftTab = "brief" | "estimate" | "palette";
 
 export function LeftPanel() {
   const [tab, setTab] = useState<LeftTab>("brief");
@@ -23,12 +24,13 @@ export function LeftPanel() {
           onChange={setTab}
           options={[
             { id: "brief", label: "Brief" },
+            { id: "estimate", label: "Estimate" },
             { id: "palette", label: "Components" },
           ]}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "brief" ? <BriefPanel /> : <Palette />}
+        {tab === "brief" ? <BriefPanel /> : tab === "estimate" ? <EstimatePanel /> : <Palette />}
       </div>
     </aside>
   );

@@ -142,5 +142,71 @@ decisionPoints:
       - { id: after-grace, label: After a grace period longer than every cache TTL }
       - { id: immediately, label: As soon as the link expires }
     requirements: [FR-3, NFR-3]
+estimates:
+  - id: links-per-day
+    question: How many links are created on an average day?
+    kind: count
+    answer: 86400000
+    derivation: >-
+      1,000 creates a second × 86,400 seconds in a day ≈ 86 million links a
+      day.
+  - id: links-in-5-years
+    question: How many links exist after five years?
+    kind: count
+    answer: 157680000000
+    derivation: >-
+      86.4 million a day × 365 days × 5 years ≈ 158 billion links.
+  - id: storage-in-5-years
+    question: How much storage do five years of links take, before replication?
+    kind: bytes
+    answer: 78840000000000
+    derivation: >-
+      158 billion links × 500 bytes ≈ 79 TB. Three copies (a primary and two
+      replicas) make about 237 TB.
+  - id: peak-redirects
+    question: How many redirects a second does the read path take at peak?
+    kind: rate
+    answer: 300000
+    derivation: >-
+      100,000 a second on average, three times that at peak: 300,000 a second,
+      100 for every create.
+  - id: code-space
+    question: How many different 7-character codes can you make from letters and digits (base62)?
+    kind: count
+    answer: 3521614606208
+    derivation: >-
+      62 choices in each of 7 positions: 62⁷ ≈ 3.5 × 10¹². Five years of links
+      fill about 4.5% of it, so random codes rarely collide.
+  - id: cache-memory
+    question: >-
+      Cache entries are about 500 bytes, and a cache can use about 70% of its
+      memory for entries. How much memory holds the 20 million most popular
+      links?
+    kind: bytes
+    answer: 14285714286
+    derivation: >-
+      20 million × 500 bytes = 10 GB of entries; at 70% usable, about 14 GB.
+      With this skew, the most popular 20 million links take about 80% of
+      redirects.
+  - id: clicks-per-day
+    question: Every redirect to a live link is a click. How many clicks are there on an average day?
+    kind: count
+    answer: 8640000000
+    derivation: >-
+      100,000 a second × 86,400 seconds ≈ 8.6 billion clicks a day, about
+      260 billion a month.
+  - id: click-bandwidth
+    question: A click event is about 200 bytes. How much data reaches the click log every second at peak?
+    kind: byte-rate
+    answer: 60000000
+    derivation: >-
+      300,000 clicks a second × 200 bytes = 60 MB/s, before replication: with
+      three copies, the brokers write 180 MB/s.
+  - id: count-storage
+    question: A per-link count takes about 64 bytes. How much space do counts for 20 billion links take?
+    kind: bytes
+    answer: 1280000000000
+    derivation: >-
+      20 billion × 64 bytes ≈ 1.3 TB, small next to the links themselves.
 scenarios:
   [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure, s7-edge-cases, s8-click-analytics]

@@ -145,6 +145,8 @@ export const AttemptSchema = z.object({
   architecture: ArchitectureSchema,
   flows: z.array(FlowSchema).default([]),
   decisions: z.record(IdSchema, IdSchema).default({}),
+  /** The candidate's back-of-envelope answers, by estimate id, in base units. */
+  estimates: z.record(IdSchema, z.number().positive()).default({}),
   /** Presentation only. Never read by analysis or evaluation. */
   layout: z.record(IdSchema, PositionSchema).default({}),
 });
@@ -162,6 +164,7 @@ export function emptyAttempt(problemId: string, problemVersion: number): Attempt
     architecture: { components: [], connections: [] },
     flows: [],
     decisions: {},
+    estimates: {},
     layout: {},
   };
 }
