@@ -33,6 +33,11 @@ export const FlavorSchema = z
     capabilities: z.array(CapabilitySchema).default([]),
     /** Managed offerings (e.g. multi-AZ load balancers) are redundant without replicas. */
     managedRedundancy: z.boolean().default(false),
+    /**
+     * Seconds a new instance takes to start taking traffic once an autoscaler
+     * asks for it (boot, warm-up, health checks).
+     */
+    startupSec: z.number().nonnegative().optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */

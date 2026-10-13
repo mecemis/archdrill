@@ -33,6 +33,8 @@ export interface AttemptRisks {
   readonly overload: number;
   /** Served, but after the caller's timeout. */
   readonly timeout: number;
+  /** Share of calls a breaker that opened recently still fails, until its wait is over. */
+  readonly heldOpen?: number;
 }
 
 /** What a policy-governed call to a dependency does, averaged over calls. */
@@ -134,7 +136,7 @@ function breakerOpenShare(risks: AttemptRisks, policy: ConnectionPolicy): number
   if (!policy.circuitBreaker) return 0;
   const downstream = 1 - (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
   const ramp = (downstream - BREAKER_THRESHOLD) / (BREAKER_FULL_OPEN - BREAKER_THRESHOLD);
-  return Math.min(1, Math.max(0, ramp));
+  return Math.min(1, Math.max(0, ramp, risks.heldOpen ?? 0));
 }
 
 /** Expected attempts per call that passes the breaker. */
@@ -181,7 +183,9 @@ export function bulkheadShed(
 export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallModel {
   const f = risks.fault;
   const e = independentFailure(risks);
-  if (f <= 0 && e <= 0) return HEALTHY_CALL;
+  // A breaker still open from earlier failures fails calls to a healthy dependency too.
+  const held = policy.circuitBreaker && (risks.heldOpen ?? 0) > 0;
+  if (f <= 0 && e <= 0 && !held) return HEALTHY_CALL;
   const attempts = policy.retries + 1;
   const live = liveAttemptCost(risks, policy);
   const backoffAll = backoffBefore(attempts - 1, policy);

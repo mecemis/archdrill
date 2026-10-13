@@ -51,16 +51,28 @@ function hotHitFor(spec: CacheSpec, rate: number): number {
  * give. An in-process cache keeps one copy per instance of its caller, so
  * each copy sees that instance's share of the lookups.
  */
+/**
+ * A cache that started empty `window` seconds ago holds only what was asked
+ * for since: no entry can be older than that, which caps its TTL.
+ */
+function warmedFor(spec: CacheSpec, window: number | undefined): CacheSpec {
+  if (window === undefined) return spec;
+  const cap = (ttl: number | null) => Math.max(0, ttl === null ? window : Math.min(ttl, window));
+  return { ...spec, ttlSec: cap(spec.ttlSec), negativeTtlSec: cap(spec.negativeTtlSec) };
+}
+
 export function relaxCaches(
   caches: readonly CacheSpec[],
   flow: Propagation,
   loop: LoopState,
   damping: number,
   instancesOf: (componentId: string) => number,
+  windowOf: (key: string) => number | undefined = () => undefined,
 ): number {
   let delta = 0;
-  for (const spec of caches) {
-    const key = cacheKey(spec.componentId, spec.entity);
+  for (const cache of caches) {
+    const key = cacheKey(cache.componentId, cache.entity);
+    const spec = warmedFor(cache, windowOf(key));
     const total = flow.lookups.get(key) ?? { existing: 0, absent: 0, hot: 0 };
     const copies = spec.callerOf ? Math.max(1, instancesOf(spec.callerOf)) : 1;
     const lookups = {

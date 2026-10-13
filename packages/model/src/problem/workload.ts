@@ -152,6 +152,13 @@ export const TimelineEventSchema = z.discriminatedUnion("kind", [
     label: z.string().min(1).optional(),
   }),
   z.strictObject({
+    /** Components restart and lose what they hold in memory: a cache starts empty. */
+    kind: z.literal("restart"),
+    at: z.number().min(0),
+    target: ComponentSelectorSchema,
+    label: z.string().min(1).optional(),
+  }),
+  z.strictObject({
     kind: z.literal("fault"),
     at: z.number().min(0),
     /** When the fault ends; without it, it lasts to the end of the timeline. */

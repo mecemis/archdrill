@@ -398,6 +398,15 @@ function validateCallStep(
       ),
     );
   }
+  if (step.coalesce !== undefined && !actionTakesParam(step.action, "coalesce")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) cannot coalesce; only store reads can.`,
+        loc,
+      ),
+    );
+  }
   if (step.batchSize !== undefined && !actionTakesParam(step.action, "batchSize")) {
     issues.push(
       error(

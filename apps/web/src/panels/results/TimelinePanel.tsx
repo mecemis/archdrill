@@ -158,13 +158,26 @@ function TimelineCharts({ metrics }: { readonly metrics: TimelineMetrics }) {
   );
 }
 
-const MARK_TEXT: Readonly<Record<TimelineMark["kind"], string>> = {
-  load: "load",
-  "fault-start": "starts",
-  "fault-end": "ends",
-  "overload-start": "over capacity",
-  "overload-end": "back under capacity",
-};
+/** One line of the event log. */
+function describeMark(mark: TimelineMark, who: string): string {
+  switch (mark.kind) {
+    case "load":
+      return mark.label;
+    case "fault-start":
+      return `${mark.label} starts${who ? ` (${who})` : ""}`;
+    case "fault-end":
+      return `${mark.label} ends${who ? ` (${who})` : ""}`;
+    case "overload-start":
+      return `${who} over capacity`;
+    case "overload-end":
+      return `${who} back under capacity`;
+    case "restart":
+      return `${mark.label}: ${who} ${mark.componentIds.length > 1 ? "start" : "starts"} empty`;
+    default:
+      // Autoscaling and breaker marks describe themselves.
+      return mark.label;
+  }
+}
 
 function EventLog({ marks }: { readonly marks: readonly TimelineMark[] }) {
   const attempt = useAttemptStore((s) => s.attempt);
@@ -175,11 +188,7 @@ function EventLog({ marks }: { readonly marks: readonly TimelineMark[] }) {
       <ol className="flex flex-col gap-0.5 text-sm text-zinc-800">
         {marks.map((mark) => {
           const who = mark.componentIds.map((id) => componentLabel(attempt, id)).join(", ");
-          const what = mark.kind.startsWith("overload")
-            ? `${who} ${MARK_TEXT[mark.kind]}`
-            : mark.kind === "load"
-              ? mark.label
-              : `${mark.label} ${MARK_TEXT[mark.kind]}${who ? ` (${who})` : ""}`;
+          const what = describeMark(mark, who);
           return (
             <li key={`${mark.at}-${mark.kind}-${what}`} className="tabular-nums">
               <span className="inline-block w-14 text-zinc-500">{mark.at} s</span>

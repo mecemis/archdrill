@@ -76,6 +76,11 @@ export interface CacheSpec {
   readonly capacityItems: number;
   readonly existing: Zipf | undefined;
   readonly absent: Zipf | undefined;
+  /**
+   * Every store read behind this cache coalesces concurrent misses for a key
+   * (single-flight), so a cold key costs one read, not one per waiting request.
+   */
+  readonly coalesced: boolean;
 }
 
 export const cacheKey = (componentId: string, entity: string | undefined) =>
@@ -230,6 +235,20 @@ export function buildCacheSpecs(
     const ttl = Math.min(...ttls);
     return { present: true, ttl: Number.isFinite(ttl) ? ttl : null };
   };
+  const coalescedBehind = (componentId: string, entity: string) => {
+    const reads = ctx.attempt.flows.flatMap((flow) => {
+      const live = liveStepIds(flow, ctx.attempt).map((id) => flow.steps[id]);
+      const looksUp = live.some(
+        (s) => s?.type === "call" && s.action === "cache.get" && s.target === componentId,
+      );
+      if (!looksUp) return [];
+      return live.filter(
+        (s): s is Extract<typeof s, { type: "call" }> =>
+          s?.type === "call" && s.action === "store.read" && s.entity === entity,
+      );
+    });
+    return reads.length > 0 && reads.every((s) => s.coalesce === true);
+  };
   return [...lookups.values()].map(({ componentId, entity }) => {
     const entityBytes = ctx.problem.entities.find((e) => e.name === entity)?.avgBytes ?? 1;
     const memoryGb = profiles.get(componentId)?.memoryGb ?? 0;
@@ -251,6 +270,7 @@ export function buildCacheSpecs(
       capacityItems: (memoryGb * 1e9 * CACHE_FILL_FACTOR) / entityBytes / share,
       existing: workload.keys[entity]?.existing,
       absent: workload.keys[entity]?.absent,
+      coalesced: coalescedBehind(componentId, entity),
     };
   });
 }

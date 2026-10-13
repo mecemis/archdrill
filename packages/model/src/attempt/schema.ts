@@ -86,6 +86,8 @@ export const CallStepSchema = z.object({
   batchSize: z.number().int().min(1).max(1_000_000).optional(),
   /** For publish steps: the event the message is about. */
   event: IdSchema.optional(),
+  /** For store reads: concurrent reads of the same key in one instance share one call (single-flight). */
+  coalesce: z.boolean().optional(),
   next: NextSchema,
 });
 export type CallStep = z.infer<typeof CallStepSchema>;

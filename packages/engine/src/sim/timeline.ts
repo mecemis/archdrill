@@ -24,6 +24,13 @@ import {
   storedGb,
 } from "./setup";
 import { summarizeCache, summarizeComponents, summarizeOperations } from "./summary";
+import {
+  autoscalers,
+  backlogs,
+  breakers,
+  cacheRestarts,
+  type DynamicMarkKind,
+} from "./timeline-dynamics";
 import type { ComponentMetrics, OperationMetrics } from "./types";
 
 export interface OperationSeries {
@@ -46,7 +53,13 @@ export interface ComponentSeries {
 /** Something worth marking on the timeline. */
 export interface TimelineMark {
   readonly at: number;
-  readonly kind: "load" | "fault-start" | "fault-end" | "overload-start" | "overload-end";
+  readonly kind:
+    | "load"
+    | "fault-start"
+    | "fault-end"
+    | "overload-start"
+    | "overload-end"
+    | DynamicMarkKind;
   readonly label: string;
   readonly componentIds: readonly string[];
 }
@@ -105,6 +118,8 @@ interface StepSummary {
   readonly operations: ReadonlyMap<string, OperationMetrics>;
   readonly components: ReadonlyMap<string, ComponentMetrics>;
   readonly hitRatios: readonly { readonly key: string; readonly hitRatio: number }[];
+  /** Per connection with a circuit breaker: share of calls it fails without calling. */
+  readonly breakers: ReadonlyMap<string, number>;
 }
 
 interface Segment {
@@ -115,8 +130,11 @@ interface Segment {
 /**
  * How a design behaves over time. Each step re-solves loads, overload,
  * timeouts and latency for that moment's rates and faults, starting from the
- * previous step's state (see ADR 0008). With constant load and no events, it
- * settles on the steady state `simulateEnvironment` finds.
+ * previous step's state (see ADR 0008). Between steps, slower state moves on
+ * its own: autoscalers launch instances that take time to start, breakers
+ * stay open for their wait, restarted caches fill up, and backlogs build and
+ * drain. With constant load and no events, it settles on the steady state
+ * `simulateEnvironment` finds.
  */
 export function simulateTimeline(
   workload: Workload,
@@ -149,6 +167,12 @@ export function simulateTimeline(
   for (const c of ctx.attempt.architecture.components) {
     if (c.autoscale) loop.replicas.set(c.id, c.replicas);
   }
+  const scaler = autoscalers(ctx);
+  const breakerState = breakers(ctx);
+  const restarts = cacheRestarts(timeline, ctx);
+  const backlog = backlogs();
+  // Latency of the stores behind caches, which sets how long a cold key's first miss takes.
+  let missLatencyMs: (entity: string) => number = () => 0;
   const operations = new Map<string, OperationSeriesBuilder>();
   const components = new Map<string, { utilization: number[]; instances: number[] }>();
   const caches = new Map<string, number[]>();
@@ -164,7 +188,7 @@ export function simulateTimeline(
         label: event.label ?? "Load changes",
         componentIds: [],
       });
-    } else {
+    } else if (event.kind === "fault") {
       const label = event.label ?? describeFault(event.fault);
       const componentIds = [...resolveFaults([event.fault], ctx.attempt, ctx.catalog).keys()];
       marks.push({ at: event.at, kind: "fault-start", label, componentIds });
@@ -178,6 +202,9 @@ export function simulateTimeline(
   let previous: { inputs: string; summary: StepSummary } | null = null;
 
   times.forEach((t, step) => {
+    marks.push(...restarts.advance(t));
+    if (step > 0) marks.push(...scaler.launchReady(t, loop));
+    breakerState.hold(t, loop);
     const active = faultEvents.filter((e) => activeAt(e, t));
     const segment = segmentFor(active);
     const rates = ratesAt(timeline, t);
@@ -188,8 +215,7 @@ export function simulateTimeline(
       classShares: timeline.classShares,
       faults: active.map((e) => e.fault),
     };
-    const inputs = `${active.map((e) => faultEvents.indexOf(e)).join(",")}|${JSON.stringify(rates)}`;
-    const fixtures = buildFixtures(
+    const base = buildFixtures(
       workload,
       environment,
       ctx,
@@ -197,6 +223,22 @@ export function simulateTimeline(
       segment.caches,
       occupancy,
     );
+    const drains = backlog.drains(timeline.stepSec);
+    const fixtures: Fixtures = {
+      ...base,
+      cacheWindows: restarts.windows(t, base.caches, missLatencyMs),
+      drains,
+      // The first step finds the steady state; after that the autoscalers decide.
+      fixedReplicas: step > 0,
+    };
+    const inputs = JSON.stringify([
+      active.map((e) => faultEvents.indexOf(e)),
+      rates,
+      [...fixtures.cacheWindows],
+      [...drains],
+      [...loop.replicas],
+      [...loop.breakerHeld],
+    ]);
     const model = createModel(fixtures, loop);
     // The design has been running before the timeline starts.
     if (step === 0) warmCaches(model, fixtures);
@@ -208,8 +250,25 @@ export function simulateTimeline(
         ? previous.summary
         : summarizeStep(model, fixtures);
     previous = { inputs, summary };
-    record(t, step, summary);
+    record(t, step, summary, drains);
+
+    marks.push(...scaler.observe(t, summary.components, loop));
+    marks.push(...breakerState.observe(t, summary.breakers));
+    backlog.observe(summary.operations, drains, timeline.stepSec);
+    missLatencyMs = missLatencyOf(summary.components);
   });
+
+  /** For each entity, the mean latency of the slowest store that holds it. */
+  function missLatencyOf(metrics: ReadonlyMap<string, ComponentMetrics>) {
+    const byEntity = new Map<string, number>();
+    for (const component of ctx.attempt.architecture.components) {
+      const latency = metrics.get(component.id)?.latency.mean ?? 0;
+      for (const { entity } of component.data) {
+        byEntity.set(entity, Math.max(byEntity.get(entity) ?? 0, latency));
+      }
+    }
+    return (entity: string) => byEntity.get(entity) ?? 0;
+  }
 
   function summarizeStep(model: Model, fixtures: Fixtures): StepSummary {
     const profiles = profilesOf(model, fixtures, true);
@@ -235,22 +294,32 @@ export function simulateTimeline(
       key: cacheKey(spec.componentId, spec.entity),
       hitRatio: summarizeCache(spec, flow, model.state).hitRatio,
     }));
-    return { operations: summary, components: metrics, hitRatios };
+    const breakerShares = new Map<string, number>();
+    for (const connection of connections) {
+      if (!connection.policy.circuitBreaker) continue;
+      const tally = flow.calls.get(connection.id);
+      breakerShares.set(
+        connection.id,
+        tally && tally.calls > 0 ? tally.shortCircuited / tally.calls : 0,
+      );
+    }
+    return { operations: summary, components: metrics, hitRatios, breakers: breakerShares };
   }
 
   function record(
     t: number,
     step: number,
     { operations: summary, components: metrics, hitRatios }: StepSummary,
+    drains: ReadonlyMap<string, number>,
   ) {
     for (const [id, op] of summary) {
       const series = operations.get(id) ?? emptyOperationSeries(op.trigger, step);
-      series.rate.push(op.rate);
+      // New work only; working through a backlog shows in the backlog series.
+      series.rate.push(op.rate - (drains.get(id) ?? 0));
       series.successRate.push(op.successRate);
       series.p50.push(op.latency.p50);
       series.p99.push(op.latency.p99);
-      const before = series.backlog.at(-1) ?? 0;
-      series.backlog.push(before + op.backlogGrowth * (step === 0 ? 0 : timeline.stepSec));
+      series.backlog.push(backlog.of(id));
       operations.set(id, series);
     }
     for (const [id, c] of metrics) {

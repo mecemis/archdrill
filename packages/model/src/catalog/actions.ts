@@ -17,7 +17,7 @@ export type ActionEffect =
 export type ActionParam = "ttlSec" | "event";
 
 /** Step parameters an action accepts but does not require. */
-export type OptionalActionParam = "batchSize";
+export type OptionalActionParam = "batchSize" | "coalesce";
 
 export interface ActionDef {
   readonly label: string;
@@ -74,7 +74,9 @@ export const ACTIONS = {
     effect: "read",
     outcomes: ["found", "notFound", "error"],
     params: [],
-    description: "Read an entity by key from a durable store.",
+    optionalParams: ["coalesce"],
+    description:
+      "Read an entity by key from a durable store. With coalescing (single-flight), concurrent reads of the same key in one instance share one call.",
   },
   "store.insert": {
     label: "put",
