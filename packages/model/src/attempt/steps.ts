@@ -27,6 +27,8 @@ function conditionalKey(
 function outcomesGiven(step: Step, enabled: ReadonlySet<string>): readonly string[] {
   const declared = stepOutcomes(step);
   if (step.type !== "call") return declared;
+  // A fire-and-forget publish hands the message to a local buffer: the request never sees it fail.
+  if (step.fireAndForget) return declared.filter((outcome) => outcome !== "error");
   const conditional = CONDITIONAL_OUTCOMES[step.action];
   if (!conditional) return declared;
   return declared.filter(

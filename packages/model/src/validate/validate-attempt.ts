@@ -416,7 +416,36 @@ function validateCallStep(
       ),
     );
   }
+  for (const [param, what] of NEW_PARAMS) {
+    if (step[param] !== undefined && !actionTakesParam(step.action, param)) {
+      issues.push(
+        error(
+          "step-unexpected-param",
+          `Step ${stepId} (${step.action}) does not take ${what}.`,
+          loc,
+        ),
+      );
+    }
+  }
+  if (step.bufferSize !== undefined && !step.fireAndForget) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} only buffers messages when it publishes fire-and-forget.`,
+        loc,
+      ),
+    );
+  }
   const trigger = ctx.problem.operations.find((o) => o.id === flow.operation)?.trigger;
+  if (step.aggregateSec !== undefined && trigger?.type === "request") {
+    issues.push(
+      error(
+        "step-aggregate-in-request",
+        `Step ${stepId} would hold the request until its aggregation window closes. Aggregate in a consumer instead.`,
+        loc,
+      ),
+    );
+  }
   if ((step.batchSize ?? 1) > 1 && action.effect !== "allocate" && trigger?.type === "request") {
     issues.push(
       error(
@@ -435,6 +464,14 @@ function validateCallStep(
   }
   return issues;
 }
+
+/** Optional parameters checked the same way, with how messages name them. */
+const NEW_PARAMS = [
+  ["aggregateSec", "an aggregation window"],
+  ["counterShards", "counter shards"],
+  ["fireAndForget", "fire-and-forget"],
+  ["bufferSize", "a buffer size"],
+] as const;
 
 function validateStepEntity(
   stepId: string,

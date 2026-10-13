@@ -35,6 +35,7 @@ export const ISSUE_CODES = [
   "step-unknown-event",
   "flow-consumer-idle",
   "step-batch-in-request",
+  "step-aggregate-in-request",
   "step-unknown-outcome",
   "step-next-missing",
   "step-unhandled-outcome",

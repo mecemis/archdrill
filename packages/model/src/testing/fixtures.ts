@@ -152,11 +152,38 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       id: "key-value-db",
       label: "Key-value database",
       description: "Managed key-value store.",
-      capabilities: ["durable-store", "conditional-write", "ttl"],
+      capabilities: ["durable-store", "conditional-write", "ttl", "atomic-increment"],
       replicable: false,
       holdsData: true,
       flavors: [
-        { id: "dynamodb", label: "DynamoDB", description: "DynamoDB.", managedRedundancy: true },
+        {
+          id: "dynamodb",
+          label: "DynamoDB",
+          description: "DynamoDB.",
+          managedRedundancy: true,
+          perKeyCapacityPerSec: { write: 1000 },
+          sizes: { "on-demand": size(1_000_000, 1_000_000, 4, 0) },
+          defaultSize: "on-demand",
+        },
+      ],
+    },
+    {
+      id: "wide-column-db",
+      label: "Wide-column database",
+      description: "Partitioned store for heavy writes.",
+      capabilities: ["durable-store", "atomic-increment", "ttl"],
+      replicable: true,
+      holdsData: true,
+      shardable: true,
+      writeScaling: "primaries",
+      flavors: [
+        {
+          id: "cassandra",
+          label: "Cassandra",
+          description: "Cassandra.",
+          sizes: { m: size(15000, 30000, 2, 0.6) },
+          defaultSize: "m",
+        },
       ],
     },
     {
@@ -220,6 +247,8 @@ export const testProblem: Problem = ProblemSchema.parse({
   ],
   entities: [
     { name: "Link", key: "code", fields: ["code", "longUrl", "expiresAt"], avgBytes: 500 },
+    { name: "LinkStats", key: "code", fields: ["code", "clicks"], avgBytes: 64 },
+    { name: "Click", key: "clickId", fields: ["clickId", "code", "at"], avgBytes: 100 },
   ],
   operations: [
     {
@@ -262,6 +291,15 @@ export const testProblem: Problem = ProblemSchema.parse({
       requirements: ["FR-1"],
     },
     {
+      id: "record-click",
+      label: "Record click",
+      trigger: { type: "event", event: "link-clicked" },
+      class: "write",
+      idempotent: false,
+      successStatuses: [200],
+      requirements: ["FR-2"],
+    },
+    {
       id: "purge-expired",
       label: "Purge expired links",
       trigger: { type: "schedule", description: "Deletes expired links." },
@@ -271,7 +309,10 @@ export const testProblem: Problem = ProblemSchema.parse({
       requirements: ["FR-3"],
     },
   ],
-  events: [{ id: "link-created", label: "Link created", entity: "Link" }],
+  events: [
+    { id: "link-created", label: "Link created", entity: "Link" },
+    { id: "link-clicked", label: "Link clicked", entity: "Link" },
+  ],
   decisionPoints: [
     {
       id: "redirect-status",

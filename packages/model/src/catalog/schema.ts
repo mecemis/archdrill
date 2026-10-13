@@ -42,6 +42,14 @@ export const FlavorSchema = z
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */
     storagePricePerGbMonth: z.number().nonnegative().optional(),
+    /**
+     * What a single key can take, whatever the provisioned capacity: one key
+     * lives in one partition (for example DynamoDB's 1,000 writes a second).
+     */
+    perKeyCapacityPerSec: z
+      .object({ read: z.number().positive(), write: z.number().positive() })
+      .partial()
+      .optional(),
     /** Pay-per-request pricing (e.g. on-demand key-value stores), in USD. */
     requestCost: z
       .object({

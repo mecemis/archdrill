@@ -1,6 +1,12 @@
 import type { Draft } from "immer";
 import { z } from "zod";
-import { type Flow, isBranchingStep, type Step } from "../attempt/schema";
+import {
+  type CallStep,
+  CallStepSchema,
+  type Flow,
+  isBranchingStep,
+  type Step,
+} from "../attempt/schema";
 import { reachableStepIds, stepOutcomes } from "../attempt/steps";
 import { ActionIdSchema, actionTakesEntity, actionTakesParam } from "../catalog/actions";
 import { LogicIdSchema } from "../catalog/logic";
@@ -15,16 +21,7 @@ import {
 } from "./define";
 
 export const StepInputSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("call"),
-    target: IdSchema,
-    action: ActionIdSchema,
-    entity: z.string().min(1).optional(),
-    ttlSec: z.number().int().positive().optional(),
-    batchSize: z.number().int().min(1).max(1_000_000).optional(),
-    event: IdSchema.optional(),
-    coalesce: z.boolean().optional(),
-  }),
+  CallStepSchema.omit({ next: true }),
   z.object({ type: z.literal("logic"), logic: LogicIdSchema }),
   z.object({ type: z.literal("respond"), status: HttpStatusSchema }),
 ]);
@@ -112,10 +109,14 @@ export const updateStep = defineCommand(
     /** Switch a logic step to other logic; links on outcomes it lacks are dropped. */
     logic: LogicIdSchema.optional(),
     entity: z.string().min(1).optional(),
-    ttlSec: z.number().int().positive().nullable().optional(),
-    batchSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
+    ttlSec: CallStepSchema.shape.ttlSec.unwrap().nullable().optional(),
+    batchSize: CallStepSchema.shape.batchSize.unwrap().nullable().optional(),
     event: IdSchema.optional(),
     coalesce: z.boolean().nullable().optional(),
+    aggregateSec: CallStepSchema.shape.aggregateSec.unwrap().nullable().optional(),
+    counterShards: CallStepSchema.shape.counterShards.unwrap().nullable().optional(),
+    fireAndForget: z.boolean().nullable().optional(),
+    bufferSize: CallStepSchema.shape.bufferSize.unwrap().nullable().optional(),
     status: HttpStatusSchema.optional(),
   }),
   (draft, args) => {
@@ -125,19 +126,14 @@ export const updateStep = defineCommand(
         step.action = args.action;
         dropUnknownLinks(step);
         if (!actionTakesEntity(args.action)) delete step.entity;
-        if (!actionTakesParam(args.action, "ttlSec")) delete step.ttlSec;
-        if (!actionTakesParam(args.action, "batchSize")) delete step.batchSize;
         if (!actionTakesParam(args.action, "event")) delete step.event;
-        if (!actionTakesParam(args.action, "coalesce")) delete step.coalesce;
+        for (const param of TUNABLE_PARAMS) {
+          if (!actionTakesParam(args.action, param)) delete step[param];
+        }
       }
-      if (args.coalesce === null) delete step.coalesce;
-      else if (args.coalesce !== undefined) step.coalesce = args.coalesce;
       if (args.event !== undefined) step.event = args.event;
       if (args.entity !== undefined) step.entity = args.entity;
-      if (args.ttlSec === null) delete step.ttlSec;
-      else if (args.ttlSec !== undefined) step.ttlSec = args.ttlSec;
-      if (args.batchSize === null) delete step.batchSize;
-      else if (args.batchSize !== undefined) step.batchSize = args.batchSize;
+      for (const param of TUNABLE_PARAMS) setParam(step, param, args[param]);
     }
     if (step.type === "logic" && args.logic !== undefined && args.logic !== step.logic) {
       step.logic = args.logic;
@@ -146,6 +142,27 @@ export const updateStep = defineCommand(
     if (step.type === "respond" && args.status !== undefined) step.status = args.status;
   },
 );
+
+/** Call parameters a candidate tunes; `null` in an update removes one. */
+const TUNABLE_PARAMS = [
+  "ttlSec",
+  "batchSize",
+  "coalesce",
+  "aggregateSec",
+  "counterShards",
+  "fireAndForget",
+  "bufferSize",
+] as const;
+type TunableParam = (typeof TUNABLE_PARAMS)[number];
+
+function setParam<P extends TunableParam>(
+  step: Draft<CallStep>,
+  param: P,
+  value: CallStep[P] | null | undefined,
+): void {
+  if (value === null) delete step[param];
+  else if (value !== undefined) step[param] = value;
+}
 
 function dropUnknownLinks(step: Draft<Step>): void {
   if (!isBranchingStep(step)) return;
@@ -245,18 +262,9 @@ function repointReferences(flow: Draft<Flow>, from: string, to: string | undefin
 function toStep(input: StepInput): Step {
   switch (input.type) {
     case "call": {
-      const { type, target, action, entity, ttlSec, batchSize, event, coalesce } = input;
-      return {
-        type,
-        target,
-        action,
-        ...(entity === undefined ? {} : { entity }),
-        ...(ttlSec === undefined ? {} : { ttlSec }),
-        ...(batchSize === undefined ? {} : { batchSize }),
-        ...(event === undefined ? {} : { event }),
-        ...(coalesce === undefined ? {} : { coalesce }),
-        next: {},
-      };
+      // Every field the input carries, without undefined ones, so stored steps stay minimal.
+      const defined = Object.entries(input).filter(([, value]) => value !== undefined);
+      return { ...(Object.fromEntries(defined) as Omit<CallStep, "next">), next: {} };
     }
     case "logic":
       return { type: "logic", logic: input.logic, next: {} };

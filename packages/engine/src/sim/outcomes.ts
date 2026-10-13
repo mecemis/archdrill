@@ -54,6 +54,11 @@ export function callShare(step: PathStep): number {
     : batchShare(step);
 }
 
+/** Whether a step sums what arrives per key over a window, then writes once per key. */
+export function aggregates(step: PathStep): step is CallPathStep & { aggregateSec: number } {
+  return step.kind === "call" && step.aggregateSec !== undefined;
+}
+
 /** Load one call puts on its target, in single-item calls. */
 export function callCost(step: PathStep): number {
   return collectsBatch(step) ? 1 + BATCH_ITEM_COST * ((step.batchSize ?? 1) - 1) : 1;
@@ -137,6 +142,8 @@ export function outcomeProbability(
   prior: readonly PathStep[] = [],
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
+  // The request hands a fire-and-forget message to its buffer and moves on.
+  if (step.fireAndForget) return step.outcome === "ok" ? 1 : 0;
   // A batched allocation is only made once per batch, so only then can it fail.
   const failure = state.callFailure(step, cls.hotKey) * (prefetches(step) ? batchShare(step) : 1);
   if (step.outcome === "error") return failure;

@@ -16,6 +16,8 @@ export interface ComponentProfile {
   readonly inProcess: boolean;
   readonly readCapacity: number;
   readonly writeCapacity: number;
+  /** Writes a second one key can take, wherever it lives (infinite when only capacity limits it). */
+  readonly perKeyWriteCapacity: number;
   /** Mean service time per request, milliseconds. */
   readonly serviceTimeMs: number;
   /** Coefficient of variation of the service time. */
@@ -68,6 +70,7 @@ export function componentProfile(
     inProcess: kind.inProcess,
     readCapacity,
     writeCapacity,
+    perKeyWriteCapacity: flavor.perKeyCapacityPerSec?.write ?? Number.POSITIVE_INFINITY,
     serviceTimeMs,
     cv: size.latencyMs.cv,
     servers,

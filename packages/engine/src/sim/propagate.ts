@@ -1,8 +1,9 @@
 import { ACTIONS, type Connection, DEFAULT_POLICY, type RequestClass } from "@archdrill/model";
 import type { CallPathStep, Path, PathStep } from "../paths/types";
+import { hotWindowShare, windowWriteShare } from "./aggregation";
 import { bulkheadShed, type CallModel, callModel } from "./calls";
 import { type ComponentFault, NO_FAULT } from "./faults";
-import { callCost, callShare, collectsBatch, type OutcomeState } from "./outcomes";
+import { aggregates, callCost, callShare, collectsBatch, type OutcomeState } from "./outcomes";
 import { cacheKey, type OperationModel } from "./setup";
 import {
   batchKey,
@@ -267,9 +268,17 @@ export function propagate(
       if (hop && op.ingress.includes(hop)) enter(hop);
     });
     let redelivered = 0;
+    // Steps that sum per key over a window write once per key and window.
+    const hotShare = classes.reduce((sum, c) => sum + (c.hotKey ? c.share : 0), 0);
+    const shareOf = (step: CallPathStep, hot: boolean) => {
+      if (!aggregates(step)) return callShare(step);
+      return hot
+        ? hotWindowShare(arriving * hotShare, step.aggregateSec)
+        : windowWriteShare(arriving * (1 - hotShare), step.aggregateSec, op.keyPopularity);
+    };
     for (const cls of classes) {
       for (const path of op.analysis.paths) {
-        const once = arriving * cls.share * pathProbability(path, cls, state);
+        const once = arriving * cls.share * pathProbability(path, cls, state, op.unkeyed);
         if (once === 0) continue;
         const deliveries = trigger === "event" && !succeeds(path, op) ? MAX_DELIVERIES : 1;
         const weight = once * deliveries;
@@ -277,25 +286,30 @@ export function propagate(
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
-          const call = calls.get(step, cls.hotKey);
+          // A hot link makes its own rows hot, not rows keyed by something else.
+          const hot = cls.hotKey && !op.unkeyed.has(step.stepId);
+          const call = calls.get(step, hot);
           const failed = step.outcome === "error";
           const perCall = failed ? call.attemptsOnFailure : call.attemptsOnSuccess;
-          const callRate = weight * callShare(step);
+          const callRate = weight * shareOf(step, hot);
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          const work = attempts * reach * callCost(step);
+          const work = attempts * reach * (aggregates(step) ? 1 : callCost(step));
           add(loads, step.target, work, write);
-          if (cls.hotKey) add(hotLoads, step.target, work, write);
+          // A key spread over counter shards loads each of them with its share.
+          if (hot) add(hotLoads, step.target, work / (step.counterShards ?? 1), write);
           retries.set(
             step.target,
             (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * reach,
           );
           addTraffic(step.connectionId, attempts * (1 - calls.shedOf(step.connectionId)));
+          // A fire-and-forget message the queue cannot take is lost, not failed back to the request.
+          const lost = step.fireAndForget ? call.failure : 0;
           tally(step.connectionId, {
             calls: callRate,
             attempts,
-            failed: failed ? callRate : 0,
+            failed: failed ? callRate : callRate * lost,
             shortCircuited:
               failed && call.failure > 0 ? (callRate * call.shortCircuit) / call.failure : 0,
           });
@@ -304,7 +318,7 @@ export function propagate(
             batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight);
           }
           if (step.action === "queue.publish" && step.event && !failed) {
-            publish(step.event, op.operation.id, cls, weight);
+            publish(step.event, op.operation.id, cls, weight * (1 - lost));
           }
           // A lookup that never reached the cache does not warm or age its entries.
           if (step.action === "cache.get" && !failed) {
