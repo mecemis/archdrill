@@ -8,6 +8,7 @@ import { IssuesList } from "./IssuesList";
 import { LoadPanel } from "./LoadPanel";
 import { PathExplorer } from "./PathExplorer";
 import { ScoreSummary } from "./ScoreSummary";
+import { TimelinePanel } from "./TimelinePanel";
 
 export function ResultsDock() {
   const { analysis, scenarios } = useEvaluation();
@@ -20,6 +21,7 @@ export function ResultsDock() {
   const openCount = checks.filter(
     (c) => c.instance.signal === "baseline" && (c.status === "fail" || c.status === "partial"),
   ).length;
+  const hasTimelines = (scenario?.workload?.timelines.length ?? 0) > 0;
   const pathCount = (scenario?.focusOperations ?? []).reduce(
     (sum, op) => sum + (analysis.operations.get(op)?.paths.length ?? 0),
     0,
@@ -43,6 +45,7 @@ export function ResultsDock() {
               { id: "findings", label: "Findings", count: openCount },
               { id: "paths", label: "Paths", count: pathCount },
               { id: "load", label: "Load" },
+              ...(hasTimelines ? [{ id: "timeline" as const, label: "Timeline" }] : []),
               { id: "issues", label: "Issues", count: analysis.issues.length },
               { id: "compare", label: "Compare" },
             ]}
@@ -61,6 +64,7 @@ export function ResultsDock() {
             <PathExplorer analysis={analysis} operations={scenario?.focusOperations ?? []} />
           )}
           {tab === "load" && <LoadPanel />}
+          {tab === "timeline" && hasTimelines && <TimelinePanel />}
           {tab === "issues" && <IssuesList issues={analysis.issues} />}
           {tab === "compare" && <CompareView />}
         </div>

@@ -245,7 +245,18 @@ Lease waste on crash is not modelled yet.
 
 ---
 
-## Discrete-event engine (phase 2)
+## Timelines (as built, M8)
+
+[ADR 0008](../adr/0008-time-stepped-timelines-instead-of-per-request-des.md) replaces the per-request engine below with time-stepped timelines.
+
+- **What a timeline is.** A scenario's workload can define timelines: a duration, a step (one second by default), starting rates, and events. A `load` event moves rates to new values, at once or over a ramp. A `fault` event starts a fault and, optionally, ends it.
+- **How a step is solved.** Each step builds the environment of that moment (its rates and active faults) and solves the same fixed point as a steady-state environment, warm-started from the previous step's state. The first step warms the caches, since the design was running before the timeline starts.
+- **Repeated steps.** A step whose inputs did not change and whose state did not move repeats the previous results, so a two-minute timeline costs a few solves.
+- **Series and marks.** Each step records, per operation: rate, success, p50, p99 and accumulated backlog. Per component it records utilisation of the busiest part and running instances, and per cache the hit ratio. Fault starts and ends, load changes, and components crossing capacity are marked.
+- **Agreement.** Constant rates without events settle on exactly what `simulateEnvironment` reports (tested).
+- **Not yet dynamic.** Cache warm-up, autoscaling lag, breaker state, retry timing, failover phases and backlog draining arrive with M9; until then every step is the steady state of its moment.
+
+## Discrete-event engine (superseded)
 
 Used when **time** matters:
 

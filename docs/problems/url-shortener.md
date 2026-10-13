@@ -316,6 +316,9 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Gates: `no-acknowledged-loss` (from the `replication-mode` decision: asynchronous replication loses about one second of creates) and `creates-fail-fast` (store calls time out within a second).
 - Baseline: `redirects-survive-failover` (99.9%, critical), `failover-p99`, `survives-instance-loss` (99.99%, critical; N+1 sizing), `instance-loss-p99`, `no-unsafe-retries` (the conditional insert is not retried, major), `create-errors-handled`, `redirect-errors-handled` and `stable-under-retries`.
 - Signals: a circuit breaker on the store (senior).
+- Timeline (M8): `failover-over-time`, two minutes at the peak, with the primary failing over from 30 s to 75 s. It has two checks:
+  - `redirects-through-failover`: redirects stay at 99.9% throughout (critical);
+  - `creates-recover-after-failover`: creates are back within 5 s of the new primary.
 
 ---
 

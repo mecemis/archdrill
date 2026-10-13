@@ -455,7 +455,7 @@ mutants:
       - updateComponent: { id: links-db, replicas: 1 }
     expect:
       scenario: s6-dependency-failure
-      fails: [redirects-survive-failover]
+      fails: [redirects-survive-failover, redirects-through-failover]
 
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache

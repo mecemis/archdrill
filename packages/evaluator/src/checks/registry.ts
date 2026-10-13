@@ -23,6 +23,7 @@ import {
 import { unsafeContentStopped } from "./safety";
 import { autoscalingConfigured, overprovisioned } from "./scale";
 import { recognizeStrategy } from "./strategy";
+import { timelineHolds, timelineRecovers } from "./timeline";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
 
@@ -54,6 +55,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     autoscalingConfigured,
     backlogStable,
     unsafeContentStopped,
+    timelineHolds,
+    timelineRecovers,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -95,6 +98,13 @@ export function validateScenarioConfig(
       !scenario.workload?.environments.some((e) => e.id === environment)
     ) {
       issues.push({ checkId: instance.id, message: `unknown environment "${environment}"` });
+    }
+    const timeline = (parsed.data as { timeline?: unknown }).timeline;
+    if (
+      typeof timeline === "string" &&
+      !scenario.workload?.timelines.some((t) => t.id === timeline)
+    ) {
+      issues.push({ checkId: instance.id, message: `unknown timeline "${timeline}"` });
     }
     const decision = (parsed.data as { decision?: unknown }).decision;
     if (
@@ -165,6 +175,23 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
         issues.push(
           issue(`environment "${env.id}" sets a rate for "${id}", which has no workload`),
         );
+    }
+  }
+  for (const timeline of workload.timelines) {
+    const where = `timeline "${timeline.id}"`;
+    const rated = [
+      ...Object.keys(timeline.rates),
+      ...timeline.events.flatMap((e) => (e.kind === "load" ? Object.keys(e.rates) : [])),
+    ];
+    for (const id of new Set(rated)) {
+      const trigger = problem.operations.find((o) => o.id === id)?.trigger;
+      if (!trigger) issues.push(issue(`${where} sets a rate for unknown operation "${id}"`));
+      else if (trigger.type === "event")
+        issues.push(
+          issue(`${where} sets a rate for "${id}", whose rate follows from its publishers`),
+        );
+      else if (!(id in workload.operations))
+        issues.push(issue(`${where} sets a rate for "${id}", which has no workload`));
     }
   }
   for (const [entity, { lengthDecision }] of Object.entries(workload.keyspace)) {

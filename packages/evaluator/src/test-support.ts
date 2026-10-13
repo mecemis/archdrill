@@ -1,4 +1,4 @@
-import { analyzeAttempt, simulateEnvironment } from "@archdrill/engine";
+import { analyzeAttempt, simulateEnvironment, simulateTimeline } from "@archdrill/engine";
 import {
   type Attempt,
   applyCommand,
@@ -14,7 +14,14 @@ import type { CheckContext, CheckOutcome } from "./checks/types";
 
 export function contextFor(attempt: Attempt): CheckContext {
   const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
-  return { attempt, problem: testProblem, catalog: testCatalogIndex, analysis, metrics: new Map() };
+  return {
+    attempt,
+    problem: testProblem,
+    catalog: testCatalogIndex,
+    analysis,
+    metrics: new Map(),
+    timelines: new Map(),
+  };
 }
 
 export function runCheck(id: string, params: unknown, attempt: Attempt): CheckOutcome {
@@ -45,6 +52,30 @@ export function runCheckWithLoad(
     ]),
   );
   return check.run(check.params.parse(params), { ...ctx, metrics });
+}
+
+/** Runs a check with every timeline of the workload simulated. */
+export function runCheckWithTimelines(
+  id: string,
+  params: unknown,
+  attempt: Attempt,
+  workload: Workload,
+): CheckOutcome {
+  const check = CHECKS.get(id);
+  if (!check) throw new Error(`unknown check ${id}`);
+  const ctx = contextFor(attempt);
+  const timelines = new Map(
+    workload.timelines.map((timeline) => [
+      timeline.id,
+      simulateTimeline(workload, timeline, {
+        attempt,
+        catalog: testCatalogIndex,
+        problem: testProblem,
+        analysis: ctx.analysis,
+      }),
+    ]),
+  );
+  return check.run(check.params.parse(params), { ...ctx, timelines });
 }
 
 export function mutated<N extends CommandName>(

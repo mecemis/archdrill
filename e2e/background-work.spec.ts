@@ -63,3 +63,13 @@ test("explains a consumer's lag and redeliveries when its dependency is down", a
   await expect(page.getByText("Scan new link · consumer")).toBeVisible();
   await expect(page.getByText(/failed messages again; after 5 deliveries/)).toBeVisible();
 });
+
+test("shows a failover second by second on the S6 timeline", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S6 / }).click();
+  await page.getByRole("tab", { name: "Timeline" }).click();
+
+  await expect(page.getByRole("img", { name: "Success rate" })).toBeVisible();
+  await expect(page.getByText("Primary failing over starts (Links DB)")).toBeVisible();
+  await expect(page.getByText("Primary failing over ends (Links DB)")).toBeVisible();
+});

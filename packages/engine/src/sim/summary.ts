@@ -364,6 +364,8 @@ export function summarizeOperations(
   state: OutcomeState,
   ingressPass: (op: OperationModel) => number,
   inputs: LatencyInputs,
+  /** Per-path metrics cost a quantile search per path; timelines leave them out. */
+  withPaths = true,
 ): Map<string, OperationMetrics> {
   const result = new Map<string, OperationMetrics>();
   for (const op of operations) {
@@ -402,7 +404,13 @@ export function summarizeOperations(
       if (status === null) unhandled += probability;
       else if (succeeded) success += probability;
       else errorStatus += probability;
-      paths.push({ pathId: path.id, probability, latency: summarize([{ weight: 1, ...moments }]) });
+      if (withPaths) {
+        paths.push({
+          pathId: path.id,
+          probability,
+          latency: summarize([{ weight: 1, ...moments }]),
+        });
+      }
       // Latency is measured on successful requests: fast failures would otherwise pull the tail down.
       if (succeeded) {
         mixture.push({ weight: pass * (probability - hotProbability), ...moments });
