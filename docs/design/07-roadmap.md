@@ -174,13 +174,59 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 - **Correlated redelivery needs no extra state.** Treating a failing message as failing on every delivery puts five times the load on its path, which is the honest picture during an outage and keeps the fixed point unchanged.
 - **Some valid answers wait for later milestones.** A store's own TTL deletion as the purge, and a transactional outbox instead of publishing after the insert, are listed with v0.3's patterns; S7's debrief asks about both.
 
-### M7: Hardening and release (M)
+### M7: Hardening and release (M) ✅
 - Mutation report in CI.
 - Property-test suites.
 - Playwright E2E for the core loop.
 - Performance budgets verified.
 - Docs: "How scoring works", "About the model", authoring guide (draft).
 - Deploy to Cloudflare Pages.
+
+**Delivered (2026-10-13):**
+
+*Reports.*
+- `pnpm report` writes the corpus report: every golden design's score per scenario, and the checks that catch each mutant (66 of 66).
+- It also writes the evaluation-time budget.
+- CI publishes both to the run summary and as artefacts.
+
+*Success criteria as tests.*
+- A design that wires every popular component in one chain, without using them, passes no scenario.
+- Every finding across the corpus points at something and has a fix.
+- Decision findings point at the decision, which the Decisions panel highlights.
+
+*Property suites.*
+- Background work: consumer rates, backlog bounds, batch load, and isolation of a failing consumer from its publishers.
+- Export/import round trips, and check credit that matches the check's status.
+
+*Browser tests.*
+- Six Playwright tests run in CI. They cover:
+  - building a read path;
+  - a gate finding;
+  - importing a golden design;
+  - dropping and undoing S7's safety scan;
+  - a consumer's redeliveries;
+  - the production build under the production headers.
+
+*Performance.*
+- All scenarios on a 30-component design take about 50 ms (p50; it was 130 ms). The gains:
+  - the cache warm-up stops when caches are warm;
+  - the shock test is skipped when a cold start stays well below capacity;
+  - call keys are precomputed, path probabilities no longer copy paths, and quantile bisection stops at a relative precision.
+- Evaluation runs in a worker, with a fallback to the main thread.
+- Libraries load as cached chunks.
+
+*Docs.*
+- How scoring works, About the model, and a draft authoring guide.
+
+*Deployment.*
+- `_headers` with a strict content security policy and immutable caching for assets.
+- A Cloudflare Pages workflow that runs once the project's variable and secrets are configured.
+
+**Learned along the way:**
+- **Profiling beat guessing.** Three hot spots that no one would have picked took most of the time: a string key built per call, a path copied per step, and 80-step bisections for every path's percentiles.
+- **A test of the security policy found a crash.** Blocking the worker with the content security policy took the whole app down; the client now falls back to the main thread when a worker cannot start or fails.
+- **A new hook after an early return slipped through review.** React reported it in the browser tests; Biome now rejects hooks called conditionally.
+- **Every finding needs somewhere to point.** Decisions had no place on the canvas; they now have their own kind of evidence.
 
 **v0.1 is done when** every success criterion in [01-product.md](01-product.md#success-criteria) holds.
 

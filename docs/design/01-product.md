@@ -80,6 +80,11 @@ The product answers one question well: *"If an interviewer pushed on this part o
 | Full attempt of URL Shortener S1–S7 | Completable in 60–90 minutes by a prepared candidate |
 | Every finding | Has evidence on the canvas and a fix suggestion |
 
+**Status (M7).**
+
+- Five criteria are enforced in CI: the golden and mutant corpora, the buzzword design, the evaluation budget (`pnpm report`), and evidence plus a fix for every finding across the corpus. Decision findings point at the decision under *Decisions*.
+- The 60–90 minute run-through of S1–S7 is a manual criterion. It is checked with timed walkthroughs before v0.1 is announced.
+
 ## What makes it useful rather than a toy
 
 - **Path explorer.** The candidate sees every path their design can take (for example `redirect · cache miss → db found → populate → 302 · 9.4% · p99 11 ms`). Seeing the paths is itself the lesson.
