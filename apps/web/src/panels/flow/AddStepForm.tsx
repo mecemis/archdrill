@@ -2,6 +2,7 @@ import {
   ACTIONS,
   type ActionId,
   type Attempt,
+  actionTakesEntity,
   actionTakesParam,
   type Flow,
   LOGIC,
@@ -11,8 +12,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
+import { operationById, respondLabel, runsInBackground } from "../../state/triggers";
 import { type Slot, useUi } from "../../state/ui-store";
-import { COMMON_STATUSES, statusLabel } from "../../ui/outcome";
+import { COMMON_STATUSES } from "../../ui/outcome";
 import { Button, Field, Select } from "../../ui/primitives";
 import { componentLabel, stepTitle } from "./step-label";
 
@@ -24,8 +26,8 @@ const DEFAULT_TTL: Partial<Record<ActionId, number>> = {
 };
 const MAX_BATCH = 1_000_000;
 
-/** Allocation calls produce a key rather than touching an entity. */
-const touchesEntity = (action: ActionId) => ACTIONS[action].effect !== "allocate";
+/** Batched allocation fetches keys ahead; other batches collect items, which wait for the batch. */
+const prefetches = (action: ActionId) => ACTIONS[action].effect === "allocate";
 
 function callableTargets(attempt: Attempt, flow: Flow): string[] {
   return attempt.architecture.connections
@@ -56,8 +58,10 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const [entity, setEntity] = useState(activePack.problem.entities[0]?.name ?? "");
   const [ttl, setTtl] = useState(3600);
   const [batchSize, setBatchSize] = useState(1);
+  const [event, setEvent] = useState(activePack.problem.events[0]?.id ?? "");
   const [logic, setLogic] = useState<LogicId>("checkExpiry");
-  const [status, setStatus] = useState(302);
+  const background = runsInBackground(operationById(flow.operation));
+  const [status, setStatus] = useState(background ? 200 : 302);
   const [gotoStep, setGotoStep] = useState("");
   const [continueWith, setContinueWith] = useState("");
 
@@ -74,7 +78,19 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
     if (action) setTtl(DEFAULT_TTL[action] ?? 3600);
   }, [action]);
 
-  const draft = buildStep(mode, { target, action, entity, ttl, batchSize, logic, status });
+  // Requests cannot wait for other requests to fill a batch; only prefetching works there.
+  const batchable =
+    action !== "" && actionTakesParam(action, "batchSize") && (background || prefetches(action));
+  const draft = buildStep(mode, {
+    target,
+    action,
+    entity,
+    event,
+    ttl,
+    batchSize: batchable ? batchSize : 1,
+    logic,
+    status,
+  });
   const outcomes = useMemo(() => draftOutcomes(draft), [draft]);
   useEffect(() => {
     if (inserting && !outcomes.includes(continueWith)) setContinueWith(outcomes[0] ?? "");
@@ -152,7 +168,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
               ))}
             </Select>
           </Field>
-          {action && touchesEntity(action) && (
+          {action && actionTakesEntity(action) && (
             <Field label="Entity">
               <Select value={entity} onChange={(e) => setEntity(e.target.value)}>
                 {activePack.problem.entities.map((e) => (
@@ -163,8 +179,25 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
               </Select>
             </Field>
           )}
-          {action && actionTakesParam(action, "batchSize") && (
-            <Field label="Batch size (keys per call; 1 = every request)">
+          {action && actionTakesParam(action, "event") && (
+            <Field label="Event">
+              <Select value={event} onChange={(e) => setEvent(e.target.value)}>
+                {activePack.problem.events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {batchable && (
+            <Field
+              label={
+                prefetches(action)
+                  ? "Batch size (keys per call; 1 = every request)"
+                  : "Batch size (items per call; items wait for the batch to fill)"
+              }
+            >
               <input
                 type="number"
                 min={1}
@@ -206,7 +239,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
           <Select value={status} onChange={(e) => setStatus(Number(e.target.value))}>
             {COMMON_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {statusLabel(s)}
+                {respondLabel(s, background)}
               </option>
             ))}
           </Select>
@@ -218,7 +251,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
             <option value="">Choose a step…</option>
             {existing.map(([id, s]) => (
               <option key={id} value={id}>
-                {stepTitle(s, attempt)}
+                {stepTitle(s, attempt, background)}
               </option>
             ))}
           </Select>
@@ -253,6 +286,7 @@ function buildStep(
     target: string;
     action: ActionId | "";
     entity: string;
+    event: string;
     ttl: number;
     batchSize: number;
     logic: LogicId;
@@ -266,7 +300,8 @@ function buildStep(
       type: "call",
       target: v.target,
       action: v.action,
-      ...(touchesEntity(v.action) ? { entity: v.entity } : {}),
+      ...(actionTakesEntity(v.action) ? { entity: v.entity } : {}),
+      ...(actionTakesParam(v.action, "event") ? { event: v.event } : {}),
       ...(actionTakesParam(v.action, "ttlSec") ? { ttlSec: v.ttl } : {}),
       ...(batched ? { batchSize: v.batchSize } : {}),
     };

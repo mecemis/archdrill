@@ -39,6 +39,7 @@ import {
 import type { EnvironmentMetrics, MetastableComponent } from "./types";
 
 export { NETWORK_RTT_MS } from "./calls";
+export { MAX_DELIVERIES } from "./propagate";
 export { CACHE_FILL_FACTOR, type SimulationContext } from "./setup";
 export { OVERLOAD_WAIT_MS } from "./summary";
 

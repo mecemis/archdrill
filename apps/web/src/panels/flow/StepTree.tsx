@@ -9,6 +9,7 @@ import { CornerDownRight, Plus, Trash2, Unlink } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { stepNumbers } from "../../canvas/projection";
 import { useAttemptStore } from "../../state/store";
+import { operationById, runsInBackground } from "../../state/triggers";
 import { type Attach, type Slot, useUi } from "../../state/ui-store";
 import { OutcomeChip } from "../../ui/outcome";
 import { AddStepForm } from "./AddStepForm";
@@ -20,6 +21,8 @@ interface TreeContext {
   /** Position key → whether the step there is drawn in full or as a link to its first occurrence. */
   readonly plan: ReadonlyMap<string, "full" | "reference">;
   readonly highlighted: ReadonlySet<string>;
+  /** A consumer or job: final statuses mean done or try again, not an HTTP answer. */
+  readonly background: boolean;
 }
 
 const ROOT_POSITION = "root";
@@ -65,6 +68,7 @@ export function StepTree({ flow }: { readonly flow: Flow }) {
     numbers: stepNumbers(flow, attempt),
     plan: planTree(flow, attempt),
     highlighted,
+    background: runsInBackground(operationById(flow.operation)),
   };
   const live = new Set(liveStepIds(flow, attempt));
   const orphans = Object.keys(flow.steps).filter((id) => !live.has(id));
@@ -214,7 +218,7 @@ function StepRow({
         )}
         <span className={isLeaf ? "text-zinc-700" : "font-medium text-zinc-900"}>
           {isLeaf ? "→ " : ""}
-          {stepTitle(step, attempt)}
+          {stepTitle(step, attempt, ctx.background)}
         </span>
         <span className="ml-auto flex gap-0.5 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100">
           {!isLeaf && (

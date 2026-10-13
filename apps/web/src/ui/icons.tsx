@@ -2,6 +2,8 @@ import {
   Boxes,
   Database,
   DoorOpen,
+  Globe,
+  Inbox,
   KeyRound,
   type LucideIcon,
   MemoryStick,
@@ -24,6 +26,8 @@ const KIND_ICONS: Readonly<Record<string, LucideIcon>> = {
   "api-gateway": DoorOpen,
   "id-generator": KeyRound,
   coordination: Vote,
+  queue: Inbox,
+  "external-api": Globe,
 };
 
 export function KindIcon({

@@ -1,8 +1,9 @@
-import { findIngressRoute } from "@archdrill/model";
+import { type Attempt, findOperationRoute, type Operation } from "@archdrill/model";
 import { AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
+import { eventLabel, triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
 import { Button, Field, SectionTitle, Select } from "../../ui/primitives";
 import { StepTree } from "./StepTree";
@@ -21,9 +22,10 @@ export function FlowPanel() {
     catalogIndex.capabilities(c.kind, c.flavor).has("stateless-compute"),
   );
   // Derived here rather than read from the analysis, which is empty while the design has errors.
-  const ingress = useMemo(
-    () => (flow ? findIngressRoute(attempt.architecture, catalogIndex, flow.handler) : null),
-    [attempt.architecture, flow],
+  const route = useMemo(
+    () =>
+      flow && operation ? findOperationRoute(operation, attempt, catalogIndex, flow.handler) : null,
+    [attempt, flow, operation],
   );
 
   return (
@@ -32,14 +34,20 @@ export function FlowPanel() {
         <Select value={operationId} onChange={(e) => setOperation(e.target.value)}>
           {activePack.problem.operations.map((op) => (
             <option key={op.id} value={op.id}>
-              {op.method} {op.path} · {op.label}
+              {triggerSummary(op)} · {op.label}
               {scenario?.focusOperations.includes(op.id) ? " (in focus)" : ""}
             </option>
           ))}
         </Select>
       </Field>
+      {operation?.trigger.type === "event" && (
+        <p className="text-xs text-zinc-600">
+          Optional: a consumer of {eventLabel(operation.trigger.event)}. Leave it out if your design
+          does this work another way.
+        </p>
+      )}
       {operation && !flow && (
-        <CreateFlow operationId={operation.id} services={services.map((s) => s.id)} />
+        <CreateFlow operation={operation} services={services.map((s) => s.id)} />
       )}
       {flow && (
         <>
@@ -57,16 +65,8 @@ export function FlowPanel() {
               ))}
             </Select>
           </Field>
-          {ingress ? (
-            <p className="text-xs text-zinc-600">
-              Ingress: {ingress.components.map((id) => componentLabel(attempt, id)).join(" → ")}
-            </p>
-          ) : (
-            <p className="flex gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-800">
-              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-              No client can reach {componentLabel(attempt, flow.handler)}. Connect a client to it,
-              directly or through a load balancer.
-            </p>
+          {operation && (
+            <RouteNote operation={operation} route={route?.components ?? null} attempt={attempt} />
           )}
           <section className="flex flex-col gap-2">
             <SectionTitle>Steps</SectionTitle>
@@ -85,11 +85,47 @@ export function FlowPanel() {
   );
 }
 
+function RouteNote({
+  operation,
+  route,
+  attempt,
+}: {
+  readonly operation: Operation;
+  readonly route: readonly string[] | null;
+  readonly attempt: Attempt;
+}) {
+  const trigger = operation.trigger;
+  if (route) {
+    const text =
+      trigger.type === "event"
+        ? `Takes ${eventLabel(trigger.event)} messages from ${componentLabel(attempt, route[0] ?? "")}.`
+        : trigger.type === "schedule"
+          ? `Runs in the background: ${trigger.description}`
+          : `Ingress: ${route.map((id) => componentLabel(attempt, id)).join(" → ")}`;
+    return <p className="text-xs text-zinc-600">{text}</p>;
+  }
+  const handler = attempt.flows.find((f) => f.operation === operation.id)?.handler ?? "";
+  return (
+    <p className="flex gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-800">
+      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {trigger.type === "event"
+        ? `${componentLabel(attempt, handler)} receives no ${eventLabel(trigger.event)} messages. Publish the event to a queue in another flow, and connect this service to that queue.`
+        : `No client can reach ${componentLabel(attempt, handler)}. Connect a client to it, directly or through a load balancer.`}
+    </p>
+  );
+}
+
+const CREATE_PROMPTS: Readonly<Record<Operation["trigger"]["type"], string>> = {
+  request: "Which service handles this request?",
+  event: "Which service consumes these messages?",
+  schedule: "Which service runs this job?",
+};
+
 function CreateFlow({
-  operationId,
+  operation,
   services,
 }: {
-  readonly operationId: string;
+  readonly operation: Operation;
   readonly services: readonly string[];
 }) {
   const attempt = useAttemptStore((s) => s.attempt);
@@ -105,7 +141,7 @@ function CreateFlow({
   }
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm text-zinc-700">Which service handles this request?</p>
+      <p className="text-sm text-zinc-700">{CREATE_PROMPTS[operation.trigger.type]}</p>
       <Select value={selected} onChange={(e) => setHandler(e.target.value)} aria-label="Handler">
         {services.map((id) => (
           <option key={id} value={id}>
@@ -116,7 +152,7 @@ function CreateFlow({
       <Button
         variant="primary"
         className="self-start"
-        onClick={() => dispatch("createFlow", { operation: operationId, handler: selected })}
+        onClick={() => dispatch("createFlow", { operation: operation.id, handler: selected })}
       >
         Start the flow
       </Button>

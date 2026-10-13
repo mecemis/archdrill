@@ -18,6 +18,7 @@ export function percent(value: number, digits = 1): string {
 }
 
 export function milliseconds(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} s`;
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ms`;
 }
 

@@ -337,6 +337,15 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Alias conflict → 409.
 - Malicious URL: a create-time or async safety scan, `external.call(safe-browsing)`, feeds `disableLink`. This ties the scenario back to S4's invalidation.
 
+**As built (M6)** (`s7-edge-cases`)
+
+- Workload: peak traffic with 2% expired and 0.5% disabled redirects; one create in 500 is malicious; the purge job has 500 expired links a second. A second environment makes the URL-safety API hang.
+- Gates: malicious links are stopped (`unsafe-content-stopped`: every path that stores a link checked it first, or published `link-created` to a consumer that checks it and disables the link), disabled links never redirect, and expiry is checked on the read path.
+- Correctness: the expired status matches the `expired-status` decision; redirects never delete; codes are not reused right away (`code-reuse` decision), and reused codes are never served as cacheable 301/308 redirects; unknown codes 404, invalid URLs 400, taken aliases 409.
+- Security: an asynchronous scan disables within 10 s (p99 lag) and invalidates caches within 50 s, and failed scans answer 503 so the queue retries.
+- Operability: the purge job deletes, in batches; consumers and jobs keep up; nothing (the API quota included) runs above 85%; creation survives the URL-safety API going down; calls to it time out within a second.
+- Signals: per-client rate limits on redirects, negative caching, and creation that publishes instead of waiting for a scan.
+
 ---
 
 ## S8 (v0.2): Click analytics
@@ -366,13 +375,13 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
-**As built (M5).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 51 mutants:
+**As built (M6).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 66 mutants. Two of them pass S7 in different ways: the Postgres design publishes every new link to a managed queue that a worker scans; the DynamoDB design checks each link before the create answers and publishes only the links whose check failed, for a batched rescan.
 
 | ID | Create path | Read path |
 |---|---|---|
-| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead (all six scenarios) |
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones (all seven scenarios) |
 | `postgres-redis-fixed-fleet` | as above, without the gateway | the same with fixed fleets and no near cache (expected not to pass S5) |
-| `dynamodb-redis-cache-aside` | random 8-character codes, one retry | an autoscaling service with a near cache → Redis cache-aside → DynamoDB |
+| `dynamodb-redis-cache-aside` | random 8-character codes, one retry; a URL check before answering, failing open into a rescan | an autoscaling service with a near cache → Redis cache-aside → DynamoDB; the same service purges in batches of 25 |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
 | `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |

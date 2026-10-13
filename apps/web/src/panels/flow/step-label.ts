@@ -1,15 +1,19 @@
 import { ACTIONS, type Attempt, LOGIC, type Step } from "@archdrill/model";
-import { statusLabel } from "../../ui/outcome";
+import { eventLabel, respondLabel } from "../../state/triggers";
 
 export function componentLabel(attempt: Attempt, id: string): string {
   return attempt.architecture.components.find((c) => c.id === id)?.label ?? id;
 }
 
-/** One-line description of a step, e.g. `Redis · get Link`. */
-export function stepTitle(step: Step, attempt: Attempt): string {
+/**
+ * One-line description of a step, e.g. `Redis · get Link`. In consumers and
+ * jobs a final status says whether the item is done or will be tried again.
+ */
+export function stepTitle(step: Step, attempt: Attempt, background = false): string {
   switch (step.type) {
     case "call": {
-      const action = `${ACTIONS[step.action].label} ${step.entity ?? ""}`.trim();
+      const about = step.event === undefined ? (step.entity ?? "") : eventLabel(step.event);
+      const action = `${ACTIONS[step.action].label} ${about}`.trim();
       const ttl = step.ttlSec === undefined ? "" : ` (TTL ${step.ttlSec}s)`;
       const batch =
         step.batchSize === undefined ? "" : ` (batch ${step.batchSize.toLocaleString("en-US")})`;
@@ -18,6 +22,8 @@ export function stepTitle(step: Step, attempt: Attempt): string {
     case "logic":
       return LOGIC[step.logic].label;
     case "respond":
-      return `respond ${statusLabel(step.status)}`;
+      return background
+        ? `finish: ${respondLabel(step.status, true)}`
+        : `respond ${respondLabel(step.status, false)}`;
   }
 }

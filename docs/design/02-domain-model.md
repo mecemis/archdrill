@@ -202,6 +202,14 @@ Attempt
 
 **As built (M5).** Services take `autoscale: { max, targetUtilization }`, with `replicas` as the minimum. A near cache is its own in-process component kind (`inProcess: true` in the catalog): it is connected from exactly one service, adds no network hop, and holds one copy per instance of that service. Workloads can mark a request class `hotKey` (every request asks for the same key), and an environment can override class shares (`classShares`), for example no viral link on an average day.
 
+**As built (M6).** Every operation has a `trigger`:
+
+- `request`: a client request, with a method and a path (the default).
+- `event`: a consumer of an event the problem defines, for example `link-created` about `Link`. The consumer's handler must connect to a queue that some flow publishes the event to with `queue.publish`. Consumers are optional, since a design may do their work another way.
+- `schedule`: a background job that starts in its handler, for example purging expired links.
+
+Two capabilities arrive with them: `async-buffer` (a queue: a managed queue or Kafka) and `external` (a third-party API, here a URL-safety API with a request quota). `external.check` answers `clean`, `malicious` or `error`, and request classes can be `malicious`. A batch size on a step that is not an id allocation collects items: the step waits for the batch, so only consumers and jobs may use one.
+
 `data[]` binds entities to stores, for example `{ entity: Link, key: code, constraints: [unique(code)] }`. A `store.read(Link)` against a store that does not hold `Link` is a validation error.
 
 ### Connection policy
