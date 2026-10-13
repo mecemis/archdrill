@@ -23,6 +23,7 @@ export const StepInputSchema = z.discriminatedUnion("type", [
     ttlSec: z.number().int().positive().optional(),
     batchSize: z.number().int().min(1).max(1_000_000).optional(),
     event: IdSchema.optional(),
+    coalesce: z.boolean().optional(),
   }),
   z.object({ type: z.literal("logic"), logic: LogicIdSchema }),
   z.object({ type: z.literal("respond"), status: HttpStatusSchema }),
@@ -114,6 +115,7 @@ export const updateStep = defineCommand(
     ttlSec: z.number().int().positive().nullable().optional(),
     batchSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
     event: IdSchema.optional(),
+    coalesce: z.boolean().nullable().optional(),
     status: HttpStatusSchema.optional(),
   }),
   (draft, args) => {
@@ -126,7 +128,10 @@ export const updateStep = defineCommand(
         if (!actionTakesParam(args.action, "ttlSec")) delete step.ttlSec;
         if (!actionTakesParam(args.action, "batchSize")) delete step.batchSize;
         if (!actionTakesParam(args.action, "event")) delete step.event;
+        if (!actionTakesParam(args.action, "coalesce")) delete step.coalesce;
       }
+      if (args.coalesce === null) delete step.coalesce;
+      else if (args.coalesce !== undefined) step.coalesce = args.coalesce;
       if (args.event !== undefined) step.event = args.event;
       if (args.entity !== undefined) step.entity = args.entity;
       if (args.ttlSec === null) delete step.ttlSec;
@@ -240,7 +245,7 @@ function repointReferences(flow: Draft<Flow>, from: string, to: string | undefin
 function toStep(input: StepInput): Step {
   switch (input.type) {
     case "call": {
-      const { type, target, action, entity, ttlSec, batchSize, event } = input;
+      const { type, target, action, entity, ttlSec, batchSize, event, coalesce } = input;
       return {
         type,
         target,
@@ -249,6 +254,7 @@ function toStep(input: StepInput): Step {
         ...(ttlSec === undefined ? {} : { ttlSec }),
         ...(batchSize === undefined ? {} : { batchSize }),
         ...(event === undefined ? {} : { event }),
+        ...(coalesce === undefined ? {} : { coalesce }),
         next: {},
       };
     }

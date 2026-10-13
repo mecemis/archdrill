@@ -58,6 +58,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const [entity, setEntity] = useState(activePack.problem.entities[0]?.name ?? "");
   const [ttl, setTtl] = useState(3600);
   const [batchSize, setBatchSize] = useState(1);
+  const [coalesce, setCoalesce] = useState(false);
   const [event, setEvent] = useState(activePack.problem.events[0]?.id ?? "");
   const [logic, setLogic] = useState<LogicId>("checkExpiry");
   const background = runsInBackground(operationById(flow.operation));
@@ -88,6 +89,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
     event,
     ttl,
     batchSize: batchable ? batchSize : 1,
+    coalesce,
     logic,
     status,
   });
@@ -190,6 +192,16 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
               </Select>
             </Field>
           )}
+          {action && actionTakesParam(action, "coalesce") && (
+            <label className="flex items-center gap-2 text-sm text-zinc-800">
+              <input
+                type="checkbox"
+                checked={coalesce}
+                onChange={(e) => setCoalesce(e.target.checked)}
+              />
+              Coalesce concurrent reads of a key (single-flight)
+            </label>
+          )}
           {batchable && (
             <Field
               label={
@@ -289,6 +301,7 @@ function buildStep(
     event: string;
     ttl: number;
     batchSize: number;
+    coalesce: boolean;
     logic: LogicId;
     status: number;
   },
@@ -302,6 +315,7 @@ function buildStep(
       action: v.action,
       ...(actionTakesEntity(v.action) ? { entity: v.entity } : {}),
       ...(actionTakesParam(v.action, "event") ? { event: v.event } : {}),
+      ...(actionTakesParam(v.action, "coalesce") && v.coalesce ? { coalesce: true } : {}),
       ...(actionTakesParam(v.action, "ttlSec") ? { ttlSec: v.ttl } : {}),
       ...(batched ? { batchSize: v.batchSize } : {}),
     };

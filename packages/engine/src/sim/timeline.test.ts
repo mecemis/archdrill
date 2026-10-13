@@ -61,6 +61,17 @@ describe("ratesAt", () => {
     expect(ratesAt(shaped, 40).redirect).toBe(7000);
     expect(ratesAt(shaped, 55).redirect).toBe(2000);
   });
+
+  it("grows by the same factor every second on an exponential ramp", () => {
+    const viral = timeline({
+      events: [
+        { kind: "load", at: 0, rates: { redirect: 60000 }, rampSec: 20, curve: "exponential" },
+      ],
+    });
+
+    expect(ratesAt(viral, 10).redirect).toBeCloseTo(6000 * Math.sqrt(10), 6);
+    expect(ratesAt(viral, 20).redirect).toBeCloseTo(60000, 6);
+  });
 });
 
 describe("simulateTimeline", () => {
@@ -105,11 +116,17 @@ describe("simulateTimeline", () => {
     const hits = result.caches.get("redis|Link") ?? [];
 
     expect(at(result.times, hits, 10)).toBeGreaterThan(0.5);
-    expect(at(result.times, hits, 30)).toBeCloseTo(0, 6);
+    expect(at(result.times, hits, 30)).toBeCloseTo(0, 4);
     expect(at(result.times, db, 30)).toBeGreaterThan(at(result.times, db, 10) * 2);
-    expect(at(result.times, db, 50)).toBeCloseTo(at(result.times, db, 10), 6);
+    // Redis comes back empty: the database stays busier while it fills up again.
+    expect(at(result.times, db, 50)).toBeLessThan(at(result.times, db, 30));
+    expect(at(result.times, db, 50)).toBeGreaterThan(at(result.times, db, 10));
     expect(result.marks.map((m) => `${m.at} ${m.kind} ${m.label}`)).toEqual(
-      expect.arrayContaining(["20 fault-start Redis down", "40 fault-end Redis down"]),
+      expect.arrayContaining([
+        "20 fault-start Redis down",
+        "40 fault-end Redis down",
+        "40 restart Back after the outage",
+      ]),
     );
   });
 

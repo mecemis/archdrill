@@ -26,6 +26,7 @@ jobs:
       - run: pnpm report
         env:
           PERF_BUDGET_MS: "250"
+          PERF_TIMELINE_BUDGET_MS: "5000"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

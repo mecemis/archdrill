@@ -10,7 +10,8 @@ description: >-
   average-day minimum and a spike maximum, and a gateway rate-limits
   creation. Cache calls time out after 20 ms behind a
   circuit breaker; a KGS hands out keys in batches. New links are published
-  to a managed queue; a worker scans them with the URL-safety API, disables
+  to a managed queue; a worker scans them with the URL-safety API in batches
+  of 100, disables
   and evicts malicious ones, and purges expired links in batches.
 expect:
   s5-hot-keys: { minScore: 90 }
@@ -249,6 +250,7 @@ attempt:
           type: call
           target: safety
           action: external.check
+          batchSize: 100
           next: { clean: s200, malicious: disable, error: s503 }
         disable:
           type: call

@@ -121,6 +121,8 @@ Checks are written in TypeScript in `packages/evaluator`, are parameterised from
 
 Both point at what a fault hits or what runs over capacity at those moments; failing that, at the operation's paths that do not succeed.
 
+**As built (M9)**, timeline checks can also bound a consumer's backlog (`metric: backlog`, in items), and step matchers can ask whether a store read is coalesced (`coalesced: true`).
+
 **Metric checks** (from the simulation, per environment)
 - `p99-below(op, ms)`, `p50-below(op, ms)`.
 - `error-rate-below(op, rate, environment)`.

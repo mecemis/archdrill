@@ -15,6 +15,8 @@ export interface CallPathStep {
   readonly batchSize: number | undefined;
   /** For publish steps: the event the message is about. */
   readonly event: string | undefined;
+  /** For store reads: concurrent misses for a key share one read. */
+  readonly coalesce?: boolean;
   readonly outcome: string;
 }
 

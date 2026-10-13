@@ -1,12 +1,17 @@
+import { AUTOSCALE_WINDOW_SEC, DEFAULT_STARTUP_SEC } from "@archdrill/engine";
 import type { Component } from "@archdrill/model";
 import { MAX_REPLICAS } from "@archdrill/model";
 import { useEffect, useState } from "react";
+import { catalogIndex } from "../state/content";
 import { useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { percent } from "../ui/format";
 import { Field, Select } from "../ui/primitives";
 
-const TARGETS = [0.5, 0.6, 0.7, 0.8];
+const TARGETS = [0.5, 0.6, 0.7, 0.8, 0.9];
+
+const startupSec = (component: Component) =>
+  catalogIndex.flavor(component.kind, component.flavor)?.startupSec ?? DEFAULT_STARTUP_SEC;
 /** Default ceiling when autoscaling is switched on: room for a few times the minimum. */
 const DEFAULT_HEADROOM = 4;
 
@@ -65,6 +70,12 @@ export function AutoscaleEditor({ component }: { readonly component: Component }
         <p className="pl-6 text-xs text-zinc-600">
           Runs {running} instance{running === 1 ? "" : "s"} at {metrics.environment.label}
           {running >= autoscale.max ? ", its maximum" : ""}.
+        </p>
+      )}
+      {autoscale && (
+        <p className="pl-6 text-xs text-zinc-500">
+          It scales on the average utilisation of the last {AUTOSCALE_WINDOW_SEC} s, and a new
+          instance takes {startupSec(component)} s to start taking traffic; timelines show the gap.
         </p>
       )}
     </fieldset>

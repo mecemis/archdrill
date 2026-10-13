@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { corpusReport } from "./corpus-report";
 import { COMPONENTS, measureEvaluation } from "./performance";
 
-/** p95 budget for evaluating every scenario; CI runners may set a looser one. */
+/** p95 budget for evaluating every scenario without timelines; CI runners may set a looser one. */
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS ?? 100);
+/** p95 budget with every timeline simulated, in the evaluation worker. */
+const TIMELINE_BUDGET_MS = Number(process.env.PERF_TIMELINE_BUDGET_MS ?? 2000);
 const OUT = new URL("./out/", import.meta.url);
 
 function publish(name: string, markdown: string): void {
@@ -24,24 +26,26 @@ describe("reports", () => {
 
   it("evaluates every scenario of a 30-component design within budget", () => {
     const measurements = measureEvaluation();
+    const within = (m: (typeof measurements)[number]) =>
+      m.analytic.p95 <= BUDGET_MS && m.full.p95 <= TIMELINE_BUDGET_MS;
     const rows = measurements.map(
       (m) =>
-        `| ${m.design} | ${m.p50.toFixed(1)} | ${m.p95.toFixed(1)} | ${m.max.toFixed(1)} | ${m.p95 <= BUDGET_MS ? "✓" : "✗"} |`,
+        `| ${m.design} | ${m.analytic.p50.toFixed(1)} | ${m.analytic.p95.toFixed(1)} | ${m.full.p50.toFixed(1)} | ${m.full.p95.toFixed(1)} | ${within(m) ? "✓" : "✗"} |`,
     );
     publish(
       "performance.md",
       [
         "# Evaluation time",
         "",
-        `All scenarios, each golden design padded to ${COMPONENTS} components; budget p95 ≤ ${BUDGET_MS} ms.`,
+        `All scenarios, each golden design padded to ${COMPONENTS} components. Budgets: p95 ≤ ${BUDGET_MS} ms without timelines, ≤ ${TIMELINE_BUDGET_MS} ms with them.`,
         "",
-        "| Design | p50 (ms) | p95 (ms) | max (ms) | Within budget |",
-        "|---|---|---|---|---|",
+        "| Design | p50 (ms) | p95 (ms) | p50 with timelines | p95 with timelines | Within budget |",
+        "|---|---|---|---|---|---|",
         ...rows,
         "",
       ].join("\n"),
     );
 
-    expect(measurements.filter((m) => m.p95 > BUDGET_MS).map((m) => m.design)).toEqual([]);
+    expect(measurements.filter((m) => !within(m)).map((m) => m.design)).toEqual([]);
   });
 });

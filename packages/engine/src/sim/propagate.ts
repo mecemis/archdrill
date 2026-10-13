@@ -29,6 +29,8 @@ export interface LoopState {
   readonly negativeHit: Map<string, number>;
   /** Per autoscaled component: instances (replicas) it runs, continuous while iterating. */
   readonly replicas: Map<string, number>;
+  /** Per connection: share of calls a breaker that opened recently keeps failing (timelines). */
+  readonly breakerHeld: Map<string, number>;
 }
 
 export function emptyLoopState(): LoopState {
@@ -41,6 +43,7 @@ export function emptyLoopState(): LoopState {
     hotHit: new Map(),
     negativeHit: new Map(),
     replicas: new Map(),
+    breakerHeld: new Map(),
   };
 }
 
@@ -93,6 +96,7 @@ export function callModels(
       faultHangs: fault.hang,
       overload: drops.get(step.target) ?? 0,
       timeout: loop.timedOut.get(connection) ?? 0,
+      heldOpen: loop.breakerHeld.get(connection) ?? 0,
     };
     const shed =
       shedding.get(connection) ?? bulkheadShed(risks, policy, loop.callRates.get(connection) ?? 0);
@@ -146,17 +150,22 @@ export const MAX_DELIVERIES = 5;
 
 type Published = Map<string, Map<string, { cls: RequestClass; rate: number }>>;
 
-/** A consumer receives the messages published about its event, with their classes. */
+/**
+ * A consumer receives the messages published about its event, with their
+ * classes. Consumers and jobs that fell behind also work through their
+ * backlog (`drain`, items per second), with the classes of new work.
+ */
 function resolveRate(
   op: OperationModel,
   published: Published,
+  drain: number,
 ): { rate: number; classes: RequestClass[] } {
   const trigger = op.operation.trigger;
-  if (trigger.type !== "event") return { rate: op.rate, classes: [...op.classes] };
+  if (trigger.type !== "event") return { rate: op.rate + drain, classes: [...op.classes] };
   const messages = [...(published.get(trigger.event)?.values() ?? [])];
   const rate = messages.reduce((sum, m) => sum + m.rate, 0);
-  if (rate <= 0) return { rate: 0, classes: [] };
-  return { rate, classes: messages.map((m) => ({ ...m.cls, share: m.rate / rate })) };
+  if (rate <= 0) return { rate: drain, classes: [] };
+  return { rate: rate + drain, classes: messages.map((m) => ({ ...m.cls, share: m.rate / rate })) };
 }
 
 function succeeds(path: Path, op: OperationModel): boolean {
@@ -195,6 +204,8 @@ export function propagate(
   state: OutcomeState,
   calls: CallModels,
   ingress: IngressModel,
+  /** Backlog items per second that consumers and jobs work through on top of new work. */
+  drains: ReadonlyMap<string, number> = new Map(),
 ): Propagation {
   const loads = new Map<string, Load>();
   const hotLoads = new Map<string, Load>();
@@ -235,7 +246,7 @@ export function propagate(
   };
 
   for (const op of operations) {
-    const { rate, classes } = resolveRate(op, published);
+    const { rate, classes } = resolveRate(op, published, drains.get(op.operation.id) ?? 0);
     const trigger = op.operation.trigger.type;
     let arriving = rate;
     const route = op.analysis.ingress;

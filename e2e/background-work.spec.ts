@@ -73,3 +73,14 @@ test("shows a failover second by second on the S6 timeline", async ({ page }) =>
   await expect(page.getByText("Primary failing over starts (Links DB)")).toBeVisible();
   await expect(page.getByText("Primary failing over ends (Links DB)")).toBeVisible();
 });
+
+test("shows autoscaling catching up with a spreading link on the S5 timeline", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S5 / }).click();
+  await page.getByRole("tab", { name: "Timeline" }).click();
+
+  await expect(page.getByRole("img", { name: "Running instances" })).toBeVisible();
+  await expect(
+    page.getByText(/Redirect API: scaling out to \d+ instances, ready at/).first(),
+  ).toBeVisible();
+});

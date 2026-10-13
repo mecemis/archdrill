@@ -12,9 +12,10 @@ function packFor(problemId: string) {
 
 function scenarioResult(problemId: string, attempt: Attempt, scenarioId: string): ScenarioResult {
   const pack = packFor(problemId);
-  const result = evaluateAttempt(attempt, { ...pack, catalog: catalogIndex }).scenarios.find(
-    (s) => s.scenarioId === scenarioId,
-  );
+  // Only the scenario under test: timelines make the others cost real time.
+  const scenarios = pack.scenarios.filter((s) => s.id === scenarioId);
+  const result = evaluateAttempt(attempt, { ...pack, scenarios, catalog: catalogIndex })
+    .scenarios[0];
   if (!result) throw new Error(`unknown scenario ${scenarioId}`);
   return result;
 }

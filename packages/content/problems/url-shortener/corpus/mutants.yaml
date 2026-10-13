@@ -130,9 +130,9 @@ mutants:
 
   - id: short-ttl
     base: postgres-redis-fixed-fleet
-    description: Cache entries live for 30 seconds; the hit ratio drops and the misses overload the database.
+    description: Cache entries live for 10 seconds; the hit ratio drops and the misses overload the database.
     apply:
-      - updateStep: { operation: redirect, stepId: populate, ttlSec: 30 }
+      - updateStep: { operation: redirect, stepId: populate, ttlSec: 10 }
     expect:
       scenario: s3-cache
       fails: [hit-ratio, serves-peak]
@@ -448,6 +448,17 @@ mutants:
       scenario: s6-dependency-failure
       fails: [survives-instance-loss]
 
+  - id: bulkhead-sized-for-a-warm-cache
+    base: postgres-redis-fixed-fleet
+    description: >-
+      The bulkhead in front of the database fits the misses of a warm cache,
+      so after a cache restart it sheds redirects for minutes.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--links-db, maxRps: 60000 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [restart-recovers]
+
   - id: database-without-replicas
     base: postgres-redis-cache-aside
     description: The database has no replicas, so a lost primary takes its reads with it.
@@ -554,6 +565,28 @@ mutants:
     expect:
       scenario: s7-edge-cases
       fails: [keeps-up, scan-disables-quickly]
+
+  - id: unbatched-scans
+    base: postgres-redis-cache-aside
+    description: >-
+      The worker checks URLs one at a time; a bulk import exceeds the API's
+      quota, and the redeliveries of failed scans keep it exceeded afterwards.
+    apply:
+      - updateStep: { operation: scan-link, stepId: check, batchSize: null }
+    expect:
+      scenario: s7-edge-cases
+      fails: [scans-recover-after-import]
+
+  - id: autoscaling-target-too-high
+    base: postgres-redis-cache-aside
+    description: >-
+      The redirect service scales at 80% utilisation, which leaves no room
+      for the growth during the minute new instances take to start.
+    apply:
+      - setAutoscale: { id: redirect-api, autoscale: { max: 120, targetUtilization: 0.8 } }
+    expect:
+      scenario: s5-hot-keys
+      fails: [surge-served]
 
   - id: scanner-without-timeout
     base: postgres-redis-cache-aside

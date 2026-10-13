@@ -8,4 +8,10 @@ export * from "./sim/faults";
 export type { Moments, WeightedMoments } from "./sim/math/gamma";
 export * from "./sim/simulate";
 export * from "./sim/timeline";
+export {
+  AUTOSCALE_WINDOW_SEC,
+  BREAKER_WAIT_SEC,
+  DEFAULT_STARTUP_SEC,
+  SCALE_IN_COOLDOWN_SEC,
+} from "./sim/timeline-dynamics";
 export * from "./sim/types";

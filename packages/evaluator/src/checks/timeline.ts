@@ -12,7 +12,7 @@ import {
   passed,
 } from "./types";
 
-const MetricSchema = z.enum(["success-rate", "p99", "utilization"]);
+const MetricSchema = z.enum(["success-rate", "p99", "utilization", "backlog"]);
 type Metric = z.infer<typeof MetricSchema>;
 
 const percent = (value: number) => `${(value * 100).toFixed(value > 0.999 && value < 1 ? 2 : 1)}%`;
@@ -54,6 +54,16 @@ function seriesFor(
   if (!operation) return "Nothing in this design runs that operation on the timeline.";
   const label =
     ctx.problem.operations.find((o) => o.id === params.operation)?.label ?? params.operation ?? "";
+  if (params.metric === "backlog") {
+    return {
+      timeline,
+      values: operation.backlog,
+      subject: `${label} backlog`,
+      within: (v) => v <= params.threshold,
+      format: (v) => `${Math.round(v).toLocaleString("en-US")} items`,
+      worse: (a, b) => a > b,
+    };
+  }
   const source = params.metric === "success-rate" ? operation.successRate : operation.p99;
   const values = source.map((v, step) => ((operation.rate[step] ?? 0) > 0 ? v : null));
   return params.metric === "success-rate"
@@ -132,8 +142,8 @@ const WindowParams = {
   metric: MetricSchema,
   /** For success rate and p99. */
   operation: z.string().min(1).optional(),
-  /** A minimum for success rates; a maximum for p99 (ms) and utilisation. */
-  threshold: z.number().positive(),
+  /** A minimum for success rates; a maximum for p99 (ms), utilisation and backlog (items). */
+  threshold: z.number().min(0),
 };
 
 const requireOperation = (p: { metric: Metric; operation?: string | undefined }) =>
@@ -179,9 +189,11 @@ export const timelineHolds = defineCheck({
     const span = Math.max(step, window.length * step);
     const fraction = Math.max(0, 1 - (spent - params.graceSec) / span);
     const message = `${series.subject} is out of bounds (${params.metric === "success-rate" ? "below" : "above"} ${series.format(params.threshold)}) for ${seconds(spent)} of ${label}, at worst ${worstText}.`;
-    const evidence = evidenceAt(
+    const evidence = evidenceFor(
+      ctx,
       timeline,
       outside.map((p) => p.step),
+      params.operation,
     );
     const details = intervals(
       timeline,
@@ -199,7 +211,7 @@ export const timelineRecovers = defineCheck({
   params: z
     .strictObject({
       ...WindowParams,
-      metric: z.enum(["success-rate", "p99"]),
+      metric: z.enum(["success-rate", "p99", "backlog"]),
       /** Seconds into the timeline from which recovery is measured, usually when a fault ends. */
       after: z.number().min(0),
       withinSec: z.number().min(0),
@@ -221,7 +233,7 @@ export const timelineRecovers = defineCheck({
       if (!point || !series.within(point.value as number)) break;
       recovered = point;
     }
-    const bound = `${params.metric === "success-rate" ? "above" : "below"} ${series.format(params.threshold)}`;
+    const bound = `${params.metric === "success-rate" ? "above" : params.metric === "backlog" ? "at or below" : "below"} ${series.format(params.threshold)}`;
     if (!recovered) {
       const last = steps.at(-1);
       return failed(

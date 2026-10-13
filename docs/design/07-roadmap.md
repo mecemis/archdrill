@@ -259,12 +259,35 @@ The original plan was a sampled per-request discrete-event engine. [ADR 0008](..
 - **The planned engine did not fit the problem.** A sampled per-request engine would have needed capacities scaled down to about one server per store at S2's peak, which changes the queueing it exists to show. Re-solving the analytic model per step keeps the queueing exact; ADR 0008 records the trade-off.
 - **Most steps change nothing.** The first version summarised every step and added 40 ms to an evaluation. Repeating results for steps whose inputs and state did not move cut it to 8 ms.
 
-### M9: Transient dynamics (L)
+### M9: Transient dynamics (L) ✅
 - Cold caches after a flush or restart warm up over time; thundering herds on hot keys; request coalescing (single-flight) as a design choice.
 - Autoscaling with a metric window, provisioning delay and cooldown.
 - Circuit breakers as state machines: window, threshold, open time, half-open probes.
 - Retries spread over time by backoff and jitter; failovers with detection, promotion and reconnection; backlogs that build and drain.
 - Timeline variants of S4 (cache restart), S5 (spike with autoscaling lag) and S6 (failover), with goldens and mutants.
+
+**Delivered (2026-10-13):**
+- **Engine.**
+  - Restarted caches fill up over time (time-dependent Che), with herds that coalesced reads avoid.
+  - Autoscalers average utilisation over 30 s and wait for start-up times.
+  - Breakers stay open for their wait.
+  - Backlogs build and drain.
+  - Ramps can be exponential.
+- **Speed.** Che's characteristic time is computed once per cache, Erlang C is memoised, and later steps solve to 1e-5. A dynamic step costs about 0.7 ms.
+- **Content.** Three new timelines, each with its own lesson:
+  - S4 `cache-restart`: a bulkhead sized for a warm cache sheds for minutes;
+  - S5 `viral-surge`: scaling at 80% falls behind a ten-minute surge;
+  - S7 `bulk-import`: unbatched scans stay overloaded by their own redeliveries.
+  The fixed-fleet golden's bulkhead and the Postgres golden's scans were adjusted, three mutants were added (69 in total), and the short-TTL mutant now uses 10 s.
+- **Web.** A single-flight option on store reads, a running-instances chart, autoscaling timing in the inspector, and event-log lines for restarts, scaling and breakers.
+- **Budgets.** The performance report separates analytic evaluation (p95 55 ms) from evaluation with timelines (p95 390 ms; budget 2 s).
+- **Failover phases.** These are written as successive fault events (hanging, then refusing) rather than a dedicated event.
+
+**Learned along the way:**
+- **Timelines found a metastable failure no steady state shows.** After a burst, the redeliveries of failed scans kept the URL-safety API over its quota indefinitely. The healthy steady state still exists, but the system cannot get back to it on its own.
+- **A golden design can be wrong in a way only time shows.** The fixed-fleet bulkhead was fine at a warm cache's hit ratio and shed redirects for minutes after a restart. Widening it then let a 30-second TTL fit too, so that mutant moved to 10 s to keep its lesson.
+- **Linear ramps are a poor model of a spreading link.** A linear ramp grows fastest relative to load at its start, where no autoscaler can follow. An exponential one tests the real constraint: growth during the minute an instance takes to start.
+- **The call model had a shortcut for healthy calls.** It skipped the breaker, so a breaker held open over a recovered dependency failed nothing until the shortcut learned about it.
 
 ### M10: Timeline UI (M)
 - Charts with event markers, and a scrubber that shows the canvas at a moment in time.

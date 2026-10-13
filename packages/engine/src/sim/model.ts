@@ -58,6 +58,12 @@ export interface Model {
 }
 
 export interface Fixtures {
+  /** Seconds since each cache (by `cacheKey`) started empty; absent for warm caches. */
+  readonly cacheWindows: ReadonlyMap<string, number>;
+  /** Backlog items per second that consumers and jobs work through (timelines). */
+  readonly drains: ReadonlyMap<string, number>;
+  /** Replicas are set by a timeline's autoscaler, not solved for. */
+  readonly fixedReplicas: boolean;
   readonly ctx: SimulationContext;
   readonly operations: readonly OperationModel[];
   readonly caches: readonly CacheSpec[];
@@ -94,7 +100,7 @@ export function profilesOf(model: Model, fixtures: Fixtures, whole = false) {
 
 export function propagateModel(model: Model, fixtures: Fixtures): Propagation {
   model.calls.reset();
-  return propagate(fixtures.operations, model.state, model.calls, model.ingress);
+  return propagate(fixtures.operations, model.state, model.calls, model.ingress, fixtures.drains);
 }
 
 export const instancesIn =
@@ -112,7 +118,10 @@ export function warmCaches(model: Model, fixtures: Fixtures): void {
   const instances = instancesIn(profilesOf(model, fixtures));
   for (let i = 0; i < WARM_UP_ITERATIONS; i++) {
     const flow = propagateModel(model, fixtures);
-    if (relaxCaches(fixtures.caches, flow, model.loop, 0.5, instances) < WARM_UP_TOLERANCE) return;
+    const delta = relaxCaches(fixtures.caches, flow, model.loop, 0.5, instances, (key) =>
+      fixtures.cacheWindows.get(key),
+    );
+    if (delta < WARM_UP_TOLERANCE) return;
   }
 }
 
@@ -130,6 +139,9 @@ export function buildFixtures(
   occupancy: ReadonlyMap<string, { all: number; aliases: number }> = occupancies(workload, ctx),
 ): Fixtures {
   return {
+    cacheWindows: new Map(),
+    drains: new Map(),
+    fixedReplicas: false,
     ctx,
     operations: buildOperations(workload, environment, ctx),
     caches,
@@ -144,6 +156,7 @@ export function solve(
   model: Model,
   fixtures: Fixtures,
   maxIterations = MAX_ITERATIONS,
+  tolerance = TOLERANCE,
 ): { converged: boolean; iterations: number } {
   let iterations = 0;
   while (iterations < maxIterations) {
@@ -153,11 +166,15 @@ export function solve(
     const damping = dampingAt(iterations);
     const delta = Math.max(
       relaxComponents(profiles, flow, model.loop, damping),
-      relaxAutoscaling(fixtures.autoscaled, profiles, flow, model.loop, damping),
+      fixtures.fixedReplicas
+        ? 0
+        : relaxAutoscaling(fixtures.autoscaled, profiles, flow, model.loop, damping),
       relaxConnections(fixtures.connections, profiles, flow, model.loop, damping),
-      relaxCaches(fixtures.caches, flow, model.loop, damping, instancesIn(profiles)),
+      relaxCaches(fixtures.caches, flow, model.loop, damping, instancesIn(profiles), (key) =>
+        fixtures.cacheWindows.get(key),
+      ),
     );
-    if (delta < TOLERANCE) return { converged: true, iterations };
+    if (delta < tolerance) return { converged: true, iterations };
   }
   return { converged: false, iterations };
 }

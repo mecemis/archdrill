@@ -234,6 +234,11 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Baseline: `disabled-answer`, `disable-errors-handled`, `survives-node-loss` (99.99%, critical), `node-loss-p99`, `no-cascade` (creates at 99.9% while the cache is gone, critical), `cache-timeout` (50 ms, major), `stable-under-retries` (critical), `retries-bounded` and `revocable-redirects` (301 and 308 are forbidden).
 - Signals: a circuit breaker on the cache (senior); redirects that keep working without any cache (staff).
 - Surviving the miss storm: the Postgres golden handles redirects in their own service with a 60,000 calls/s bulkhead to the database, so redirects degrade to 20% while creates stay at 100%; on-demand DynamoDB absorbs the whole peak; a database sized for the full read peak keeps redirects at 100% and breaks the S3 budget. An unreplicated Memcached tier fails node loss and cascades.
+- Timeline (M9): `cache-restart`, three minutes at the peak, with the cache cluster restarting empty at 30 s. Its checks:
+  - `restart-recovers`: redirects are back at 99.9% within 30 s;
+  - `creates-through-restart`: creates stay at 99.9% throughout (critical);
+  - a senior signal for single-flight reads.
+  The fixed-fleet golden's bulkhead leaves room for a cold cache's misses; the `bulkhead-sized-for-a-warm-cache` mutant does not.
 
 ---
 
@@ -274,6 +279,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Baseline: `spike-availability` (99.99%, critical), `hot-shard-headroom` (no component or shard above 85%, major), `spike-p99`, `creates-unaffected` (critical), `within-budget` (an average day under $40,000, major) and `idle-fleet` (minor).
 - Signals: a near cache, autoscaling services and rate-limited creation (senior).
 - Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, the viral link's 300,000 lookups a second saturate one Redis shard while the tier averages 68%; a fleet fixed at the spike's size breaks the average-day budget.
+- Timeline (M9): `viral-surge`, redirects growing exponentially from 100,000 to a million a second over ten minutes, while new instances take a minute to start. Its check, `surge-served`, keeps redirects at 99% throughout. Scaling at 70% passes; the `autoscaling-target-too-high` mutant (80%) sheds requests for about eight minutes.
 
 ---
 
@@ -348,6 +354,10 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Security: an asynchronous scan disables within 10 s (p99 lag) and invalidates caches within 50 s, and failed scans answer 503 so the queue retries.
 - Operability: the purge job deletes, in batches; consumers and jobs keep up; nothing (the API quota included) runs above 85%; creation survives the URL-safety API going down; calls to it time out within a second.
 - Signals: per-client rate limits on redirects, negative caching, and creation that publishes instead of waiting for a scan.
+- Timeline (M9): `bulk-import`, two minutes of four times the usual creates. Its checks:
+  - `scans-recover-after-import`: scans are back to normal within a minute after the import;
+  - `scan-backlog-drains`: the scan backlog is gone within two minutes.
+  The Postgres golden checks URLs in batches of 100. The `unbatched-scans` mutant exceeds the API quota, and the redeliveries of failed scans keep it exceeded after the import: a metastable failure.
 
 ---
 
@@ -378,7 +388,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
-**As built (M6).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 66 mutants. Two of them pass S7 in different ways: the Postgres design publishes every new link to a managed queue that a worker scans; the DynamoDB design checks each link before the create answers and publishes only the links whose check failed, for a batched rescan.
+**As built (M6).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 69 mutants. Two of them pass S7 in different ways: the Postgres design publishes every new link to a managed queue that a worker scans; the DynamoDB design checks each link before the create answers and publishes only the links whose check failed, for a batched rescan.
 
 | ID | Create path | Read path |
 |---|---|---|

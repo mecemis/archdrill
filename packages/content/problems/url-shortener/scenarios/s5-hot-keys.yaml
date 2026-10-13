@@ -44,6 +44,22 @@ workload:
       label: Viral spike
       description: A million redirects a second; one link takes 30% of them.
       rates: { redirect: 1000000, create-link: 3000 }
+  timelines:
+    - id: viral-surge
+      label: The link spreads
+      description: >-
+        Redirects grow tenfold over ten minutes, by the same factor every
+        second, as a link spreads; new instances take a minute to start.
+      durationSec: 720
+      stepSec: 5
+      rates: { redirect: 100000, create-link: 1000 }
+      events:
+        - kind: load
+          at: 30
+          rampSec: 600
+          curve: exponential
+          label: The link starts spreading
+          rates: { redirect: 1000000, create-link: 3000 }
 dimensions:
   scalability: 0.35
   availability: 0.25
@@ -81,6 +97,28 @@ checks:
       Give every tier headroom at the spike: autoscale services, absorb the
       hot key before it reaches one shard, and keep the store's misses within
       its capacity.
+
+  - id: surge-served
+    use: timeline-holds
+    title: Redirects stay at 99% while traffic grows tenfold over ten minutes
+    dimension: scalability
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params:
+      timeline: viral-surge
+      metric: success-rate
+      operation: redirect
+      threshold: 0.99
+    why: >-
+      Autoscaling reacts to utilisation it has already seen, and a new
+      instance takes about a minute to start. Until it does, the instances
+      already running absorb the growth, so the utilisation they scale at
+      decides how fast a surge they can survive.
+    fix: >-
+      Scale at a target that leaves room for a minute of growth (about 70%),
+      start from an average-day minimum, and keep the hot key off the service
+      tier with a near cache.
 
   - id: hot-shard-headroom
     use: utilization-below
