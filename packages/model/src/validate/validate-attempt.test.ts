@@ -287,6 +287,42 @@ describe("validateAttempt", () => {
     expect(codes(alone)).toContain("step-outbox-without-transaction");
   });
 
+  it("accepts a TTL on a write only where the store expires entries", () => {
+    const read = mutate("updateStep", { operation: "redirect", stepId: "read", ttlSec: 60 });
+    const insert = applyCommand(asyncAttempt(), "updateStep", {
+      operation: "create-link",
+      stepId: "insert",
+      ttlSec: 60,
+    }).attempt;
+
+    // Store reads take no TTL at all; the test PostgreSQL expires nothing.
+    expect(codes(read)).toContain("step-unexpected-param");
+    expect(codes(insert)).toContain("step-ttl-unsupported");
+  });
+
+  it("rejects exactly-once commits outside a stream processor", () => {
+    let attempt = mutate("setComponentData", { id: "db", entities: ["Link", "LinkStats"] });
+    attempt = mutate(
+      "addStep",
+      {
+        operation: "redirect",
+        id: "count",
+        step: {
+          type: "call",
+          target: "db",
+          action: "counter.increment",
+          entity: "LinkStats",
+          exactlyOnce: true,
+        },
+        attach: { to: "outcome", stepId: "expiryHit", outcome: "valid" },
+        continueWith: { outcome: "ok" },
+      },
+      attempt,
+    );
+
+    expect(codes(attempt)).toContain("step-exactly-once-unsupported");
+  });
+
   it("rejects a request waiting for other requests to fill a batch", () => {
     const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
 

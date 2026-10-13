@@ -9,10 +9,8 @@ import {
   callCost,
   callShare,
   collectsBatch,
-  fanOut,
   fanOutCalls,
   type OutcomeState,
-  ownBatches,
 } from "./outcomes";
 
 /** Load of a call carrying a fan-out's items in its own batches, per batch on average. */

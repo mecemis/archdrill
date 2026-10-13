@@ -12,6 +12,7 @@ story: |
   requests a second. What happens to link creation when that API stops
   answering?"
 focusOperations: [create-link, redirect, purge-expired, scan-link]
+optionalOperations: [purge-expired]
 workload:
   operations:
     redirect:
@@ -274,20 +275,18 @@ checks:
       purge job.
 
   - id: purge-deletes
-    use: all-success-paths-contain
-    title: The purge job deletes expired links
+    use: expired-data-removed
+    title: Expired links are deleted
     dimension: operability
     weight: 2
     requirements: [FR-3]
-    params:
-      operation: purge-expired
-      statuses: [200]
-      step: { action: store.delete, entity: Link, outcome: ok }
+    params: { entity: Link, job: purge-expired }
     why: >-
       Expired links that are never deleted take storage, index memory and
       backup time forever: about 40 million of them a day at this rate.
     fix: >-
-      Give the purge job a flow that deletes expired links from the store.
+      Give the purge job a flow that deletes expired links from the store, or
+      write links with a TTL in a store that expires them by itself.
 
   - id: purge-batched
     use: all-success-paths-contain
@@ -510,6 +509,20 @@ checks:
       entries, every one of them reaches the store.
     fix: >-
       Cache "does not exist" for a short TTL before answering 404.
+
+  - id: link-event-committed
+    use: no-dual-write
+    title: A link and its link-created event commit together
+    dimension: security
+    signal: staff
+    requirements: [FR-5]
+    params: { operation: create-link, event: link-created }
+    why: >-
+      If the publish fails after the insert, the link is live and never
+      scanned. A transactional outbox writes the event with the link.
+    fix: >-
+      Publish link-created through a transactional outbox in the insert's
+      transaction.
 
   - id: creation-does-not-wait
     use: all-success-paths-contain

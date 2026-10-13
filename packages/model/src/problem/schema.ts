@@ -220,6 +220,12 @@ export const ScenarioSchema = z
     order: z.number().int().positive(),
     story: z.string().min(1),
     focusOperations: z.array(IdSchema).min(1),
+    /**
+     * Focus operations a design may leave out because it does their work
+     * another way (expired links deleted by the store's own TTL instead of a
+     * purge job). Checks about them do not apply then.
+     */
+    optionalOperations: z.array(IdSchema).default([]),
     prerequisites: z.array(IdSchema).default([]),
     dimensions: z.partialRecord(DimensionSchema, z.number().positive()),
     checks: z.array(CheckInstanceSchema).min(1),

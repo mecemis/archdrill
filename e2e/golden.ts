@@ -7,7 +7,7 @@ const require = createRequire(new URL("../packages/content/package.json", import
 const yaml = require("yaml") as { parse(text: string): { attempt: unknown } };
 
 /** A golden design as the export file the app reads. */
-function goldenFile(name: string, problem: string) {
+export function goldenFile(name: string, problem: string) {
   const source = new URL(
     `../packages/content/problems/${problem}/corpus/golden/${name}.yaml`,
     import.meta.url,

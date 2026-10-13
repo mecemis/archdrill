@@ -303,6 +303,9 @@
                         "idempotencyKey": {
                           "type": "boolean"
                         },
+                        "exactlyOnce": {
+                          "type": "boolean"
+                        },
                         "outbox": {
                           "type": "boolean"
                         },

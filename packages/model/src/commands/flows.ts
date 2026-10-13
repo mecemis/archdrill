@@ -119,6 +119,7 @@ export const updateStep = defineCommand(
     each: IdSchema.nullable().optional(),
     idempotencyKey: z.boolean().nullable().optional(),
     outbox: z.boolean().nullable().optional(),
+    exactlyOnce: z.boolean().nullable().optional(),
     bufferSize: CallStepSchema.shape.bufferSize.unwrap().nullable().optional(),
     status: HttpStatusSchema.optional(),
   }),
@@ -158,6 +159,7 @@ const TUNABLE_PARAMS = [
   "each",
   "idempotencyKey",
   "outbox",
+  "exactlyOnce",
 ] as const;
 type TunableParam = (typeof TUNABLE_PARAMS)[number];
 

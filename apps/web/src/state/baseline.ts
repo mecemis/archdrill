@@ -8,7 +8,9 @@ interface BaselineState {
   /** A pinned version of the design to compare the current one with. */
   readonly baseline: Attempt | null;
   readonly evaluation: AttemptEvaluation | null;
-  pin: (attempt: Attempt) => void;
+  /** Where the baseline came from: a pinned version, or a design file by name. */
+  readonly source: string | null;
+  pin: (attempt: Attempt, source?: string) => void;
   clear: () => void;
 }
 
@@ -21,12 +23,13 @@ const initial = loadBaseline(activePack.problem.id);
 export const useBaseline = create<BaselineState>((set) => ({
   baseline: initial,
   evaluation: evaluated(initial),
-  pin(attempt) {
+  source: null,
+  pin(attempt, source) {
     saveBaseline(activePack.problem.id, attempt);
-    set({ baseline: attempt, evaluation: evaluated(attempt) });
+    set({ baseline: attempt, evaluation: evaluated(attempt), source: source ?? null });
   },
   clear() {
     saveBaseline(activePack.problem.id, null);
-    set({ baseline: null, evaluation: null });
+    set({ baseline: null, evaluation: null, source: null });
   },
 }));

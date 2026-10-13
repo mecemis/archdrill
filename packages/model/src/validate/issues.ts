@@ -39,6 +39,8 @@ export const ISSUE_CODES = [
   "step-logic-not-offered",
   "step-unknown-count",
   "step-outbox-without-transaction",
+  "step-exactly-once-unsupported",
+  "step-ttl-unsupported",
   "step-unknown-outcome",
   "step-next-missing",
   "step-unhandled-outcome",

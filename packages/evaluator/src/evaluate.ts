@@ -47,12 +47,15 @@ export type Readiness = OperationStatus | "too-complex";
  * way (a synchronous check instead of a scan). Those without a flow are
  * skipped, with their labels.
  */
-function unusedConsumers(ctx: CheckContext): Map<string, string> {
+function unusedConsumers(ctx: CheckContext, scenario: Scenario): Map<string, string> {
   const unused = new Map<string, string>();
   for (const operation of ctx.problem.operations) {
-    if (operation.trigger.type !== "event") continue;
-    if (!ctx.attempt.flows.some((f) => f.operation === operation.id)) {
+    if (ctx.attempt.flows.some((f) => f.operation === operation.id)) continue;
+    if (operation.trigger.type === "event") {
       unused.set(operation.id, `a "${operation.label}" consumer`);
+    } else if (scenario.optionalOperations.includes(operation.id)) {
+      // The scenario accepts doing this work another way.
+      unused.set(operation.id, `"${operation.label}"`);
     }
   }
   return unused;
@@ -114,7 +117,7 @@ export function evaluateScenario(
   const blocking = blockingIssues(scenario, ctx.analysis.issues);
   if (blocking.length > 0) return { scenarioId: scenario.id, status: "invalid", blocking };
 
-  const unused = unusedConsumers(ctx);
+  const unused = unusedConsumers(ctx, scenario);
   const notReady = scenario.focusOperations
     .filter((operation) => !unused.has(operation))
     .map((operation) => ({ operation, status: readiness(ctx, operation) }))

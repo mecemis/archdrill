@@ -31,6 +31,8 @@ export interface CallPathStep {
   readonly idempotencyKey?: boolean;
   /** For publishes: written in the transaction of the store write before it, relayed afterwards. */
   readonly outbox?: boolean;
+  /** For writes from a stream processor: committed with its checkpoints. */
+  readonly exactlyOnce?: boolean;
   readonly outcome: string;
 }
 

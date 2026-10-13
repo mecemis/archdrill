@@ -29,7 +29,9 @@ export type OptionalActionParam =
   | "bufferSize"
   | "each"
   | "idempotencyKey"
-  | "outbox";
+  | "outbox"
+  | "exactlyOnce"
+  | "ttlSec";
 
 export interface ActionDef {
   readonly label: string;
@@ -104,9 +106,9 @@ export const ACTIONS = {
     effect: "write",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "batchSize", "each"],
+    optionalParams: ["aggregateSec", "batchSize", "each", "exactlyOnce", "ttlSec"],
     description:
-      "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total. With a batch size (in consumers), that many rows go in one call.",
+      "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total. With a batch size (in consumers), that many rows go in one call. With a TTL, a store that supports it deletes the entity when it expires.",
   },
   "store.insertIfAbsent": {
     label: "insert if absent",
@@ -114,6 +116,7 @@ export const ACTIONS = {
     effect: "conditional-write",
     outcomes: ["ok", "conflict", "error"],
     params: [],
+    optionalParams: ["ttlSec"],
     description: "Atomic insert that fails with a conflict when the key already exists.",
     unsafeToRetry:
       "A timed-out insert may still have written the row. The retry then finds the key taken and reports a conflict for the caller's own write.",
@@ -153,9 +156,9 @@ export const ACTIONS = {
     effect: "increment",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "counterShards", "batchSize", "each"],
+    optionalParams: ["aggregateSec", "counterShards", "batchSize", "each", "exactlyOnce"],
     description:
-      "Atomically add to a count stored under the entity's key. With an aggregation window (in consumers), the handler sums increments per key over the window and adds each sum once. With counter shards, one key's count is spread over that many rows, so a hot key's writes spread too; reading the count adds them up. With a batch size (in consumers), that many increments go in one call.",
+      "Atomically add to a count stored under the entity's key. With an aggregation window (in consumers), the handler sums increments per key over the window and adds each sum once. With counter shards, one key's count is spread over that many rows, so a hot key's writes spread too; reading the count adds them up. With a batch size (in consumers), that many increments go in one call. Committed with a stream processor's checkpoints (exactly once), a replay after a restart does not repeat it.",
     unsafeToRetry:
       "A timed-out increment may have been applied. Retrying it, or redelivering its message, counts the same thing twice.",
   },

@@ -32,6 +32,14 @@
         "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
       }
     },
+    "optionalOperations": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+      }
+    },
     "prerequisites": {
       "default": [],
       "type": "array",

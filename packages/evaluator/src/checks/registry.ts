@@ -10,6 +10,7 @@ import {
 } from "@archdrill/model";
 import {
   eventConsumed,
+  expiredDataRemoved,
   idempotentConsumerWrites,
   noSyncWriteOnReadPath,
   publishesWithoutWaiting,
@@ -80,6 +81,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     eventConsumed,
     limitsAreGlobal,
     noDualWrite,
+    expiredDataRemoved,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

@@ -1,5 +1,5 @@
 import { applyCommand } from "@archdrill/model";
-import { cacheAsideAttempt, clickAnalyticsAttempt } from "@archdrill/model/testing";
+import { asyncAttempt, cacheAsideAttempt, clickAnalyticsAttempt } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { runCheck } from "../test-support";
 
@@ -125,5 +125,38 @@ describe("idempotent-consumer-writes", () => {
     );
 
     expect(outcome.status).toBe("pass");
+  });
+});
+
+describe("expired-data-removed", () => {
+  const params = { entity: "Link", job: "purge-expired" };
+
+  it("passes a job that deletes expired links", () => {
+    expect(runCheck("expired-data-removed", params, asyncAttempt()).status).toBe("pass");
+  });
+
+  it("fails when nothing deletes them", () => {
+    const attempt = applyCommand(asyncAttempt(), "removeFlow", {
+      operation: "purge-expired",
+    }).attempt;
+
+    const outcome = runCheck("expired-data-removed", params, attempt);
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.evidence.length).toBeGreaterThan(0);
+  });
+});
+
+describe("idempotent-consumer-writes with exactly-once commits", () => {
+  it("accepts increments committed with the processor's checkpoints", () => {
+    const attempt = applyCommand(clickAnalyticsAttempt(), "updateStep", {
+      operation: "record-click",
+      stepId: "count",
+      exactlyOnce: true,
+    }).attempt;
+
+    expect(
+      runCheck("idempotent-consumer-writes", { operation: "record-click" }, attempt).status,
+    ).toBe("pass");
   });
 });

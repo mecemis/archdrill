@@ -335,6 +335,7 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
 - **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.
 - **Idempotency keys.** Payment calls can carry an idempotency key. The engine treats them like any call; the evaluator stops treating their retries as unsafe.
 - **Duplicates.** Requests with the `duplicate` fact (a resent order) make a conditional insert on their key conflict.
+- **Exactly-once commits and TTLs (M17).** Writes committed with a stream processor's checkpoints, and writes that set a TTL in a store that expires entries, cost what any write costs. They matter to the evaluator, not to the load model.
 
 ## Discrete-event engine (superseded)
 
