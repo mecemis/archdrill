@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: mysql-memcached-cache-aside
 description: >-
   NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (6 nodes, no replication)

@@ -1,6 +1,14 @@
-# Authoring a problem pack (draft)
+# Authoring a problem pack
 
-A problem pack is YAML under `packages/content/problems/<problem-id>/`. It is compiled and validated at build time, and CI holds it to a corpus of designs that must pass and designs that must fail. This draft covers what the URL Shortener pack uses; a JSON Schema for editors is planned for v0.3.
+A problem pack is YAML under `packages/content/problems/<problem-id>/`. It is compiled and validated at build time, and CI holds it to a corpus of designs that must pass and designs that must fail.
+
+**Editor support.** JSON Schemas for every kind of file live in `packages/content/schema/`, generated from the same schemas that validate content (`pnpm schemas` regenerates them; a test fails when they are stale). Every YAML file starts with a line that points editors at its schema, so editors with YAML language support (VS Code with the YAML extension, JetBrains IDEs) complete fields and flag mistakes as you type:
+
+```yaml
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+```
+
+A test checks that every content file has this line.
 
 ```
 packages/content/problems/url-shortener/
@@ -10,7 +18,7 @@ packages/content/problems/url-shortener/
   corpus/mutants.yaml     # broken variants and the checks that must catch them
 ```
 
-Register a new pack in `packages/content/src/index.ts`, and its corpus in `packages/content/test/corpus.ts`.
+Register a new pack in `packages/content/src/index.ts`, and its corpus in `packages/content/test/corpus.ts`. The app offers every registered pack in a problem picker; each problem keeps its own design in the browser.
 
 ## problem.yaml
 
@@ -21,6 +29,7 @@ Register a new pack in `packages/content/src/index.ts`, and its corpus in `packa
   - `{ type: event, event: link-created }` makes it a consumer of that event;
   - `{ type: schedule, description: … }` makes it a background job.
 - `events`: things that happen to an entity and can be published to a queue (`{ id, label, entity }`).
+- `logic`: the local decisions a handler can make in this problem (`checkExpiry`, `validateUrl`, …), from the logic catalog in `packages/model/src/catalog/logic.ts`. The flow recorder offers only these, and validation rejects others. Leave it out to offer every one.
 - `decisionPoints`: trade-offs a diagram cannot show, with options and an optional `default` the simulation assumes until the candidate decides.
 - `estimates`: back-of-envelope questions for the estimation gym. Each has a `question`, a `kind` (`count`, `rate`, `bytes` or `byte-rate`), the `answer` in base units (items, bytes, per second), a `tolerance` factor (2 by default) and a `derivation` shown once the candidate has answered. State in the question any number the brief does not give. Derived numbers in `scale` notes are hidden until the estimates are answered.
 - `scenarios`: the scenario ids, in order.
@@ -43,7 +52,11 @@ debrief: |                 # follow-up questions, shown once the scenario passes
 
 ### Workload
 
-- `operations.<id>`: the entity the requests address and their **classes** with shares that sum to 1. Class flags shape outcomes: `exists: false` (unknown keys), `expired`, `disabled`, `invalidInput`, `customAlias`, `aliasTaken`, `hotKey` (every request asks for one key), `malicious`. Consumers get no workload: they receive the classes of the messages published to them.
+- `operations.<id>`: the entity the requests address and their **classes** with shares that sum to 1. Facts about a class decide its outcomes:
+  - flags with a field of their own: `exists: false` (unknown keys), `expired`, `disabled`, `invalidInput`, `customAlias`, `aliasTaken`, `hotKey` (every request asks for one key), `malicious`;
+  - any other fact goes in `facts: [overLimit]`.
+
+  A logic step or a call with two answers names the fact that decides it (`decidedBy` in the catalog): `checkExpiry` answers `expired` for classes with the `expired` fact, `external.check` answers `malicious` for classes with `malicious`. Validation rejects a fact that nothing decides on, which catches typos. Consumers get no workload: they receive the classes of the messages published to them.
 - `keys`: Zipf popularity of existing and absent keys, which drives cache hit ratios.
 - `dataset`, `keyspace`, `replication`: stored entities (for storage cost and collisions), the keyspace and the decision that sets code length, and the decision that sets the replication mode.
 - `timelines` (optional): how the design behaves over time. Each has a `durationSec`, a `stepSec`, starting `rates`, and `events`:

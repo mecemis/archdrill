@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/mutants.schema.json
 # Each mutant breaks a golden design in one specific way. CI asserts that the
 # evaluator catches it: either validation blocks the scenario with the listed
 # issue codes, or the listed checks fail.

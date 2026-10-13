@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "report": "vitest run --config vitest.report.config.ts"
+    "report": "vitest run --config vitest.report.config.ts",
+    "schemas": "UPDATE_SCHEMAS=1 vitest run test/schemas.test.ts"
   },
   "dependencies": {
     "@archdrill/model": "workspace:*",

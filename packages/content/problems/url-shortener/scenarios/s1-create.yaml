@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
 id: s1-create
 problemId: url-shortener
 title: Create a link (write path)

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-redis-fixed-fleet
 description: >-
   The same cache-aside design with fixed fleets and no near cache: ALB →

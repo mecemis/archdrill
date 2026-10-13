@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Capability } from "./capabilities";
+import type { FactRule } from "./logic";
 
 /** What an action does to data; dataflow facts are derived from this. */
 export type ActionEffect =
@@ -40,6 +41,11 @@ export interface ActionDef {
    * change what the caller sees. Absent for actions that are safe to retry.
    */
   readonly unsafeToRetry?: string;
+  /**
+   * For calls with two answers besides an error: the fact about the request
+   * that decides which one a served call gives.
+   */
+  readonly decidedBy?: FactRule;
 }
 
 export const ACTIONS = {
@@ -153,6 +159,7 @@ export const ACTIONS = {
     outcomes: ["clean", "malicious", "error"],
     params: [],
     optionalParams: ["batchSize"],
+    decidedBy: { fact: "malicious", outcome: "malicious" },
     description:
       "Ask an external URL-safety service whether a URL is malicious. It has a request quota; with a batch size, one call checks that many URLs.",
   },

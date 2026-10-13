@@ -1,10 +1,21 @@
 import { z } from "zod";
 
+/**
+ * Which outcome a request takes, decided by a fact about it: requests whose
+ * class has the fact take `outcome`, the others take the other outcome.
+ */
+export interface FactRule {
+  readonly fact: string;
+  readonly outcome: string;
+}
+
 /** Local decisions a handler makes without calling another component. */
 export interface LogicDef {
   readonly label: string;
   readonly outcomes: readonly string[];
   readonly description: string;
+  /** For two-way decisions: the fact about the request that decides them. */
+  readonly decidedBy?: FactRule;
 }
 
 export const LOGIC = {
@@ -12,22 +23,26 @@ export const LOGIC = {
     label: "check expiry",
     outcomes: ["valid", "expired"],
     description: "Compare the entity's expiry time with the current time.",
+    decidedBy: { fact: "expired", outcome: "expired" },
   },
   validateUrl: {
     label: "validate URL",
     outcomes: ["valid", "invalid"],
     description: "Reject malformed or unsupported URLs before doing any work.",
+    decidedBy: { fact: "invalidInput", outcome: "invalid" },
   },
   checkStatus: {
     label: "check status",
     outcomes: ["active", "disabled"],
     description: "Check whether the entity has been disabled.",
+    decidedBy: { fact: "disabled", outcome: "disabled" },
   },
   hasCustomAlias: {
     label: "custom alias?",
     outcomes: ["custom", "generated"],
     description:
       "Branch on whether the request asks for a specific alias or wants a generated code.",
+    decidedBy: { fact: "customAlias", outcome: "custom" },
   },
   generateRandomCode: {
     label: "generate random code",
@@ -65,4 +80,9 @@ export const LogicIdSchema = z.enum(LOGIC_IDS as [LogicId, ...LogicId[]]);
 
 export function getLogic(id: LogicId): LogicDef {
   return LOGIC[id];
+}
+
+/** Logic a problem offers: the ones it lists, or every one when it lists none. */
+export function offeredLogic(listed: readonly LogicId[]): readonly LogicId[] {
+  return listed.length > 0 ? listed : LOGIC_IDS;
 }

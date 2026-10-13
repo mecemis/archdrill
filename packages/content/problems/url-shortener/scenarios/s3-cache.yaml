@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
 id: s3-cache
 problemId: url-shortener
 title: Cache the hot path

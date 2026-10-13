@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
 id: s5-hot-keys
 problemId: url-shortener
 title: Peak traffic and hot keys

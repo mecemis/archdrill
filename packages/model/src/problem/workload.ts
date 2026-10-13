@@ -34,12 +34,37 @@ export const RequestClassSchema = z
     hotKey: z.boolean().default(false),
     /** The request carries a malicious URL (phishing, malware) that a safety check flags. */
     malicious: z.boolean().default(false),
+    /**
+     * Other named facts about the request that decide logic steps and calls
+     * (for example `overLimit` for a client above its rate limit).
+     */
+    facts: z.array(IdSchema).default([]),
   })
   .refine((cls) => cls.customAlias || !cls.aliasTaken, {
     message: "aliasTaken only applies to requests with customAlias",
     path: ["aliasTaken"],
   });
 export type RequestClass = z.infer<typeof RequestClassSchema>;
+
+/** Facts with a field of their own; every other fact is listed in `facts`. */
+export const BUILT_IN_FACTS = [
+  "exists",
+  "expired",
+  "disabled",
+  "invalidInput",
+  "customAlias",
+  "aliasTaken",
+  "hotKey",
+  "malicious",
+] as const satisfies readonly (keyof RequestClass)[];
+
+/** Whether a fact holds for requests of this class. */
+export function hasFact(cls: RequestClass, fact: string): boolean {
+  if ((BUILT_IN_FACTS as readonly string[]).includes(fact)) {
+    return cls[fact as (typeof BUILT_IN_FACTS)[number]] === true;
+  }
+  return cls.facts.includes(fact);
+}
 
 const SHARE_TOLERANCE = 1e-9;
 

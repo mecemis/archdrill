@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
 id: s8-click-analytics
 problemId: url-shortener
 title: Click analytics

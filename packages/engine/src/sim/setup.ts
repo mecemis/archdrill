@@ -39,6 +39,7 @@ const DEFAULT_CLASS: RequestClass = {
   aliasTaken: false,
   hotKey: false,
   malicious: false,
+  facts: [],
 };
 
 export interface SimulationContext {

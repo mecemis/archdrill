@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-sized-for-cache-loss
 description: >-
   ALB → Link API (25 × 8 vCPU) → Redis cache-aside (3 shards × 2 replicas,
