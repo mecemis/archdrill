@@ -13,6 +13,8 @@ describe("parseQuantity", () => {
     ["79 TB", "bytes", 79e12],
     ["14.3GB", "bytes", 14.3e9],
     ["60 MB/s", "byte-rate", 60e6],
+    ["10^12", "count", 1e12],
+    ["300k rps", "rate", 300_000],
   ] as const)("reads %s", (text, kind, value) => {
     expect(parseQuantity(text, kind)).toBeCloseTo(value, 0);
   });

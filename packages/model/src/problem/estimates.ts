@@ -54,7 +54,9 @@ export function parseQuantity(text: string, kind: QuantityKind): number | null {
     .trim()
     .toLowerCase()
     .replace(/,/g, "")
-    .replace(/\s*(?:\/\s*s(?:ec(?:ond)?)?|per\s+second|a\s+second)$/, "");
+    .replace(/\s*(?:\/\s*s(?:ec(?:ond)?)?|per\s+second|a\s+second|rps|qps)$/, "")
+    // A bare power of ten: 10^12 is 1 × 10^12.
+    .replace(/^10\s*\^/, "1 x 10^");
   const match = cleaned.match(
     /^(\d+(?:\.\d+)?|\.\d+)(?:e([+-]?\d+))?(?:\s*[x×*]\s*10\s*\^\s*([+-]?\d+))?\s*([a-z]*)$/,
   );

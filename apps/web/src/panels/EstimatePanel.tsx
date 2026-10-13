@@ -1,6 +1,6 @@
 import { type EstimateResult, evaluateEstimates, SPOT_ON_FACTOR } from "@archdrill/evaluator";
 import { formatQuantity, parseQuantity } from "@archdrill/model";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { activePack } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { Prose } from "../ui/Prose";
@@ -64,6 +64,10 @@ function EstimateCard({ result }: { readonly result: EstimateResult }) {
   const { estimate, value } = result;
   const [text, setText] = useState(value === null ? "" : formatQuantity(value, estimate.kind));
   const [revealed, setRevealed] = useState(false);
+  // Undo, import or reset change the stored answer; show what is stored.
+  useEffect(() => {
+    setText(value === null ? "" : formatQuantity(value, estimate.kind));
+  }, [value, estimate.kind]);
   const parsed = parseQuantity(text, estimate.kind);
   const submit = (event: FormEvent) => {
     event.preventDefault();
