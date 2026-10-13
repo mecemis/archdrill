@@ -82,8 +82,11 @@ export function isHotStep(
   stepId: string,
   cls: RequestClass,
 ): boolean {
-  const fact = op.hotBy.get(stepId);
-  if (fact !== undefined && hasFact(cls, fact)) return true;
+  // Most operations have no fact-bound hot keys: skip the lookup on the hot path.
+  if (op.hotBy.size > 0) {
+    const fact = op.hotBy.get(stepId);
+    if (fact !== undefined && hasFact(cls, fact)) return true;
+  }
   return cls.hotKey && !op.unkeyed.has(stepId);
 }
 

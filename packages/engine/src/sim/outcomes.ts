@@ -1,8 +1,9 @@
 import {
   ACTIONS,
   getAction,
-  getLogic,
   hasFact,
+  LOGIC,
+  type LogicDef,
   type LogicId,
   type RequestClass,
 } from "@archdrill/model";
@@ -176,7 +177,7 @@ export function outcomeProbability(
   // A batched allocation is only made once per batch, so only then can it fail.
   const once = state.callFailure(step, cls.hotKey) * (prefetches(step) ? batchShare(step) : 1);
   // A fan-out fails if any of its calls fails; with nothing to fan out over, it cannot fail.
-  const calls = fanOut(step, cls);
+  const calls = step.each === undefined ? 1 : (cls.counts[step.each] ?? 0);
   const failure = calls === 1 ? once : 1 - (1 - once) ** calls;
   if (step.outcome === "error") return failure;
   const served = 1 - failure;
@@ -184,7 +185,8 @@ export function outcomeProbability(
     case "cache.get": {
       if (state.exists(step.entity, cls)) {
         // A fan-out of lookups only hits when every one of them does.
-        const hit = state.hitRatio(step.target, step.entity, cls.hotKey) ** calls;
+        const once = state.hitRatio(step.target, step.entity, cls.hotKey);
+        const hit = calls === 1 ? once : once ** calls;
         if (step.outcome === "hit") return served * hit;
         if (step.outcome === "miss") return served * (1 - hit);
         return 0;
@@ -222,7 +224,7 @@ export function outcomeProbability(
 
 /** A logic step's outcome follows from a fact about the request, or is its only outcome. */
 function logicProbability(logic: LogicId, outcome: string, cls: RequestClass): number {
-  const def = getLogic(logic);
+  const def: LogicDef = LOGIC[logic];
   if (def.decidedBy)
     return (outcome === def.decidedBy.outcome) === hasFact(cls, def.decidedBy.fact) ? 1 : 0;
   return def.outcomes.length === 1 && def.outcomes[0] === outcome ? 1 : 0;

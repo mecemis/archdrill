@@ -305,28 +305,32 @@ export function propagate(
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
-          const fan = fanOut(step, cls);
+          // Inlined: this loop runs for every step, class and path on every iteration.
+          const fan = step.each === undefined ? 1 : (cls.counts[step.each] ?? 0);
           if (fan === 0) continue;
           // A hot link makes its own rows hot, not rows keyed by something else.
-          const hot = isHotStep(op, step.stepId, cls);
+          const hot =
+            op.hotBy.size === 0
+              ? cls.hotKey && !op.unkeyed.has(step.stepId)
+              : isHotStep(op, step.stepId, cls);
+          const batches = (step.batchSize ?? 1) > 1 && collectsBatch(step);
+          const own = batches && step.each !== undefined;
           const call = calls.get(step, hot);
           const failed = step.outcome === "error";
           const perCall = failed ? call.attemptsOnFailure : call.attemptsOnSuccess;
           const items = itemsOf(step, hot) * fan;
           // A fan-out's own batches: ceil(n / size) calls per request, each carrying up to size items.
-          const callRate = ownBatches(step)
-            ? weight * fanOutCalls(step, fan)
-            : weight * items * callShare(step);
+          const callRate = own ? weight * fanOutCalls(step, fan) : weight * items * callShare(step);
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
           const work =
             attempts *
             reach *
-            (ownBatches(step) ? ownBatchCost(fan, step.batchSize ?? 1) : callCost(step));
+            (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
           add(loads, step.target, work, write);
-          if (collectsBatch(step)) {
-            const carried = ownBatches(step)
+          if (batches) {
+            const carried = own
               ? attempts * reach * (fan / fanOutCalls(step, fan))
               : attempts * reach * (step.batchSize ?? 1);
             add(batchedItems, step.target, carried - work, write);
@@ -347,7 +351,7 @@ export function propagate(
             shortCircuited:
               failed && call.failure > 0 ? (callRate * call.shortCircuit) / call.failure : 0,
           });
-          if (collectsBatch(step) && !ownBatches(step)) {
+          if (batches && !own) {
             const key = batchKey(op.operation.id, step.stepId);
             batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight * items);
           }
