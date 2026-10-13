@@ -3,9 +3,10 @@ description: >-
   The same cache-aside design with fixed fleets and no near cache: ALB →
   Redirect API (25 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis (3 shards × 2
   replicas) → PostgreSQL (16 vCPU, 2 shards × 2 replicas, semi-synchronous),
-  with the redirect bulkhead and the cache's circuit breaker. Sized for the
-  known peak, it survives outages and failovers but not a viral spike ten
-  times the average day.
+  with the redirect bulkhead and the cache's circuit breaker. The bulkhead
+  leaves the database room for a cold cache's misses after a restart. Sized
+  for the known peak, it survives outages and failovers but not a viral spike
+  ten times the average day.
 notPassing: [s5-hot-keys]
 expect:
   s1-create: { minScore: 90 }
@@ -44,7 +45,7 @@ attempt:
       - id: redirect-api--links-db
         from: redirect-api
         to: links-db
-        policy: { timeoutMs: 200, maxRps: 60000, circuitBreaker: true }
+        policy: { timeoutMs: 200, maxRps: 100000, circuitBreaker: true }
       - id: link-api--links-db
         from: link-api
         to: links-db

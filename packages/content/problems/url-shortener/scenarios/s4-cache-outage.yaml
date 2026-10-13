@@ -57,6 +57,20 @@ workload:
       rates: { redirect: 300000, create-link: 3000, disable-link: 5 }
       faults:
         - { kind: down, target: { capability: volatile-kv }, mode: hang }
+  timelines:
+    - id: cache-restart
+      label: Cache restart at peak
+      description: >-
+        At 30 s the cache cluster restarts (a deploy, a failover, an
+        out-of-memory kill) and comes back empty. It fills up again from the
+        requests that miss.
+      durationSec: 180
+      rates: { redirect: 300000, create-link: 3000, disable-link: 5 }
+      events:
+        - kind: restart
+          at: 30
+          label: Cache cluster restarts
+          target: { capability: volatile-kv }
 dimensions:
   availability: 0.35
   correctness: 0.30
@@ -267,6 +281,65 @@ checks:
     fix: >-
       Choose 302 or 307, or 301 with a short Cache-Control max-age, under
       Decisions.
+
+  - id: restart-recovers
+    use: timeline-recovers
+    title: Redirects are back at 99.9% within 30 seconds of a cache restart
+    dimension: availability
+    weight: 2
+    requirements: [NFR-2]
+    params:
+      timeline: cache-restart
+      metric: success-rate
+      operation: redirect
+      threshold: 0.999
+      after: 30
+      withinSec: 30
+    why: >-
+      A restarted cache is empty, and every miss goes to the store at once.
+      The hottest keys come back within a second, but the long tail takes
+      minutes; a store or a bulkhead sized for the warm hit ratio sheds
+      redirects for all that time.
+    fix: >-
+      Keep the hottest keys out of the shared cache's fate (a near cache), and
+      give the store and its bulkhead room for the misses of a cold cache, not
+      just a warm one.
+
+  - id: creates-through-restart
+    use: timeline-holds
+    title: Link creation is unaffected by a cache restart (99.9%)
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params:
+      timeline: cache-restart
+      metric: success-rate
+      operation: create-link
+      threshold: 0.999
+    why: >-
+      The stampede after a restart hits the store that creates write to.
+      Without isolation, a cache restart becomes an outage of link creation.
+    fix: >-
+      Cap the redirect path's store calls with a bulkhead, or give the store
+      headroom for both.
+
+  - id: single-flight
+    use: all-success-paths-contain
+    title: Misses for the same key share one store read
+    dimension: availability
+    signal: senior
+    requirements: [NFR-2]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { action: store.read, coalesced: true }
+    why: >-
+      After a restart, thousands of requests for the same hot key can miss
+      before its first read returns. Coalescing them (single-flight) turns that
+      herd into one read per key.
+    fix: >-
+      Mark the store read after a cache miss as coalesced.
 
   - id: breaker-on-cache
     use: circuit-breaker-on-dependency

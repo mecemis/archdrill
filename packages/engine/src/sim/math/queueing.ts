@@ -23,11 +23,30 @@ export const EXACT_SERVER_LIMIT = 5000;
 export function erlangCWait(utilization: number, servers: number, serviceTime: number): number {
   if (utilization <= 0 || servers <= 0 || serviceTime <= 0) return 0;
   const rho = Math.min(utilization, MAX_STEADY_UTILIZATION);
+  return (waitProbability(rho, servers) * serviceTime) / (servers * (1 - rho));
+}
+
+const WAIT_MEMO_LIMIT = 4096;
+const waitMemo = new Map<string, number>();
+
+/**
+ * Probability that an arrival waits (Erlang C). The recursion costs O(c), and
+ * the fixed point and timelines ask for the same values over and over; the
+ * utilisation is rounded to 1e-9 and the formula runs on the rounded value, so
+ * the result depends only on the key.
+ */
+function waitProbability(utilization: number, servers: number): number {
+  const rho = Math.round(utilization * 1e9) / 1e9;
+  const key = `${servers}|${rho}`;
+  const known = waitMemo.get(key);
+  if (known !== undefined) return known;
   const a = servers * rho;
   let blocking = 1;
   for (let k = 1; k <= servers; k++) blocking = (a * blocking) / (k + a * blocking);
-  const waitProbability = (servers * blocking) / (servers - a * (1 - blocking));
-  return (waitProbability * serviceTime) / (servers * (1 - rho));
+  const result = (servers * blocking) / (servers - a * (1 - blocking));
+  if (waitMemo.size >= WAIT_MEMO_LIMIT) waitMemo.clear();
+  waitMemo.set(key, result);
+  return result;
 }
 
 /** Mean queueing delay: exact Erlang C up to EXACT_SERVER_LIMIT servers, Sakasegawa beyond. */

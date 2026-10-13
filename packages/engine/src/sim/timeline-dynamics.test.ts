@@ -50,7 +50,7 @@ describe("restarted caches", () => {
     const hits = result.caches.get("redis|Link") ?? [];
     const db = result.components.get("db")?.utilization;
 
-    expect(valueAt(result.times, hits, 10)).toBeCloseTo(0, 6);
+    expect(valueAt(result.times, hits, 10)).toBeCloseTo(0, 4);
     expect(valueAt(result.times, hits, 12)).toBeLessThan(valueAt(result.times, hits, 30));
     expect(valueAt(result.times, hits, 30)).toBeLessThan(valueAt(result.times, hits, 5));
     expect(valueAt(result.times, db, 10)).toBeGreaterThan(valueAt(result.times, db, 30));

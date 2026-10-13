@@ -86,18 +86,31 @@ export interface EvaluationInput {
 }
 
 /** Analyses once and evaluates every scenario against the shared analysis. */
-export function evaluateAttempt(attempt: Attempt, input: EvaluationInput): AttemptEvaluation {
+export interface EvaluationOptions {
+  /** Simulate timelines (default); without them, timeline checks do not apply. */
+  readonly timelines?: boolean;
+}
+
+export function evaluateAttempt(
+  attempt: Attempt,
+  input: EvaluationInput,
+  options: EvaluationOptions = {},
+): AttemptEvaluation {
   const analysis = analyzeAttempt(attempt, { catalog: input.catalog, problem: input.problem });
   const base = { attempt, problem: input.problem, catalog: input.catalog, analysis };
   return {
     analysis,
     scenarios: input.scenarios.map((scenario) =>
-      evaluateScenario(scenario, { ...base, metrics: new Map(), timelines: new Map() }),
+      evaluateScenario(scenario, { ...base, metrics: new Map(), timelines: new Map() }, options),
     ),
   };
 }
 
-export function evaluateScenario(scenario: Scenario, ctx: CheckContext): ScenarioResult {
+export function evaluateScenario(
+  scenario: Scenario,
+  ctx: CheckContext,
+  options: EvaluationOptions = {},
+): ScenarioResult {
   const blocking = blockingIssues(scenario, ctx.analysis.issues);
   if (blocking.length > 0) return { scenarioId: scenario.id, status: "invalid", blocking };
 
@@ -112,7 +125,7 @@ export function evaluateScenario(scenario: Scenario, ctx: CheckContext): Scenari
   const scenarioCtx: CheckContext = {
     ...ctx,
     metrics: simulateScenario(scenario, ctx),
-    timelines: simulateTimelines(scenario, ctx),
+    timelines: options.timelines === false ? new Map() : simulateTimelines(scenario, ctx),
   };
   const checks = scenario.checks.map((instance) => {
     const check = CHECKS.get(instance.use);

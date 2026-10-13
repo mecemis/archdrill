@@ -156,6 +156,7 @@ export function solve(
   model: Model,
   fixtures: Fixtures,
   maxIterations = MAX_ITERATIONS,
+  tolerance = TOLERANCE,
 ): { converged: boolean; iterations: number } {
   let iterations = 0;
   while (iterations < maxIterations) {
@@ -173,7 +174,7 @@ export function solve(
         fixtures.cacheWindows.get(key),
       ),
     );
-    if (delta < TOLERANCE) return { converged: true, iterations };
+    if (delta < tolerance) return { converged: true, iterations };
   }
   return { converged: false, iterations };
 }

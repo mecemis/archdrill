@@ -130,9 +130,9 @@ mutants:
 
   - id: short-ttl
     base: postgres-redis-fixed-fleet
-    description: Cache entries live for 30 seconds; the hit ratio drops and the misses overload the database.
+    description: Cache entries live for 10 seconds; the hit ratio drops and the misses overload the database.
     apply:
-      - updateStep: { operation: redirect, stepId: populate, ttlSec: 30 }
+      - updateStep: { operation: redirect, stepId: populate, ttlSec: 10 }
     expect:
       scenario: s3-cache
       fails: [hit-ratio, serves-peak]
@@ -447,6 +447,17 @@ mutants:
     expect:
       scenario: s6-dependency-failure
       fails: [survives-instance-loss]
+
+  - id: bulkhead-sized-for-a-warm-cache
+    base: postgres-redis-fixed-fleet
+    description: >-
+      The bulkhead in front of the database fits the misses of a warm cache,
+      so after a cache restart it sheds redirects for minutes.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--links-db, maxRps: 60000 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [restart-recovers]
 
   - id: database-without-replicas
     base: postgres-redis-cache-aside

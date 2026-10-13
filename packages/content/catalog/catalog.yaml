@@ -92,6 +92,7 @@ kinds:
       - id: generic
         label: Service
         description: A stateless HTTP service (for example ASP.NET Core, Spring Boot, Go, Node.js).
+        startupSec: 60
         sizes:
           s:
             label: 2 vCPU

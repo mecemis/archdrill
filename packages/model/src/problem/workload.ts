@@ -147,8 +147,13 @@ export const TimelineEventSchema = z.discriminatedUnion("kind", [
     at: z.number().min(0),
     /** New requests (or job items) per second; operations left out keep their rate. */
     rates: z.record(IdSchema, z.number().nonnegative()),
-    /** Seconds over which the rates move linearly to the new values; 0 is a step. */
+    /** Seconds over which the rates move to the new values; 0 is a step. */
     rampSec: z.number().min(0).default(0),
+    /**
+     * How rates move over the ramp: in a straight line, or growing by the same
+     * factor every second, as traffic does when a link spreads.
+     */
+    curve: z.enum(["linear", "exponential"]).default("linear"),
     label: z.string().min(1).optional(),
   }),
   z.strictObject({

@@ -10,6 +10,7 @@ import {
   profilesOf,
   propagateModel,
   solve,
+  TOLERANCE,
   warmCaches,
 } from "./model";
 import { emptyLoopState } from "./propagate";
@@ -77,6 +78,9 @@ export interface TimelineMetrics {
   readonly unsettledSteps: number;
 }
 
+/** How tightly steps after the first are solved: shares to within 1e-5. */
+const STEP_TOLERANCE = 1e-5;
+
 type LoadEvent = Extract<TimelineEvent, { kind: "load" }>;
 type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
 
@@ -91,7 +95,10 @@ export function ratesAt(timeline: Timeline, t: number): Record<string, number> {
     const progress = event.rampSec > 0 ? Math.min(1, (t - event.at) / event.rampSec) : 1;
     for (const [operation, target] of Object.entries(event.rates)) {
       const from = rates[operation] ?? 0;
-      rates[operation] = from + (target - from) * progress;
+      rates[operation] =
+        event.curve === "exponential" && from > 0 && target > 0
+          ? from * (target / from) ** progress
+          : from + (target - from) * progress;
     }
   }
   return rates;
@@ -242,7 +249,9 @@ export function simulateTimeline(
     const model = createModel(fixtures, loop);
     // The design has been running before the timeline starts.
     if (step === 0) warmCaches(model, fixtures);
-    const solved = solve(model, fixtures, MAX_ITERATIONS);
+    // The first step is the steady state, solved as tightly as an environment;
+    // later steps only need what a chart at this resolution can show.
+    const solved = solve(model, fixtures, MAX_ITERATIONS, step === 0 ? TOLERANCE : STEP_TOLERANCE);
     if (!solved.converged) unsettledSteps++;
     const settledAlready = solved.converged && solved.iterations === 1;
     const summary =

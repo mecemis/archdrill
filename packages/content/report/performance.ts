@@ -7,12 +7,21 @@ import { corpora } from "../test/corpus";
 export const COMPONENTS = 30;
 const WARM_UP_RUNS = 10;
 const MEASURED_RUNS = 40;
+/** Timelines take longer; fewer runs still give a stable p95. */
+const FULL_RUNS = 20;
 
-export interface Measurement {
-  readonly design: string;
+export interface Timing {
   readonly p50: number;
   readonly p95: number;
   readonly max: number;
+}
+
+export interface Measurement {
+  readonly design: string;
+  /** Every scenario's environments, static checks and scoring, without timelines. */
+  readonly analytic: Timing;
+  /** The same with every timeline simulated, as the app evaluates a design. */
+  readonly full: Timing;
 }
 
 const quantile = (sorted: readonly number[], q: number) =>
@@ -38,19 +47,21 @@ export function measureEvaluation(): Measurement[] {
         position: { x: 0, y: 0 },
       }).attempt;
     }
-    for (let i = 0; i < WARM_UP_RUNS; i++) evaluateAttempt(attempt, input);
-    const times: number[] = [];
-    for (let i = 0; i < MEASURED_RUNS; i++) {
-      const started = performance.now();
-      evaluateAttempt(attempt, input);
-      times.push(performance.now() - started);
-    }
-    times.sort((a, b) => a - b);
+    const time = (timelines: boolean, runs: number): Timing => {
+      for (let i = 0; i < WARM_UP_RUNS; i++) evaluateAttempt(attempt, input, { timelines });
+      const times: number[] = [];
+      for (let i = 0; i < runs; i++) {
+        const started = performance.now();
+        evaluateAttempt(attempt, input, { timelines });
+        times.push(performance.now() - started);
+      }
+      times.sort((a, b) => a - b);
+      return { p50: quantile(times, 0.5), p95: quantile(times, 0.95), max: times.at(-1) ?? 0 };
+    };
     return {
       design: golden.id,
-      p50: quantile(times, 0.5),
-      p95: quantile(times, 0.95),
-      max: times.at(-1) ?? 0,
+      analytic: time(false, MEASURED_RUNS),
+      full: time(true, FULL_RUNS),
     };
   });
 }

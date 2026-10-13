@@ -38,6 +38,8 @@ export const StepMatcherSchema = z.strictObject({
   targetKind: oneOrMany(z.string().min(1)).optional(),
   /** Matches publish steps for these events. */
   event: oneOrMany(z.string().min(1)).optional(),
+  /** Matches store reads that coalesce concurrent misses (single-flight), or that do not. */
+  coalesced: z.boolean().optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -77,7 +79,8 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
       matcher.entity ||
       matcher.targetKind ||
       matcher.event ||
-      matcher.batched !== undefined;
+      matcher.batched !== undefined ||
+      matcher.coalesced !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
   if (matcher.logic) return false;
@@ -89,6 +92,9 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   if (matcher.batched !== undefined && matcher.batched !== (step.batchSize ?? 1) > 1) return false;
   if (matcher.targetKind && !matcher.targetKind.includes(step.targetKind)) return false;
   if (matcher.event && (step.event === undefined || !matcher.event.includes(step.event))) {
+    return false;
+  }
+  if (matcher.coalesced !== undefined && matcher.coalesced !== (step.coalesce === true)) {
     return false;
   }
   return true;

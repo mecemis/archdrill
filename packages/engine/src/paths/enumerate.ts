@@ -71,6 +71,7 @@ export function enumeratePaths(
               ttlSec: step.ttlSec,
               batchSize: step.batchSize,
               event: step.event,
+              ...(step.coalesce === undefined ? {} : { coalesce: step.coalesce }),
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };
