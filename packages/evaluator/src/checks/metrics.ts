@@ -97,23 +97,35 @@ export const utilizationBelow = defineCheck({
   run(params, ctx) {
     const env = environmentOf(ctx, params.environment);
     if (!env) return notApplicable("This scenario does not simulate load.");
+    // A hot key concentrates load on one shard; that shard is what saturates.
+    const busiest = (c: { utilization: number; hottestShardUtilization: number }) =>
+      Math.max(c.utilization, c.hottestShardUtilization);
     const hot = [...env.components.values()]
-      .filter((c) => c.utilization > params.max)
-      .sort((a, b) => b.utilization - a.utilization);
+      .filter((c) => busiest(c) > params.max)
+      .sort((a, b) => busiest(b) - busiest(a));
     if (hot.length === 0) {
-      const peak = Math.max(0, ...[...env.components.values()].map((c) => c.utilization));
+      const peak = Math.max(0, ...[...env.components.values()].map(busiest));
       return passed(`The busiest component runs at ${percent(peak)} at ${env.environment.label}.`);
     }
     const evidence: Evidence[] = hot.map((c) => ({
       type: "component",
       componentId: c.componentId,
     }));
-    const details = hot.map(
-      (c) => `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
+    const details = hot.map((c) =>
+      c.hottestShardUtilization > c.utilization + 1e-9
+        ? `${label(ctx, c.componentId)}: its hottest shard at ${percent(c.hottestShardUtilization)} while the tier averages ${percent(c.utilization)}; one hot key lands on one shard`
+        : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
     );
-    const overloaded = hot.some((c) => c.utilization > 1);
+    const overloaded = hot.some((c) => busiest(c) > 1);
+    const over = hot
+      .filter((c) => busiest(c) > 1)
+      .map((c) =>
+        c.utilization <= 1
+          ? `${label(ctx, c.componentId)}'s hottest shard`
+          : label(ctx, c.componentId),
+      );
     const message = overloaded
-      ? `${label(ctx, hot[0]?.componentId ?? "")} is over capacity at ${env.environment.label} and rejects requests.`
+      ? `${over.join(" and ")} ${over.length === 1 ? "is" : "are"} over capacity at ${env.environment.label} and reject${over.length === 1 ? "s" : ""} requests.`
       : `${hot.length} component(s) run above ${percent(params.max)} at ${env.environment.label}, leaving no headroom.`;
     return overloaded
       ? failed(message, evidence, details)
@@ -211,14 +223,14 @@ export const hitRatioAbove = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const caches = env?.caches.filter((c) => c.entity === params.entity) ?? [];
     if (!env || caches.length === 0) return notApplicable(`No cache serves ${params.entity}.`);
-    const lookups = caches.reduce((sum, c) => sum + c.lookupRate, 0);
-    if (lookups <= 0) {
+    // Each request counts once, however many cache tiers it passes.
+    const effective = env.entityHitRatios.get(params.entity);
+    if (!effective || effective.lookupRate <= 0) {
       return notApplicable(
         `No ${params.entity} lookups reach a cache at ${env.environment.label}.`,
       );
     }
-    const ratio =
-      lookups > 0 ? caches.reduce((sum, c) => sum + c.hitRatio * c.lookupRate, 0) / lookups : 0;
+    const ratio = effective.hitRatio;
     const evidence: Evidence[] = caches.map((c) => ({
       type: "component",
       componentId: c.componentId,

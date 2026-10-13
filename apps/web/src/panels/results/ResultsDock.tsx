@@ -2,6 +2,7 @@ import { activePack } from "../../state/content";
 import { useEvaluation } from "../../state/evaluation";
 import { useUi } from "../../state/ui-store";
 import { Tabs } from "../../ui/primitives";
+import { CompareView } from "./CompareView";
 import { Findings } from "./Findings";
 import { IssuesList } from "./IssuesList";
 import { LoadPanel } from "./LoadPanel";
@@ -43,6 +44,7 @@ export function ResultsDock() {
               { id: "paths", label: "Paths", count: pathCount },
               { id: "load", label: "Load" },
               { id: "issues", label: "Issues", count: analysis.issues.length },
+              { id: "compare", label: "Compare" },
             ]}
           />
         </div>
@@ -60,6 +62,7 @@ export function ResultsDock() {
           )}
           {tab === "load" && <LoadPanel />}
           {tab === "issues" && <IssuesList issues={analysis.issues} />}
+          {tab === "compare" && <CompareView />}
         </div>
       </div>
     </section>

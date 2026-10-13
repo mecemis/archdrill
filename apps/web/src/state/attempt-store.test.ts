@@ -1,3 +1,4 @@
+import { emptyAttempt } from "@archdrill/model";
 import { cacheAsideAttempt } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { createAttemptStore, starterAttempt } from "./attempt-store";
@@ -76,5 +77,17 @@ describe("attempt store", () => {
     store.getState().replace(cacheAsideAttempt());
 
     expect(store.getState().past).toEqual([]);
+  });
+
+  it("can make a wholesale replacement one more undoable step", () => {
+    const store = createAttemptStore(cacheAsideAttempt());
+    const before = store.getState().attempt;
+
+    store.getState().replace(emptyAttempt("url-shortener", 1), { undoable: true });
+    expect(store.getState().attempt.architecture.components).toHaveLength(0);
+    store.getState().undo();
+
+    expect(store.getState().attempt).toEqual(before);
+    expect(store.getState().lastChange).toBe("history");
   });
 });

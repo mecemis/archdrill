@@ -79,6 +79,24 @@ export const updateComponent = defineCommand(
   },
 );
 
+export const setAutoscale = defineCommand(
+  z.object({
+    id: IdSchema,
+    autoscale: z
+      .object({
+        max: z.number().int().min(1).max(MAX_REPLICAS),
+        targetUtilization: z.number().min(0.2).max(0.95).default(0.7),
+      })
+      .nullable(),
+  }),
+  (draft, { id, autoscale }) => {
+    const component = draft.architecture.components[requireComponentIndex(draft, id)];
+    if (!component) return;
+    if (autoscale === null) delete component.autoscale;
+    else component.autoscale = autoscale;
+  },
+);
+
 export const setComponentData = defineCommand(
   z.object({ id: IdSchema, entities: z.array(z.string().min(1)) }),
   (draft, { id, entities }) => {

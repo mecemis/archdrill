@@ -6,6 +6,7 @@ import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redi
 import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
 import postgresHash from "../problems/url-shortener/corpus/golden/postgres-hash-based.yaml";
 import postgresRedisCacheAside from "../problems/url-shortener/corpus/golden/postgres-redis-cache-aside.yaml";
+import postgresFixedFleet from "../problems/url-shortener/corpus/golden/postgres-redis-fixed-fleet.yaml";
 import postgresSized from "../problems/url-shortener/corpus/golden/postgres-sized-for-cache-loss.yaml";
 import urlShortenerMutants from "../problems/url-shortener/corpus/mutants.yaml";
 
@@ -65,6 +66,7 @@ export const corpora: readonly ProblemCorpus[] = [
       mysqlMemcached,
       postgresHash,
       postgresSized,
+      postgresFixedFleet,
     ].map((g) => GoldenSchema.parse(g)),
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(urlShortenerMutants).mutants,
   },

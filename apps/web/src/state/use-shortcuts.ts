@@ -2,9 +2,13 @@ import { useEffect } from "react";
 import { useAttemptStore } from "./store";
 import { useUi } from "./ui-store";
 
+/** Inputs that take no text, so a focused one should not swallow undo. */
+const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "range", "button", "submit", "file"]);
+
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+  if (target instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(target.type);
+  return target.isContentEditable || ["TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 /** Undo/redo and escape, ignored while the user is typing in a form field. */

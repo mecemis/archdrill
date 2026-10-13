@@ -2,6 +2,7 @@ import {
   type Attempt,
   applyCommand,
   type CommandArgs,
+  EnvironmentSchema,
   type Fault,
   FaultSchema,
   WorkloadSchema,
@@ -36,7 +37,7 @@ function simulate(attempt: Attempt, faults: Fault[], rates: Record<string, numbe
   const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
   return simulateEnvironment(
     workload,
-    { id: "env", label: "Env", rates, faults },
+    EnvironmentSchema.parse({ id: "env", label: "Env", rates, faults }),
     { attempt, catalog: testCatalogIndex, problem: testProblem, analysis },
   );
 }

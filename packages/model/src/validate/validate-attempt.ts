@@ -24,6 +24,7 @@ export interface ValidationContext {
 export function validateAttempt(attempt: Attempt, ctx: ValidationContext): Issue[] {
   return [
     ...validateComponents(attempt, ctx),
+    ...validateInProcess(attempt, ctx),
     ...validateConnections(attempt),
     ...validateFlows(attempt, ctx),
     ...validateDecisions(attempt, ctx.problem),
@@ -95,7 +96,38 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
   if (!kind.replicable && component.replicas > 1) {
     issues.push(error("replicas-not-supported", `${kind.label} does not take replicas.`, location));
   }
+  if (component.autoscale) {
+    if (!kind.replicable || kind.holdsData || flavor.managedRedundancy) {
+      issues.push(
+        error("autoscale-not-supported", `${flavor.label} does not autoscale here.`, location),
+      );
+    } else if (component.autoscale.max < component.replicas) {
+      issues.push(
+        error(
+          "autoscale-below-minimum",
+          `${component.label} scales to at most ${component.autoscale.max} instances, fewer than its minimum of ${component.replicas}.`,
+          location,
+        ),
+      );
+    }
+  }
   return issues;
+}
+
+/** An in-process component lives inside one service, so only that service can call it. */
+function validateInProcess(attempt: Attempt, ctx: ValidationContext): Issue[] {
+  return attempt.architecture.components.flatMap((component) => {
+    if (!ctx.catalog.kind(component.kind)?.inProcess) return [];
+    const callers = attempt.architecture.connections.filter((c) => c.to === component.id);
+    if (callers.length <= 1) return [];
+    return [
+      error(
+        "in-process-shared",
+        `${component.label} runs inside one service; ${callers.length} components connect to it.`,
+        { type: "component", componentId: component.id },
+      ),
+    ];
+  });
 }
 
 function validateConnections(attempt: Attempt): Issue[] {

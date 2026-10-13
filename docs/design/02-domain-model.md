@@ -200,6 +200,8 @@ Attempt
 | `load-balancer` | `healthCheck {intervalSec, unhealthyThreshold}`, `retryIdempotent` |
 | `cdn` | `cacheRules [{status, maxAgeSec}]`, `purgeSupported` |
 
+**As built (M5).** Services take `autoscale: { max, targetUtilization }`, with `replicas` as the minimum. A near cache is its own in-process component kind (`inProcess: true` in the catalog): it is connected from exactly one service, adds no network hop, and holds one copy per instance of that service. Workloads can mark a request class `hotKey` (every request asks for the same key), and an environment can override class shares (`classShares`), for example no viral link on an average day.
+
 `data[]` binds entities to stores, for example `{ entity: Link, key: code, constraints: [unique(code)] }`. A `store.read(Link)` against a store that does not hold `Link` is a validation error.
 
 ### Connection policy

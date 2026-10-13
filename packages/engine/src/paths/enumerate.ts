@@ -63,6 +63,8 @@ export function enumeratePaths(
               kind: "call",
               stepId,
               target: step.target,
+              targetKind:
+                attempt.architecture.components.find((c) => c.id === step.target)?.kind ?? "",
               connectionId: connectionTo.get(step.target) ?? null,
               action: step.action,
               entity: step.entity,

@@ -72,6 +72,11 @@ export const KindSchema = z.object({
    * primary (replicated stores, where replicas add read capacity only).
    */
   writeScaling: z.enum(["all-replicas", "primaries"]).default("all-replicas"),
+  /**
+   * Runs inside the service that calls it (an in-process cache): no network
+   * hop, and one independent copy per instance of that service.
+   */
+  inProcess: z.boolean().default(false),
   flavors: z.array(FlavorSchema).min(1),
 });
 export type Kind = z.infer<typeof KindSchema>;

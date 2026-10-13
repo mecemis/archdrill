@@ -90,6 +90,32 @@ export const testCatalog: Catalog = CatalogSchema.parse({
       ],
     },
     {
+      id: "near-cache",
+      label: "Near cache",
+      description: "In-process cache inside a service.",
+      capabilities: ["volatile-kv", "ttl"],
+      replicable: false,
+      holdsData: false,
+      inProcess: true,
+      flavors: [
+        {
+          id: "lru",
+          label: "In-process LRU",
+          description: "LRU map in the service's memory.",
+          sizes: {
+            m: {
+              label: "1 GB",
+              capacityPerSec: {},
+              latencyMs: { base: 0.02, cv: 0.5 },
+              costPerHour: 0,
+              memoryGb: 1,
+            },
+          },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
       id: "api-gateway",
       label: "API gateway",
       description: "Routes, authenticates and rate-limits requests.",

@@ -7,6 +7,7 @@ import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { compact, usd } from "../ui/format";
 import { Button, Field, SectionTitle, Select } from "../ui/primitives";
+import { AutoscaleEditor } from "./AutoscaleEditor";
 import { ConnectionInspector } from "./ConnectionInspector";
 
 const MAX_REPLICAS = 200;
@@ -85,12 +86,16 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       )}
       {kind?.replicable && !flavor?.managedRedundancy && (
         <CountSlider
-          label="Replicas"
+          label={component.autoscale ? "Replicas (minimum)" : "Replicas"}
           max={MAX_REPLICAS}
           value={component.replicas}
           onCommit={(replicas) => update({ replicas })}
         />
       )}
+      {kind?.replicable && !kind.holdsData && !flavor?.managedRedundancy && (
+        <AutoscaleEditor component={component} />
+      )}
+      {kind?.inProcess && <InProcessNote component={component} />}
       {size && profile && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-zinc-600">
           <dt>Reads</dt>
@@ -127,6 +132,21 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       {flavor?.notes && <p className="text-xs text-zinc-500">{flavor.notes}</p>}
       <RemoveComponentButton component={component} />
     </div>
+  );
+}
+
+/** Where an in-process component lives, since that decides how many copies there are. */
+function InProcessNote({ component }: { readonly component: Component }) {
+  const host = useAttemptStore((s) => {
+    const caller = s.attempt.architecture.connections.find((c) => c.to === component.id)?.from;
+    return s.attempt.architecture.components.find((c) => c.id === caller)?.label;
+  });
+  return (
+    <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600">
+      {host
+        ? `Runs inside ${host}: no network hop, and one copy per instance of it.`
+        : "Connect the service it should run inside."}
+    </p>
   );
 }
 

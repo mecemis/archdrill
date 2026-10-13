@@ -110,6 +110,8 @@ Checks are written in TypeScript in `packages/evaluator`, are parameterised from
 
 **As built (M4)**, the resilience and durability checks are `dependency-timeout-bounded(capability, maxMs)`, `retries-bounded-with-jitter(maxRetries)`, `retry-only-idempotent(operation)`, `circuit-breaker-on-dependency(capability)`, `stable-under-retries(environment)` (no overloaded component gets 20% or more of its load from retries, the load model settles, and no shock leaves a component stuck in overload), `no-acknowledged-data-loss(operation, environment, decision)`, `invalidation-on-write(operation, readOperation, entity, maxStalenessSec)` (only successful cache deletes count) and `decision-excludes(decision, forbidden)`. A cascading failure is expressed as `success-rate-above` for one operation in another's outage environment.
 
+**As built (M5)**, `utilization-below` also judges a tier's hottest shard and says when one hot key saturates it; `overprovisioned(environment)` estimates what mostly idle service instances cost; `autoscaling-configured` asks request handlers to scale with load; step matchers can ask for the kind of component a call targets (`targetKind: near-cache`); and `invalidation-on-write` accepts only a short TTL for in-process caches, since a delete reaches one instance.
+
 **Metric checks** (from the simulation, per environment)
 - `p99-below(op, ms)`, `p50-below(op, ms)`.
 - `error-rate-below(op, rate, environment)`.

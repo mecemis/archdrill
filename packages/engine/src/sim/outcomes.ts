@@ -7,8 +7,9 @@ export interface OutcomeState {
    * Chance that a call fails for good: refused by an overloaded or failed
    * target, timed out, shed or short-circuited, after the caller's retries.
    */
-  callFailure(step: CallPathStep): number;
-  hitRatio(componentId: string, entity: string | undefined): number;
+  callFailure(step: CallPathStep, hotKey: boolean): number;
+  /** Hit ratio for keys that exist; requests for a hot key hit far more often. */
+  hitRatio(componentId: string, entity: string | undefined, hotKey: boolean): number;
   negativeHitRatio(componentId: string, entity: string | undefined): number;
   /** Chance that a randomly drawn code for this entity is already taken (stored / keyspace, capped at 1). */
   occupancy(entity: string | undefined): number;
@@ -109,13 +110,13 @@ export function outcomeProbability(
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
   // A batched call is only made once per batch, so only then can it fail.
-  const failure = state.callFailure(step) * batchShare(step);
+  const failure = state.callFailure(step, cls.hotKey) * batchShare(step);
   if (step.outcome === "error") return failure;
   const served = 1 - failure;
   switch (step.action) {
     case "cache.get": {
       if (cls.exists) {
-        const hit = state.hitRatio(step.target, step.entity);
+        const hit = state.hitRatio(step.target, step.entity, cls.hotKey);
         if (step.outcome === "hit") return served * hit;
         if (step.outcome === "miss") return served * (1 - hit);
         return 0;

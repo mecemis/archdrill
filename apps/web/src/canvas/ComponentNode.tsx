@@ -30,12 +30,20 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
         <span className="truncate text-sm font-semibold text-zinc-900">{data.label}</span>
         {(data.replicable || (data.shards ?? 1) > 1) && (
           <span
-            className="ml-auto rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700 tabular-nums"
-            title={data.shards !== null ? "shards × replicas" : "replicas"}
+            className="ml-auto shrink-0 whitespace-nowrap rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700 tabular-nums"
+            title={
+              data.autoscaleMax !== null
+                ? "replicas, autoscaling up to the maximum"
+                : data.shards !== null
+                  ? "shards × replicas"
+                  : "replicas"
+            }
           >
             {data.shards !== null && data.shards > 1
               ? `${data.shards}×${data.replicas}`
-              : `×${data.replicas}`}
+              : data.autoscaleMax !== null
+                ? `×${data.replicas}–${data.autoscaleMax}`
+                : `×${data.replicas}`}
           </span>
         )}
       </div>
@@ -85,6 +93,18 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
           >
             {percent(data.utilization, 0)}
           </span>
+        </div>
+      )}
+      {(data.hotShard !== null || (data.autoscaleMax !== null && data.running !== null)) && (
+        <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] tabular-nums text-zinc-600">
+          {data.autoscaleMax !== null && data.running !== null && (
+            <span>{data.running} running</span>
+          )}
+          {data.hotShard !== null && (
+            <span className={data.hotShard > 1 ? "font-semibold text-rose-700" : "text-amber-700"}>
+              hot shard {percent(data.hotShard, 0)}
+            </span>
+          )}
         </div>
       )}
       <Handle type="source" position={Position.Right} className="!h-3 !w-3 !bg-zinc-400" />

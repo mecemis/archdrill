@@ -150,6 +150,7 @@ describe("metric checks", () => {
       caches: [
         { componentId: "redis", entity: "Link", hitRatio: 0, lookupRate: 0, populated: true },
       ],
+      entityHitRatios: new Map([["Link", { lookupRate: 0, hitRatio: 0 }]]),
       converged: true,
     } as unknown as EnvironmentMetrics;
     const ctx = { ...contextFor(cacheAsideAttempt()), metrics: new Map([["peak", env]]) };

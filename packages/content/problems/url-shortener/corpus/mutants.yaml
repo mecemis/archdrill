@@ -79,7 +79,7 @@ mutants:
       fails: [no-single-point-of-failure]
 
   - id: cache-error-fails-request-single-node
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: A cache error fails the request and the cache is a single node.
     apply:
       - linkOutcome: { operation: redirect, stepId: get, outcome: error, target: r503 }
@@ -109,7 +109,7 @@ mutants:
 
   # Load, capacity and cost: caught by the simulation, not by the flow shape.
   - id: api-underprovisioned
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: Ten redirect service instances for 300,000 redirects a second.
     apply:
       - updateComponent: { id: redirect-api, replicas: 10 }
@@ -129,7 +129,7 @@ mutants:
       band: not-passing
 
   - id: short-ttl
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: Cache entries live for 30 seconds; the hit ratio drops and the misses overload the database.
     apply:
       - updateStep: { operation: redirect, stepId: populate, ttlSec: 30 }
@@ -149,7 +149,7 @@ mutants:
       band: not-passing
 
   - id: undersized-database
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: A single database node takes every cache miss.
     apply:
       - updateComponent: { id: links-db, shards: 1, replicas: 1 }
@@ -346,7 +346,7 @@ mutants:
       fails: [no-cascade]
 
   - id: unreplicated-cache
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: Redis runs without replicas, so a lost node takes its keys with it.
     apply:
       - updateComponent: { id: redis, replicas: 1 }
@@ -440,7 +440,7 @@ mutants:
       fails: [no-unsafe-retries]
 
   - id: no-spare-redirect-server
-    base: postgres-redis-cache-aside
+    base: postgres-redis-fixed-fleet
     description: Exactly enough redirect servers for the peak; losing one overloads the rest.
     apply:
       - updateComponent: { id: redirect-api, replicas: 19 }
@@ -456,3 +456,52 @@ mutants:
     expect:
       scenario: s6-dependency-failure
       fails: [redirects-survive-failover]
+
+  # Hot keys, near caches and autoscaling (S5).
+  - id: no-near-cache
+    base: postgres-redis-cache-aside
+    description: Redirects skip the near cache, so the viral link's 300,000 lookups a second hit one Redis shard.
+    apply:
+      - removeStep: { operation: redirect, stepId: near-get, bypass: miss }
+    expect:
+      scenario: s5-hot-keys
+      fails: [hot-shard-headroom, spike-availability]
+
+  - id: autoscaling-max-too-low
+    base: postgres-redis-cache-aside
+    description: The redirect service may only scale to 40 instances, far short of the spike.
+    apply:
+      - setAutoscale: { id: redirect-api, autoscale: { max: 40, targetUtilization: 0.7 } }
+    expect:
+      scenario: s5-hot-keys
+      fails: [serves-spike]
+      band: not-passing
+
+  - id: fixed-fleet-sized-for-spike
+    base: postgres-redis-cache-aside
+    description: A fixed fleet of 90 redirect instances, paid for every day to survive one spike.
+    apply:
+      - setAutoscale: { id: redirect-api, autoscale: null }
+      - updateComponent: { id: redirect-api, replicas: 90 }
+    expect:
+      scenario: s5-hot-keys
+      fails: [within-budget, idle-fleet]
+
+  - id: long-near-cache-ttl
+    base: postgres-redis-cache-aside
+    description: The near cache keeps links for ten minutes, so a disabled link keeps redirecting from every instance.
+    apply:
+      - updateStep: { operation: redirect, stepId: near-set, ttlSec: 600 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [invalidated-within-60s]
+      band: not-passing
+
+  - id: shared-near-cache
+    base: postgres-redis-cache-aside
+    description: Two services connect to one in-process cache, which can only live inside one of them.
+    apply:
+      - addConnection: { from: link-api, to: near }
+    expect:
+      scenario: s5-hot-keys
+      invalid: [in-process-shared]

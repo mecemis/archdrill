@@ -37,6 +37,7 @@ const DEFAULT_CLASS: RequestClass = {
   invalidInput: false,
   customAlias: false,
   aliasTaken: false,
+  hotKey: false,
 };
 
 export interface SimulationContext {
@@ -57,6 +58,8 @@ export interface OperationModel {
 
 export interface CacheSpec {
   readonly componentId: string;
+  /** For an in-process cache: the service it lives in, one copy per instance of it. */
+  readonly callerOf: string | null;
   readonly entity: string;
   readonly populated: boolean;
   readonly ttlSec: number | null;
@@ -70,18 +73,48 @@ export interface CacheSpec {
 export const cacheKey = (componentId: string, entity: string | undefined) =>
   `${componentId}|${entity ?? ""}`;
 
-/** Capacity and latency of every component that does work, under the environment's faults. */
+/**
+ * Rounds autoscaled replicas up to whole instances, with a tolerance for the
+ * fixed point stopping a hair above an exact count.
+ */
+export function wholeInstances(replicas: number): number {
+  return Math.ceil(replicas - 1e-6 * Math.max(1, replicas));
+}
+
+/**
+ * Capacity and latency of every component that does work, under the
+ * environment's faults, with autoscaled components at the given replicas
+ * (rounded up to whole instances when `whole` is set, as they are billed).
+ */
 export function buildProfiles(
   ctx: SimulationContext,
   faults: ReadonlyMap<string, ComponentFault>,
+  scaled: ReadonlyMap<string, number> = new Map(),
+  whole = false,
 ): Map<string, ComponentProfile> {
   const profiles = new Map<string, ComponentProfile>();
   for (const component of ctx.attempt.architecture.components) {
-    const profile = componentProfile(component, ctx.catalog);
+    const replicas = component.autoscale ? scaled.get(component.id) : undefined;
+    const profile = componentProfile(
+      component,
+      ctx.catalog,
+      replicas === undefined ? undefined : whole ? wholeInstances(replicas) : replicas,
+    );
     if (profile)
       profiles.set(component.id, faultedProfile(profile, faults.get(component.id) ?? NO_FAULT));
   }
   return profiles;
+}
+
+/** The operation's request classes, with this environment's share overrides. */
+function classesIn(
+  workload: Workload,
+  environment: Environment,
+  operationId: string,
+): RequestClass[] {
+  const classes = workload.operations[operationId]?.classes ?? [DEFAULT_CLASS];
+  const shares = environment.classShares[operationId] ?? {};
+  return classes.map((cls) => ({ ...cls, share: shares[cls.id] ?? cls.share }));
 }
 
 export function buildOperations(
@@ -101,7 +134,7 @@ export function buildOperations(
       operation: analysis.operation,
       rate,
       analysis,
-      classes: workload.operations[operationId]?.classes ?? [DEFAULT_CLASS],
+      classes: classesIn(workload, environment, operationId),
       ingress,
     });
   }
@@ -147,8 +180,13 @@ export function buildCacheSpecs(
     const share = entitiesPerCache.get(componentId) ?? 1;
     const positive = minTtl("cache.set", componentId, entity);
     const negative = minTtl("cache.setNegative", componentId, entity);
+    const inProcess = ctx.catalog.kind(
+      ctx.attempt.architecture.components.find((c) => c.id === componentId)?.kind ?? "",
+    )?.inProcess;
+    const caller = ctx.attempt.architecture.connections.find((c) => c.to === componentId)?.from;
     return {
       componentId,
+      callerOf: inProcess && caller ? caller : null,
       entity,
       populated: positive.present,
       ttlSec: positive.ttl,

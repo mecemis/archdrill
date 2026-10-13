@@ -1,9 +1,11 @@
 id: dynamodb-redis-cache-aside
 description: >-
-  ALB → Link API (25 × 8 vCPU) → Redis cache-aside (3 shards × 2 replicas)
-  → DynamoDB. The cache turns most per-request charges into memory hits; no
+  ALB → Link API (8 vCPU, autoscaling from 10 to 120 instances) with a
+  10-second near cache → Redis cache-aside (3 shards × 2 replicas) →
+  DynamoDB. The cache turns most per-request charges into memory hits; no
   negative caching, so unknown codes still reach the table. On-demand DynamoDB absorbs the full read peak when the cache is gone, at a price.
 expect:
+  s5-hot-keys: { minScore: 90 }
   s4-cache-outage: { minScore: 90 }
   s6-dependency-failure: { minScore: 90 }
   s1-create: { minScore: 90 }
@@ -17,7 +19,14 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
+      - id: link-api
+        kind: service
+        flavor: generic
+        label: Link API
+        size: l
+        replicas: 10
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: near, kind: near-cache, flavor: in-process-lru, label: Near cache, size: m }
       - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
       - id: links
         kind: key-value-db
@@ -30,17 +39,31 @@ attempt:
       - { id: lb--link-api, from: lb, to: link-api }
       - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true } }
       - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
+      - { id: link-api--near, from: link-api, to: near }
   flows:
     - operation: redirect
       handler: link-api
-      root: get
+      root: near-get
       steps:
+        near-get:
+          type: call
+          target: near
+          action: cache.get
+          entity: Link
+          next: { hit: status-hit, miss: get, error: get }
         get:
           type: call
           target: redis
           action: cache.get
           entity: Link
-          next: { hit: status-hit, miss: read, error: read }
+          next: { hit: near-set, miss: read, error: read }
+        near-set:
+          type: call
+          target: near
+          action: cache.set
+          entity: Link
+          ttlSec: 10
+          next: { ok: status-hit, error: status-hit }
         status-hit:
           type: logic
           logic: checkStatus
@@ -140,5 +163,6 @@ attempt:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }
     link-api: { x: 440, y: 120 }
+    near: { x: 440, y: -40 }
     redis: { x: 680, y: 20 }
     links: { x: 680, y: 220 }

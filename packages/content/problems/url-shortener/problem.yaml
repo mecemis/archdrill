@@ -94,4 +94,4 @@ decisionPoints:
       - { id: "404", label: 404 Not Found }
       - { id: "410", label: 410 Gone }
     requirements: [FR-3]
-scenarios: [s1-create, s2-redirect, s3-cache, s4-cache-outage, s6-dependency-failure]
+scenarios: [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure]

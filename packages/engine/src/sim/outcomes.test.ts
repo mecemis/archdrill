@@ -23,6 +23,7 @@ const generated: RequestClass = {
   invalidInput: false,
   customAlias: false,
   aliasTaken: false,
+  hotKey: false,
 };
 
 const logic = (name: LogicPathStep["logic"], outcome = "ok"): LogicPathStep => ({
@@ -40,6 +41,7 @@ const call = (
   kind: "call",
   stepId: action,
   target: action === "store.insertIfAbsent" ? "db" : "kgs",
+  targetKind: action === "store.insertIfAbsent" ? "relational-db" : "id-generator",
   connectionId: null,
   action,
   entity: action === "store.insertIfAbsent" ? "Link" : undefined,

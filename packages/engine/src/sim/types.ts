@@ -10,6 +10,10 @@ export interface ComponentMetrics {
   readonly writeCapacity: number;
   /** Combined utilisation (read share + write share); above 1 means overloaded. */
   readonly utilization: number;
+  /** Utilisation of the shard that holds the hot key; equals `utilization` without one. */
+  readonly hottestShardUtilization: number;
+  /** Instances it runs in this environment, after autoscaling. */
+  readonly instances: number;
   /** Share of arriving requests rejected because the component is overloaded. */
   readonly dropRate: number;
   /** Requests per second that are retries of failed attempts (included in the loads). */
@@ -18,6 +22,8 @@ export interface ComponentMetrics {
   readonly faults: readonly string[];
   /** Latency added per visit (service + queueing), excluding the network. */
   readonly latency: Moments;
+  /** The same at the shard that holds the hot key (equal to `latency` without one). */
+  readonly hotLatency: Moments;
   /** Data stored, counting every copy. */
   readonly storageGb: number;
   readonly monthlyCost: number;
@@ -110,6 +116,15 @@ export interface EnvironmentMetrics {
   readonly operations: ReadonlyMap<string, OperationMetrics>;
   readonly components: ReadonlyMap<string, ComponentMetrics>;
   readonly caches: readonly CacheMetrics[];
+  /**
+   * Per entity, over requests for keys that exist and looked it up in a
+   * cache: the share any cache tier answered. Each request counts once, so
+   * layered caches (a near cache in front of a shared one) do not double count.
+   */
+  readonly entityHitRatios: ReadonlyMap<
+    string,
+    { readonly lookupRate: number; readonly hitRatio: number }
+  >;
   /** Requests per second over each connection, retries included. */
   readonly connections: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: failures, retries, timeouts, shedding. */

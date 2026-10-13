@@ -445,3 +445,10 @@ hints:
   - "What has to be true when you answer 201: is the link stored, is its code unique, and could another request have taken the same code?"
   - Who should decide that a code is free, the service or the store? What happens if two requests ask at the same moment?
   - "Validate the URL, branch on custom alias, get a code (generator, counter range, hash or random), write it with insertIfAbsent, and on conflict: 409 for aliases, a retry with a new code for generated ones."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Why not check whether a code is free and then insert it? Two requests can both see "free" between the read and the write; only the store can arbitrate, with a conditional insert.
+  - What happens when the key generation service dies, or loses the batch of keys it handed out? Keys are cheap to waste; what must never happen is the same key handed out twice.
+  - How would you move from 7 to 8 characters without breaking existing links? Old codes keep resolving; only new codes get longer.
+  - A client retries a create after a timeout. How does it avoid getting two links? (An idempotency key, stored with the link.)

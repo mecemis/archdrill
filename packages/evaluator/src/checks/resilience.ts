@@ -49,8 +49,10 @@ function calledConnections(
   return [...byId.values()];
 }
 
+/** Remote dependencies with the capability; in-process ones cannot hang or time out on their own. */
 const hasCapability = (ctx: CheckContext, capability: Capability) => (c: Component) =>
-  ctx.catalog.capabilities(c.kind, c.flavor).has(capability);
+  ctx.catalog.capabilities(c.kind, c.flavor).has(capability) &&
+  !(ctx.catalog.kind(c.kind)?.inProcess ?? false);
 
 const connectionEvidence = (called: readonly CalledConnection[]): Evidence[] =>
   called.map((c) => ({ type: "connection", connectionId: c.connection.id }));

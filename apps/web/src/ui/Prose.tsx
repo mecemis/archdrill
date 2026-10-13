@@ -1,4 +1,7 @@
-/** Renders authored text: blank lines separate paragraphs, single newlines are soft wraps. */
+/**
+ * Renders authored text: blank lines separate blocks, single newlines are soft
+ * wraps, and a block whose lines all start with "- " is a bulleted list.
+ */
 export function Prose({
   text,
   className = "",
@@ -6,17 +9,26 @@ export function Prose({
   readonly text: string;
   readonly className?: string;
 }) {
-  const paragraphs = text
-    .trim()
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\s*\n\s*/g, " "));
+  const blocks = text.trim().split(/\n\s*\n/);
   return (
     <>
-      {paragraphs.map((paragraph) => (
-        <p key={paragraph} className={className}>
-          {paragraph}
-        </p>
-      ))}
+      {blocks.map((block) => {
+        const lines = block.split("\n").map((line) => line.trim());
+        if (lines.every((line) => line.startsWith("- "))) {
+          return (
+            <ul key={block} className={`list-disc pl-5 ${className}`}>
+              {lines.map((line) => (
+                <li key={line}>{line.slice(2)}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={block} className={className}>
+            {lines.join(" ")}
+          </p>
+        );
+      })}
     </>
   );
 }

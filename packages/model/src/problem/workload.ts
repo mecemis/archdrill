@@ -30,6 +30,8 @@ export const RequestClassSchema = z
     customAlias: z.boolean().default(false),
     /** The requested alias is already taken. */
     aliasTaken: z.boolean().default(false),
+    /** Every request of this class asks for the same key, such as a link that went viral. */
+    hotKey: z.boolean().default(false),
   })
   .refine((cls) => cls.customAlias || !cls.aliasTaken, {
     message: "aliasTaken only applies to requests with customAlias",
@@ -120,6 +122,12 @@ export const EnvironmentSchema = z.object({
   description: z.string().min(1).optional(),
   /** Requests per second per operation. */
   rates: z.record(IdSchema, z.number().nonnegative()),
+  /**
+   * Request-class shares that differ from the workload's in this environment,
+   * per operation (for example no viral link on an average day). Classes left
+   * out keep their workload share; the result must still add up to 1.
+   */
+  classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
   faults: z.array(FaultSchema).default([]),
 });
 export type Environment = z.infer<typeof EnvironmentSchema>;

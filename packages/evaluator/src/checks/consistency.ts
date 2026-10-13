@@ -44,6 +44,11 @@ function longestTtl(ctx: CheckContext, entity: string, cache: string): number | 
   return longest;
 }
 
+function inProcess(ctx: CheckContext, componentId: string): boolean {
+  const component = ctx.attempt.architecture.components.find((c) => c.id === componentId);
+  return component ? (ctx.catalog.kind(component.kind)?.inProcess ?? false) : false;
+}
+
 const duration = (sec: number | null) => {
   if (sec === null) return "until it is evicted";
   if (sec < 120) return `${sec} s`;
@@ -99,9 +104,19 @@ export const invalidationOnWrite = defineCheck({
     for (const cache of caches) {
       const ttl = longestTtl(ctx, params.entity, cache);
       const bounded = ttl !== null && ttl <= params.maxStalenessSec;
+      const stale = `for up to ${duration(ttl)}; the budget is ${duration(params.maxStalenessSec)}`;
+      if (inProcess(ctx, cache)) {
+        // One copy per instance: a delete reaches only the instance that ran the write.
+        if (!bounded) {
+          problems.push({
+            cache,
+            line: `${label(cache)} keeps a copy in every instance, and a delete reaches only one of them; the others serve the old version ${stale}.`,
+          });
+        }
+        continue;
+      }
       const kinds = writing.map((p) => deletion(p, params.entity, cache));
       if (bounded || kinds.every((k) => k === "after")) continue;
-      const stale = `for up to ${duration(ttl)}; the budget is ${duration(params.maxStalenessSec)}`;
       problems.push({
         cache,
         line: kinds.some((k) => k === "before")

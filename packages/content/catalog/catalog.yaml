@@ -35,7 +35,7 @@ kinds:
         sizes:
           managed:
             label: managed
-            capacityPerSec: { read: 1000000, write: 1000000 }
+            capacityPerSec: { read: 5000000, write: 5000000 }
             latencyMs: { base: 1, cv: 0.3 }
             costPerHour: 0.03
         defaultSize: managed
@@ -110,6 +110,36 @@ kinds:
             costPerHour: 0.34
         defaultSize: m
         notes: Throughput assumes a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime; heavier handlers do far less.
+
+  - id: near-cache
+    label: Near cache
+    description: In-process cache inside a service. No network hop, but every instance holds its own copy, so it can only be kept fresh with a short TTL.
+    capabilities: [volatile-kv, ttl]
+    replicable: false
+    holdsData: false
+    inProcess: true
+    flavors:
+      - id: in-process-lru
+        label: In-process LRU
+        description: A bounded LRU map in the service's own memory (for example Caffeine or Guava).
+        sizes:
+          s:
+            label: 256 MB
+            memoryGb: 0.25
+            latencyMs: { base: 0.02, cv: 0.5 }
+            costPerHour: 0
+          m:
+            label: 1 GB
+            memoryGb: 1
+            latencyMs: { base: 0.02, cv: 0.5 }
+            costPerHour: 0
+          l:
+            label: 4 GB
+            memoryGb: 4
+            latencyMs: { base: 0.02, cv: 0.5 }
+            costPerHour: 0
+        defaultSize: m
+        notes: Lives in the memory of the service that connects to it, one copy per instance of that service. A delete reaches one instance only; bound staleness with the TTL.
 
   - id: cache
     label: Cache

@@ -19,6 +19,7 @@ import {
   retryOnlyIdempotent,
   stableUnderRetries,
 } from "./resilience";
+import { autoscalingConfigured, overprovisioned } from "./scale";
 import { recognizeStrategy } from "./strategy";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
@@ -47,6 +48,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     noAcknowledgedDataLoss,
     invalidationOnWrite,
     decisionExcludes,
+    overprovisioned,
+    autoscalingConfigured,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -131,6 +134,21 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
       issues.push(issue(`operation "${id}" uses unknown entity "${op.entity}"`));
   }
   for (const env of workload.environments) {
+    for (const [id, shares] of Object.entries(env.classShares)) {
+      const classes = workload.operations[id]?.classes ?? [];
+      const unknown = Object.keys(shares).filter((c) => !classes.some((cls) => cls.id === c));
+      if (unknown.length > 0)
+        issues.push(
+          issue(
+            `environment "${env.id}" sets shares for unknown classes of "${id}": ${unknown.join(", ")}`,
+          ),
+        );
+      const total = classes.reduce((sum, cls) => sum + (shares[cls.id] ?? cls.share), 0);
+      if (Math.abs(total - 1) > 1e-9)
+        issues.push(
+          issue(`environment "${env.id}" gives "${id}" class shares that add up to ${total}`),
+        );
+    }
     for (const id of Object.keys(env.rates)) {
       if (!(id in workload.operations))
         issues.push(

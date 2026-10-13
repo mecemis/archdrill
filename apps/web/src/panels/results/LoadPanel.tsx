@@ -113,6 +113,10 @@ function ComponentsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
               key={c.componentId}
               metrics={c}
               label={componentLabel(attempt, c.componentId)}
+              autoscaled={
+                attempt.architecture.components.find((x) => x.id === c.componentId)?.autoscale !==
+                undefined
+              }
             />
           ))}
         </tbody>
@@ -124,9 +128,11 @@ function ComponentsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
 function ComponentRow({
   metrics,
   label,
+  autoscaled,
 }: {
   readonly metrics: ComponentMetrics;
   readonly label: string;
+  readonly autoscaled: boolean;
 }) {
   const highlight = { ...EMPTY_HIGHLIGHT, components: new Set([metrics.componentId]) };
   const { setHover } = useUi.getState();
@@ -165,9 +171,21 @@ function ComponentRow({
             {percent(metrics.utilization, 0)}
           </span>
         </span>
+        {metrics.hottestShardUtilization > metrics.utilization + 0.05 && (
+          <span
+            className={`block text-xs ${metrics.hottestShardUtilization > 1 ? "font-semibold text-rose-700" : "text-amber-700"}`}
+          >
+            hot shard {percent(metrics.hottestShardUtilization, 0)}
+          </span>
+        )}
       </td>
       <td>{milliseconds(metrics.latency.mean)}</td>
-      <td>{usd(metrics.monthlyCost)}</td>
+      <td>
+        {usd(metrics.monthlyCost)}
+        {autoscaled && (
+          <span className="block text-xs text-zinc-500">{metrics.instances} instances</span>
+        )}
+      </td>
     </tr>
   );
 }

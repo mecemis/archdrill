@@ -57,6 +57,31 @@ describe("validateScenarioConfig durability", () => {
   });
 });
 
+describe("validateScenarioConfig class shares", () => {
+  it("rejects environment shares for unknown classes or that do not add up", () => {
+    const base = scenarioWithKeyspace("code-length", { Link: 1e9 });
+    const env = (classShares: unknown) =>
+      ScenarioSchema.parse({
+        ...base,
+        workload: {
+          ...base.workload,
+          environments: [{ id: "peak", label: "Peak", rates: { "create-link": 1 }, classShares }],
+        },
+      });
+
+    expect(
+      validateScenarioConfig(env({ "create-link": { nope: 0.5 } }), testProblem).map(
+        (i) => i.message,
+      ),
+    ).toEqual(['environment "peak" sets shares for unknown classes of "create-link": nope']);
+    expect(
+      validateScenarioConfig(env({ "create-link": { all: 0.5 } }), testProblem).map(
+        (i) => i.message,
+      ),
+    ).toEqual(['environment "peak" gives "create-link" class shares that add up to 0.5']);
+  });
+});
+
 describe("validateScenarioConfig workloads", () => {
   it("accepts a keyspace sized by a numeric decision with a default", () => {
     expect(

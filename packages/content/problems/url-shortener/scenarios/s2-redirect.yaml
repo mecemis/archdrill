@@ -266,3 +266,9 @@ hints:
   - What has to happen between receiving GET /{code} and answering with a redirect?
   - A redirect needs the long URL. Where does it come from, and what happens when it is not there, has expired, or the lookup fails?
   - Read the Link by code (cache first if you have one), check expiry, then answer 302. Handle notFound with 404, expired with 410, and errors with a fallback or 503.
+debrief: |
+  Questions an interviewer would ask next:
+
+  - 301 or 302? A permanent redirect saves a round trip on every repeat visit but can never be revoked, and it hides clicks from your analytics.
+  - What should an unknown code cost you? Each one is a store read unless you remember the miss.
+  - Where does the 50 ms budget go: network, load balancer, service, store? Which of these would you trade first?

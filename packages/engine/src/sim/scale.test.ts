@@ -1,0 +1,130 @@
+import {
+  type Attempt,
+  applyCommand,
+  type CommandArgs,
+  type CommandName,
+  EnvironmentSchema,
+  WorkloadSchema,
+} from "@archdrill/model";
+import {
+  cacheAsideAttempt,
+  testCatalogIndex,
+  testProblem,
+  withNearCache,
+} from "@archdrill/model/testing";
+import { describe, expect, it } from "vitest";
+import { analyzeAttempt } from "../analyze";
+import { wholeInstances } from "./setup";
+import { simulateEnvironment } from "./simulate";
+
+const viral = WorkloadSchema.parse({
+  operations: {
+    redirect: {
+      entity: "Link",
+      classes: [
+        { id: "viral", share: 0.3, hotKey: true },
+        { id: "live", share: 0.7 },
+      ],
+    },
+  },
+  keys: { Link: { existing: { distribution: "zipf", s: 1.05, population: 2e8 } } },
+  environments: [{ id: "spike", label: "Spike", rates: { redirect: 1 } }],
+});
+
+function apply<N extends CommandName>(attempt: Attempt, name: N, args: CommandArgs<N>): Attempt {
+  return applyCommand(attempt, name, args).attempt;
+}
+
+function simulate(attempt: Attempt, rate: number) {
+  const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
+  return simulateEnvironment(
+    viral,
+    EnvironmentSchema.parse({ id: "spike", label: "Spike", rates: { redirect: rate }, faults: [] }),
+    { attempt, catalog: testCatalogIndex, problem: testProblem, analysis },
+  );
+}
+
+/** Cache-aside with 150 API instances and a Redis tier of four unreplicated shards. */
+function shardedDesign(): Attempt {
+  const big = apply(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 150 });
+  return apply(big, "updateComponent", { id: "redis", shards: 4, replicas: 1 });
+}
+
+describe("hot keys", () => {
+  it("load the one shard that holds the key", () => {
+    const redis = simulate(shardedDesign(), 400_000).components.get("redis");
+
+    // 120,000 hot lookups on one shard of 150,000/s, plus a quarter of the rest.
+    expect(redis?.utilization).toBeLessThan(1);
+    expect(redis?.hottestShardUtilization).toBeGreaterThan(1.2);
+  });
+
+  it("can be switched off for one environment", () => {
+    const analysis = analyzeAttempt(shardedDesign(), {
+      catalog: testCatalogIndex,
+      problem: testProblem,
+    });
+    const quiet = EnvironmentSchema.parse({
+      id: "avg",
+      label: "Average",
+      rates: { redirect: 400_000 },
+      classShares: { redirect: { viral: 0, live: 1 } },
+    });
+
+    const redis = simulateEnvironment(viral, quiet, {
+      attempt: shardedDesign(),
+      catalog: testCatalogIndex,
+      problem: testProblem,
+      analysis,
+    }).components.get("redis");
+
+    expect(redis?.hottestShardUtilization).toBeCloseTo(redis?.utilization ?? 0, 12);
+  });
+
+  it("make the hot key's calls queue at its shard", () => {
+    const redis = simulate(shardedDesign(), 300_000).components.get("redis");
+
+    expect(redis?.hotLatency.mean).toBeGreaterThan(redis?.latency.mean ?? 0);
+  });
+
+  it("are absorbed by a near cache in the service", () => {
+    const metrics = simulate(withNearCache(shardedDesign()), 400_000);
+    const near = metrics.caches.find((c) => c.componentId === "near");
+
+    expect(metrics.components.get("redis")?.hottestShardUtilization).toBeLessThan(0.7);
+    expect(near?.hitRatio).toBeGreaterThan(0.3);
+  });
+});
+
+describe("autoscaling", () => {
+  it("adds instances until utilisation is back at the target", () => {
+    const scaled = apply(cacheAsideAttempt(), "setAutoscale", {
+      id: "api",
+      autoscale: { max: 200, targetUtilization: 0.7 },
+    });
+
+    const api = simulate(scaled, 30_000).components.get("api");
+
+    // 30,000 requests at 3,000 per instance and 70% target: 14.3, so 15 instances.
+    expect(api?.instances).toBe(15);
+    expect(api?.utilization).toBeCloseTo(30_000 / 45_000, 6);
+  });
+
+  it("rounds to whole instances without billing for solver noise", () => {
+    expect(wholeInstances(10.0000004)).toBe(10);
+    expect(wholeInstances(10.2)).toBe(11);
+    expect(wholeInstances(1)).toBe(1);
+  });
+
+  it("stops at its maximum", () => {
+    const capped = apply(cacheAsideAttempt(), "setAutoscale", {
+      id: "api",
+      autoscale: { max: 8, targetUtilization: 0.7 },
+    });
+
+    const api = simulate(capped, 30_000).components.get("api");
+
+    expect(api?.instances).toBe(8);
+    expect(api?.utilization).toBeGreaterThan(1);
+  });
+});

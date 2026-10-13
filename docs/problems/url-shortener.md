@@ -268,6 +268,13 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | Staff | Hot-key detection and adaptive replication |
 | Staff | Cost-aware headroom (pre-scaling vs autoscaling lag; quantified in v0.2 with the DES) |
 
+**As built (M5)** (`s5-hot-keys`)
+- Environments: `avg` (an average day, 100,000 redirects a second, no viral link) and `spike` (a million redirects a second, 30% of them for one link, plus the usual creates).
+- Gate: `serves-spike` (99% of redirects succeed during the spike).
+- Baseline: `spike-availability` (99.99%, critical), `hot-shard-headroom` (no component or shard above 85%, major), `spike-p99`, `creates-unaffected` (critical), `within-budget` (an average day under $40,000, major) and `idle-fleet` (minor).
+- Signals: a near cache, autoscaling services and rate-limited creation (senior).
+- Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, the viral link's 300,000 lookups a second saturate one Redis shard while the tier averages 68%; a fleet fixed at the spike's size breaks the average-day budget.
+
 ---
 
 ## S6: Dependency failure
@@ -359,12 +366,13 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
-**As built (M4).** The corpus in `packages/content/problems/url-shortener/corpus/` holds six golden designs, covering all four code strategies, and 46 mutants:
+**As built (M5).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 51 mutants:
 
 | ID | Create path | Read path |
 |---|---|---|
-| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry | a separate Redirect API → Redis cache-aside with negative caching → Postgres behind a bulkhead |
-| `dynamodb-redis-cache-aside` | random 8-character codes, one retry | Redis cache-aside → DynamoDB |
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead (all six scenarios) |
+| `postgres-redis-fixed-fleet` | as above, without the gateway | the same with fixed fleets and no near cache (expected not to pass S5) |
+| `dynamodb-redis-cache-aside` | random 8-character codes, one retry | an autoscaling service with a near cache → Redis cache-aside → DynamoDB |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
 | `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |
