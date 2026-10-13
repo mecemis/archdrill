@@ -42,6 +42,8 @@ interface UiState {
   readonly rightTab: RightTab;
   /** The results dock takes most of the screen, for timelines. */
   readonly dockExpanded: boolean;
+  /** The timeline the Timeline tab shows; null for the scenario's first. */
+  readonly timelineId: string | null;
   /** A moment of a timeline the canvas shows instead of the selected environment. */
   readonly timelineCursor: { readonly timelineId: string; readonly step: number } | null;
   /** Simulated environment shown on the canvas and in the results; null means the scenario's last (heaviest). */
@@ -58,6 +60,7 @@ interface UiState {
   setResultsTab: (tab: ResultsTab) => void;
   setRightTab: (tab: RightTab) => void;
   setDockExpanded: (expanded: boolean) => void;
+  setTimelineId: (timelineId: string) => void;
   setTimelineCursor: (cursor: { timelineId: string; step: number } | null) => void;
 }
 
@@ -74,6 +77,7 @@ export const useUi = create<UiState>((set, get) => ({
   resultsTab: "findings",
   rightTab: "flow",
   dockExpanded: false,
+  timelineId: null,
   timelineCursor: null,
   environmentId: null,
   setScenario: (scenarioId) => {
@@ -83,6 +87,7 @@ export const useUi = create<UiState>((set, get) => ({
       operation: scenario?.focusOperations[0] ?? get().operation,
       slot: null,
       environmentId: null,
+      timelineId: null,
       timelineCursor: null,
     });
   },
@@ -100,6 +105,7 @@ export const useUi = create<UiState>((set, get) => ({
     set(resultsTab === "timeline" ? { resultsTab, dockExpanded: true } : { resultsTab }),
   setRightTab: (rightTab) => set({ rightTab }),
   setDockExpanded: (dockExpanded) => set({ dockExpanded }),
+  setTimelineId: (timelineId) => set({ timelineId, timelineCursor: null }),
   setTimelineCursor: (timelineCursor) => set({ timelineCursor }),
 }));
 

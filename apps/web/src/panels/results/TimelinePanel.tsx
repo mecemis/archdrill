@@ -4,9 +4,9 @@ import { CircleCheck, CircleX } from "lucide-react";
 import { useState } from "react";
 import { activePack } from "../../state/content";
 import { useEvaluation } from "../../state/evaluation";
-import { predictionKey, usePredictions } from "../../state/predictions";
+import { currentAnswers, predictionKey, usePredictions } from "../../state/predictions";
 import { useAttemptStore } from "../../state/store";
-import { useScenarioTimelines } from "../../state/timeline-view";
+import { useGated, useScenarioTimelines, useShownTimeline } from "../../state/timeline-view";
 import { useUi } from "../../state/ui-store";
 import { compact, milliseconds, percent } from "../../ui/format";
 import { LineChart, type TimeBand } from "../../ui/LineChart";
@@ -23,8 +23,7 @@ const MAX_PATHS = 8;
 /** How the design behaves over time in the scenario's timelines. */
 export function TimelinePanel() {
   const timelines = useScenarioTimelines();
-  const [selected, setSelected] = useState<string | null>(null);
-  const metrics = timelines.find((t) => t.timeline.id === selected) ?? timelines[0];
+  const metrics = useShownTimeline();
   if (!metrics) {
     return (
       <p className="p-3 text-sm text-zinc-500">
@@ -38,10 +37,7 @@ export function TimelinePanel() {
         <Tabs
           label="Timeline"
           value={metrics.timeline.id}
-          onChange={(id) => {
-            setSelected(id);
-            useUi.getState().setTimelineCursor(null);
-          }}
+          onChange={(id) => useUi.getState().setTimelineId(id)}
           options={timelines.map((t) => ({ id: t.timeline.id, label: t.timeline.label }))}
         />
       )}
@@ -56,16 +52,12 @@ export function TimelinePanel() {
 function TimelineView({ metrics }: { readonly metrics: TimelineMetrics }) {
   const scenarioId = useUi((s) => s.scenarioId);
   const key = predictionKey(scenarioId, metrics.timeline.id);
-  const prediction = usePredictions((s) => s.byTimeline[key]);
+  const gated = useGated(metrics);
   const questions = metrics.timeline.predictions;
-  if (questions.length > 0 && !prediction?.revealed) {
-    return <PredictGate predictionsKey={key} questions={questions} />;
-  }
+  if (gated) return <PredictGate predictionsKey={key} questions={questions} />;
   return (
     <>
-      {questions.length > 0 && prediction && (
-        <PredictionResults predictionsKey={key} metrics={metrics} />
-      )}
+      {questions.length > 0 && <PredictionResults predictionsKey={key} metrics={metrics} />}
       <Scrubber metrics={metrics} />
       <TimelineCharts metrics={metrics} />
       <PathMix metrics={metrics} />
@@ -84,7 +76,8 @@ function PredictGate({
   readonly predictionsKey: string;
   readonly questions: readonly Prediction[];
 }) {
-  const answers = usePredictions((s) => s.byTimeline[predictionsKey]?.answers ?? NO_ANSWERS);
+  const stored = usePredictions((s) => s.byTimeline[predictionsKey]?.answers ?? NO_ANSWERS);
+  const answers = currentAnswers(stored, questions);
   const { answer, reveal } = usePredictions.getState();
   const complete = questions.every((q) => answers[q.id] !== undefined);
   return (
@@ -147,7 +140,8 @@ function PredictionResults({
   readonly predictionsKey: string;
   readonly metrics: TimelineMetrics;
 }) {
-  const answers = usePredictions((s) => s.byTimeline[predictionsKey]?.answers ?? NO_ANSWERS);
+  const stored = usePredictions((s) => s.byTimeline[predictionsKey]?.answers ?? NO_ANSWERS);
+  const answers = currentAnswers(stored, metrics.timeline.predictions);
   const answered = metrics.timeline.predictions.filter((q) => answers[q.id] !== undefined);
   return (
     <section aria-label="Your predictions" className="flex flex-col gap-2">
@@ -179,7 +173,11 @@ function PredictionResults({
       <button
         type="button"
         className="self-start text-xs text-zinc-600 underline hover:text-zinc-900"
-        onClick={() => usePredictions.getState().reset(predictionsKey)}
+        onClick={() => {
+          usePredictions.getState().reset(predictionsKey);
+          // The canvas would otherwise give the moment away while the questions are up.
+          useUi.getState().setTimelineCursor(null);
+        }}
       >
         Predict again
       </button>
@@ -218,6 +216,9 @@ function Scrubber({ metrics }: { readonly metrics: TimelineMetrics }) {
           value={step ?? 0}
           aria-valuetext={step === null ? "none" : `${metrics.times[step]} seconds`}
           onChange={(e) => set(Number(e.target.value))}
+          // With no moment picked the thumb rests at the start, where a change never fires.
+          onPointerDown={() => step === null && set(0)}
+          onKeyDown={() => step === null && set(0)}
         />
         <span className="w-16 tabular-nums">
           {step === null ? "—" : `${metrics.times[step]} s`}

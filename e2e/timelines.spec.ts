@@ -8,21 +8,26 @@ test("asks for a prediction, then shows how close it was", async ({ page }) => {
 
   const reveal = page.getByRole("button", { name: "Reveal the timeline" });
   await expect(reveal).toBeDisabled();
-  await expect(page.getByRole("img", { name: "Success rate" })).toBeHidden();
+  await expect(page.getByRole("slider", { name: "Success rate" })).toBeHidden();
   await page.getByLabel("Over capacity").check();
   await page.getByLabel("A few seconds").check();
   await reveal.click();
 
   await expect(page.getByText(/You said: Over capacity\. It was: /)).toBeVisible();
-  await expect(page.getByRole("img", { name: "Success rate" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Success rate" })).toBeVisible();
 
   // Answers survive a reload; predicting again asks once more.
   await page.reload();
   await page.getByRole("button", { name: /S4 / }).click();
   await page.getByRole("tab", { name: "Timeline" }).click();
   await expect(page.getByText(/You said: Over capacity\./)).toBeVisible();
+  await page.getByRole("button", { name: "Show the design at 30 seconds" }).first().click();
+  await expect(page.getByTestId("canvas-moment")).toBeVisible();
+
+  // Predicting again hides the timeline, on the canvas too.
   await page.getByRole("button", { name: "Predict again" }).click();
   await expect(page.getByRole("button", { name: "Reveal the timeline" })).toBeDisabled();
+  await expect(page.getByTestId("canvas-moment")).toBeHidden();
 });
 
 test("shows the design at a moment of a timeline", async ({ page }) => {
@@ -49,7 +54,7 @@ test("shows a failover second by second on the S6 timeline", async ({ page }) =>
   await page.getByRole("tab", { name: "Timeline" }).click();
   await page.getByRole("button", { name: "Skip and show it" }).click();
 
-  await expect(page.getByRole("img", { name: "Success rate" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Success rate" })).toBeVisible();
   await expect(page.getByText("Primary failing over starts (Links DB)")).toBeVisible();
   await expect(page.getByText("Primary failing over ends (Links DB)")).toBeVisible();
 });
@@ -60,7 +65,7 @@ test("shows autoscaling catching up with a spreading link on the S5 timeline", a
   await page.getByRole("tab", { name: "Timeline" }).click();
   await page.getByRole("button", { name: "Skip and show it" }).click();
 
-  await expect(page.getByRole("img", { name: "Running instances" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Running instances" })).toBeVisible();
   await expect(
     page.getByText(/Redirect API: scaling out to \d+ instances, ready at/).first(),
   ).toBeVisible();

@@ -90,6 +90,9 @@ export function LineChart({
     const next = event.key === "ArrowRight" ? from + 1 : from - 1;
     onPick(times[Math.min(times.length - 1, Math.max(0, next))] ?? 0);
   };
+  const valueText = `${times[cursorIndex] ?? 0} s: ${series
+    .map((s) => `${s.label} ${formatAt(s.values[cursorIndex], format)}`)
+    .join(", ")}`;
   const pathOf = (values: readonly (number | null)[]) => {
     let d = "";
     let drawing = false;
@@ -112,12 +115,21 @@ export function LineChart({
       </figcaption>
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        role="img"
         aria-labelledby={id}
-        onClick={pick}
-        onKeyDown={nudge}
-        tabIndex={onPick ? 0 : undefined}
         className={`h-auto w-full ${onPick ? "cursor-crosshair" : ""}`}
+        {...(onPick
+          ? {
+              // Picking a moment on a chart works like a slider over time.
+              role: "slider",
+              tabIndex: 0,
+              "aria-valuemin": 0,
+              "aria-valuemax": end,
+              "aria-valuenow": times[Math.max(0, cursorIndex)] ?? 0,
+              "aria-valuetext": cursorIndex < 0 ? "no moment picked" : valueText,
+              onClick: pick,
+              onKeyDown: nudge,
+            }
+          : { role: "img" })}
       >
         <title>{title}</title>
         {bands.map((band) => (

@@ -1,5 +1,6 @@
+import type { Prediction } from "@archdrill/model";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { predictionKey, usePredictions } from "./predictions";
+import { currentAnswers, predictionKey, usePredictions } from "./predictions";
 
 const key = predictionKey("s4", "cache-restart");
 
@@ -33,6 +34,25 @@ describe("usePredictions", () => {
     expect(JSON.parse(stored.get("archdrill:predictions:url-shortener") ?? "{}")).toEqual(
       usePredictions.getState().byTimeline,
     );
+  });
+
+  it("ignores stored answers that no longer name an option", () => {
+    const questions = [
+      {
+        id: "recovery",
+        question: "When are redirects back?",
+        measure: { kind: "lowest-success", operation: "redirect" },
+        options: [
+          { id: "fast", label: "Fast", below: 10 },
+          { id: "slow", label: "Slow" },
+        ],
+      },
+    ] as Prediction[];
+
+    expect(currentAnswers({ recovery: "slow", removed: "x" }, questions)).toEqual({
+      recovery: "slow",
+    });
+    expect(currentAnswers({ recovery: "renamed" }, questions)).toEqual({});
   });
 
   it("starts over when the candidate predicts again", () => {

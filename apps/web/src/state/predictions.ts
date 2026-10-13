@@ -1,3 +1,4 @@
+import type { Prediction } from "@archdrill/model";
 import { create } from "zustand";
 import { activePack } from "./content";
 import { safeStorage } from "./persistence";
@@ -11,16 +12,40 @@ export interface TimelinePrediction {
 
 const KEY = `archdrill:predictions:${activePack.problem.id}`;
 
+const isPrediction = (value: unknown): value is TimelinePrediction =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as TimelinePrediction).revealed === "boolean" &&
+  typeof (value as TimelinePrediction).answers === "object" &&
+  (value as TimelinePrediction).answers !== null;
+
 function load(): Record<string, TimelinePrediction> {
   try {
     const text = safeStorage()?.getItem(KEY);
     const parsed: unknown = text ? JSON.parse(text) : {};
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, TimelinePrediction>)
-      : {};
+    if (typeof parsed !== "object" || parsed === null) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, v]) => isPrediction(v)));
   } catch {
     return {};
   }
+}
+
+/**
+ * The answers that still name an option of the timeline's questions; content
+ * can change after an answer was stored.
+ */
+export function currentAnswers(
+  answers: Readonly<Record<string, string>>,
+  questions: readonly Prediction[],
+): Record<string, string> {
+  return Object.fromEntries(
+    questions.flatMap((q) => {
+      const chosen = answers[q.id];
+      return chosen !== undefined && q.options.some((o) => o.id === chosen)
+        ? [[q.id, chosen] as const]
+        : [];
+    }),
+  );
 }
 
 function save(state: Record<string, TimelinePrediction>): void {

@@ -55,7 +55,7 @@ export function ResultsDock() {
           <button
             type="button"
             className="ml-auto rounded p-1 text-zinc-500 hover:bg-zinc-100"
-            aria-label={expanded ? "Shrink the results" : "Enlarge the results"}
+            aria-label="Enlarge the results"
             title={expanded ? "Shrink the results" : "Enlarge the results"}
             aria-pressed={expanded}
             onClick={() => useUi.getState().setDockExpanded(!expanded)}
