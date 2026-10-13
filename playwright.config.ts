@@ -7,6 +7,8 @@ export default defineConfig({
   testDir: "e2e",
   fullyParallel: false,
   reporter: process.env.CI ? "github" : "list",
+  // A full evaluation with timelines takes a few seconds on a busy CI runner.
+  expect: { timeout: 10_000 },
   use: {
     viewport: { width: 1440, height: 900 },
     // Locally use the installed Chrome; CI installs Playwright's Chromium.
