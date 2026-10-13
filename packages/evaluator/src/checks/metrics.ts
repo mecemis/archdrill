@@ -117,8 +117,15 @@ export const utilizationBelow = defineCheck({
         : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
     );
     const overloaded = hot.some((c) => busiest(c) > 1);
+    const over = hot
+      .filter((c) => busiest(c) > 1)
+      .map((c) =>
+        c.utilization <= 1
+          ? `${label(ctx, c.componentId)}'s hottest shard`
+          : label(ctx, c.componentId),
+      );
     const message = overloaded
-      ? `${label(ctx, hot[0]?.componentId ?? "")} is over capacity at ${env.environment.label} and rejects requests.`
+      ? `${over.join(" and ")} ${over.length === 1 ? "is" : "are"} over capacity at ${env.environment.label} and reject${over.length === 1 ? "s" : ""} requests.`
       : `${hot.length} component(s) run above ${percent(params.max)} at ${env.environment.label}, leaving no headroom.`;
     return overloaded
       ? failed(message, evidence, details)

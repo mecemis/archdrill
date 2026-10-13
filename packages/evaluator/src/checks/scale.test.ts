@@ -37,6 +37,9 @@ describe("utilization-below with a hot key", () => {
     );
 
     expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe(
+      "Postgres and Redis's hottest shard are over capacity at Spike and reject requests.",
+    );
     expect(outcome.details.find((d) => d.startsWith("Redis"))).toMatch(
       /^Redis: its hottest shard at \d+\.\d% while the tier averages \d+\.\d%; one hot key lands on one shard$/,
     );

@@ -108,6 +108,13 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
 - **Node latency.** Moments are `mean = S + W_q` and `variance = (cv·S)² + W_q²`.
 - **Network hops.** Each connection adds a round trip of 0.5 ms within a zone. Zone and region placement arrive with the failure scenarios.
 
+**Hot keys, near caches and autoscaling (as built, M5).**
+
+- *Hot shard.* Keys map to shards, so a hot key's whole load lands on one shard, which has `1/shards` of the capacity: its utilisation is `shards · ρ_hot + ρ_ordinary`. Calls for the hot key see that shard's overload and queueing; ordinary calls land there with probability `1/shards`. Components that are not sharded balance every request, so a hot key changes nothing there.
+- *Hot key in a cache.* The hottest key stays in any cache that holds anything; it only misses when its TTL lapses, a share `1/(1 + λT)` of its lookups.
+- *Near cache.* An in-process cache keeps one copy per instance of its service, so each copy sees that instance's share of the lookups with its own memory. Layered caches count hits at every tier against the outermost tier's lookups.
+- *Autoscaling.* An autoscaled service adds instances in the fixed point until utilisation is back at its target, between its minimum and maximum, and is billed and reported as whole instances. Scaling lag is not modelled (steady state); the discrete-event engine will show it.
+
 ### 5. Path latency and percentiles
 
 - **Per path.** Path latency is the sum of its hop and node latencies. Means and variances add, and the path is moment-matched to a **Gamma** distribution. A rejected call fails fast: it costs the round trip, not the service time.

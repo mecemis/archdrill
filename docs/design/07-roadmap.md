@@ -129,15 +129,37 @@ Sizes: **S** ≈ a few days, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks of foc
 - **Successful calls come back before the timeout.** Their latency is the Gamma truncated at the timeout, not the unbounded one.
 - **Code review found that retries "healed" partial faults.** Attempts were independent, so with one of four shards down and two retries a call failed 1.6% of the time instead of 25%. A fault now takes out keys for good. The same review split read and write capacity, which made the MySQL golden's failover headroom honest: it needed a third replica.
 
-### M5: Scale, edges, polish (M)
+### M5: Scale and polish (M) ✅
 - Shards and hot keys, near cache, autoscaling bounds.
-- Worker and consumer flows.
-- S5 and S7.
+- S5.
 - Regression detection across scenarios; snapshot diff.
 - Hints and debriefs.
-- IndexedDB persistence; export/import with migrations.
+- Export/import with migrations.
 
-### M6: Hardening and release (M)
+M5 was split: worker and consumer flows and S7 moved to M6, so each milestone stays reviewable.
+
+**Delivered (2026-10-13):**
+- Model: request classes for one hot key, environment overrides of class shares, in-process kinds (a near cache), autoscaling bounds, export/import with versioned migrations, and a summary of what changed between two designs.
+- Engine: a hot key's load lands on the one shard that holds it (its calls see that shard's overload and queueing); near caches keep one copy per instance of their service; autoscaled services add instances in the fixed point and are billed as whole instances. The simulator is split further into a propagation pass and cache relaxation.
+- Evaluator: the hottest shard counts in `utilization-below`; `overprovisioned` and `autoscaling-configured`; step matchers by target kind; in-process caches can only be kept fresh by TTL; layered caches count hits at every tier.
+- Content: S5 (peak traffic and hot keys) with an average day and a viral spike; debriefs for every scenario; the Postgres golden adds a near cache, autoscaling and a rate-limiting gateway and scores 100 in all six scenarios; its fixed-fleet version stays as a seventh golden for the under-provisioning mutants; five new mutants (51 in total).
+- Web: autoscaling in the inspector, running instances and hot shards on nodes and in the load view, regression warnings across scenarios, a Compare tab against a pinned baseline, debriefs, and export/import.
+- Persistence stays in localStorage: designs are a few kilobytes, so IndexedDB would add complexity without benefit; saved and imported designs share the migrations.
+
+**Learned along the way:**
+- **A better golden made the mutants toothless.** Autoscaling and a near cache absorbed the under-provisioning and unreplicated-cache mutations they were built to catch. The fixed-fleet design is kept as its own golden, and those mutants test it.
+- **Layered caches need their own hit ratio.** Averaging a near cache's and Redis's hit ratios by lookups halved the reported ratio; hits at every tier count against the outermost tier's lookups.
+- **A capability selector hit the near cache.** "Every cache hangs" also hung the in-process cache inside the service; in-process components now fail only with their service, unless a fault names their kind.
+- **One change can lower four scenarios at once.** Separate toasts filled the screen; one toast now lists them all.
+- **An implicit grid column grows with its widest child.** A crowded header widened the whole page until the root grid got an explicit `minmax(0, 1fr)` column.
+
+### M6: Async work and edge cases (M)
+- Queues and publish steps, worker and consumer flows, scheduled jobs.
+- External calls (a URL safety scan) and asynchronous moderation feeding disable-link.
+- Backlog and consumer lag in the simulation; at-least-once delivery and idempotent consumers.
+- S7 (edge cases): expiry and purge, invalid input, unknown codes, malicious URLs, code reuse.
+
+### M7: Hardening and release (M)
 - Mutation report in CI.
 - Property-test suites.
 - Playwright E2E for the core loop.
