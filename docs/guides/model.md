@@ -10,11 +10,13 @@ ArchDrill simulates a design analytically: it solves for the steady state of eac
 - **Overload and faults.** Components over capacity reject the excess; faults take components down, slow them, degrade them or fail them over. Callers time out, retry with backoff and jitter, open circuit breakers and shed load with bulkheads.
 - **Feedback.** Loads, failures, timeouts, hit ratios and autoscaling depend on each other, so the model iterates to a damped fixed point. A second solve from cold caches finds designs that a shock tips into an overload their retries sustain.
 - **Background work.** Consumers receive what is published to their queue, failed messages are delivered again and then dead-lettered, and consumers or jobs that cannot keep up report a growing backlog.
-- **Cost.** Instances, storage for every stored copy, and per-request prices.
+- **Counting.** Fire-and-forget publishes that never hold up a request, consumers that sum per key over a window before writing (distinct keys under Zipf popularity), batched writes, counters spread over several rows, and per-key write limits such as DynamoDB's 1,000 writes a second per item.
+- **Timelines.** A timeline re-solves the steady state every step, carrying over what changes at its own pace: caches warming up after a restart, autoscalers waiting for new instances, breakers holding open, backlogs building and draining ([ADR 0008](../adr/0008-time-stepped-timelines-instead-of-per-request-des.md)).
+- **Cost.** Instances, storage for every stored copy, and per-request prices, which bill every item of a batch.
 
 ## What it assumes
 
-- **Steady state.** Every environment is a steady state. Warm-up, autoscaling lag, the seconds of a failover and how a backlog drains are not shown; a discrete-event engine for those is planned for v0.2.
+- **Steady state, step by step.** Every environment is a steady state; timelines show how it moves, one step (usually a second) at a time. Effects faster than a step blend into it, and individual requests are not replayed, so timelines show average behaviour.
 - **Ballpark numbers.** Capacities, latencies and prices in the catalog are order-of-magnitude figures for comparing designs, not capacity plans or quotes.
 - **Independent requests.** Requests of the same class behave alike and independently, apart from the correlations the model names: a hot key lands on one shard, a fault affects every call to the same key, and a failing message fails on every delivery.
 - **One region.** Zones matter for replication acknowledgements; multiple regions and network partitions are not modelled yet.
@@ -26,4 +28,4 @@ If the fixed point does not settle (usually because the design keeps feeding fai
 
 ## Why analytic first
 
-An analytic model evaluates all seven URL Shortener scenarios of a 30-component design in about 50 ms, so feedback arrives as you edit, and the same design always gets the same result, which is what lets CI hold a corpus of golden and broken designs to exact expectations.
+An analytic model evaluates all eight URL Shortener scenarios of a 30-component design in about 80 ms (timelines add about 350 ms, in a background worker), so feedback arrives as you edit, and the same design always gets the same result, which is what lets CI hold a corpus of golden and broken designs to exact expectations.

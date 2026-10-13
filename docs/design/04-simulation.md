@@ -289,6 +289,22 @@ Recording the path mix reuses the moments the step already computes for its summ
 
 Options are increasing ranges (`below`), and the answer is the first range the value falls in.
 
+## Counting and analytics (as built, M11)
+
+S8 counts clicks: every redirect publishes an event, and a consumer turns events into per-link counts. The engine models what makes this hard.
+
+- **Fire-and-forget publishes.** A publish marked fire-and-forget hands the message to a local buffer. The request never waits for it and never sees it fail, so the step has no `error` outcome and adds no latency. What the queue cannot take (refused, timed out or shed) is lost. In steady state, a queue that keeps failing fills any buffer, so its share of failures is lost.
+- **Aggregation windows.** A consumer step with `aggregateSec: W` sums what arrives per key over W seconds, then writes each key once. Arrivals at rate λ hit key k (popularity q_k) in a window with probability 1 − e^{−λ·q_k·W}, so a window writes Σ_k (1 − e^{−λ·q_k·W}) rows for λ·W items.
+  - Under the URL shortener's Zipf popularity (s = 1.05 over 2 × 10¹⁰ links), 300,000 clicks a second in 10-second windows still write 37% as many rows as clicks: the long tail of links clicked once dominates.
+  - A hot key collapses to one row per window.
+  - Every item waits for its window to close, uniformly over the window, then for the write.
+- **Batched writes.** Consumers can write rows (or increments) in batches, and fire-and-forget publishes can send batches in the background. A batch costs one call plus 5% per extra item, like other batches. Providers that price per request bill every item, batched or not.
+- **Counter shards.** `counterShards: N` spreads one key's count over N rows, so a hot key loads each with 1/N of its writes.
+- **Per-key limits.** Some stores cap what one key can take, whatever the table's capacity. DynamoDB takes 1,000 writes a second per item. Only the hot key is throttled; other keys keep their latency.
+- **Keyed hotness.** A hot request class (a viral link) makes rows keyed like the request hot (`Link` and `LinkStats` by `code`), but not rows keyed by something else (`Click` by `clickId`).
+- **Increments and duplicates.** Increments write like any other write; a dedupe step's conflict outcome has probability zero in steady state. Whether a redelivered message counts twice is a property of the flow, which the evaluator checks.
+- **Stream processors.** Flink-like processors only take messages from a queue, and are sized for small messages with per-key state (100,000 a second per 8 vCPU).
+
 ## Discrete-event engine (superseded)
 
 Used when **time** matters:
@@ -334,3 +350,4 @@ These are shown in the UI's "About the model" panel:
 - Network effects beyond hop latency are not modelled: bandwidth saturation is approximated, and TCP is not modelled.
 - The analytic engine assumes steady state. Transients need the DES.
 - Garbage-collection pauses, noisy neighbours, and JVM warm-up are folded into each catalog entry's coefficient of variation.
+- Percentiles come from a Gamma fitted to each path's mean and variance. For a uniform wait (an aggregation window, a batch filling up), that puts p99 about 40% above the true value, so a 10-second window reads as about 14 seconds of p99 lag.
