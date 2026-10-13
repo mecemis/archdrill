@@ -118,4 +118,24 @@ describe("evaluation properties", () => {
       { numRuns: 200 },
     );
   });
+
+  it("gives every check a credit that matches its status", () => {
+    fc.assert(
+      fc.property(fc.array(mutationArb, { maxLength: 8 }), (commands) => {
+        const [result] = evaluateAttempt(mutate(commands), input).scenarios;
+        if (result?.status !== "evaluated") return;
+        for (const check of result.checks) {
+          expect(check.fraction).toBeGreaterThanOrEqual(0);
+          expect(check.fraction).toBeLessThanOrEqual(1);
+          if (check.status === "pass") expect(check.fraction).toBe(1);
+          if (check.status === "fail") expect(check.fraction).toBe(0);
+          if (check.status === "partial") {
+            expect(check.fraction).toBeGreaterThan(0);
+            expect(check.fraction).toBeLessThan(1);
+          }
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
 });

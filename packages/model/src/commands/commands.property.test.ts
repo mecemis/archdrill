@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { applyPatches, type Patch } from "immer";
 import { describe, expect, it } from "vitest";
+import { exportAttempt, importAttempt } from "../attempt/exchange";
 import type { Attempt } from "../attempt/schema";
 import { AttemptSchema } from "../attempt/schema";
 import { cacheAsideAttempt } from "../testing/fixtures";
@@ -126,6 +127,16 @@ describe("command properties", () => {
         expect(AttemptSchema.safeParse(attempt).success).toBe(true);
       }),
       { numRuns: 300 },
+    );
+  });
+
+  it("exports and imports every reachable attempt unchanged", () => {
+    fc.assert(
+      fc.property(fc.array(commandArb, { maxLength: 25 }), (commands) => {
+        const { attempt } = run(cacheAsideAttempt(), commands);
+        expect(importAttempt(exportAttempt(attempt))).toEqual(attempt);
+      }),
+      { numRuns: 200 },
     );
   });
 });
