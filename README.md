@@ -65,6 +65,7 @@ Most system design practice tools reward placing familiar components (a cache, a
 | [URL Shortener](docs/problems/url-shortener.md) | S1–S8 | Unique codes, caching under Zipf popularity, outages, hot keys, failover, asynchronous work, timelines, click analytics |
 | [Distributed Rate Limiter](docs/problems/rate-limiter.md) | S1–S3 | Counting on every request, fleet-wide limits, window algorithms, failing open with a fallback, a runaway client on one shard |
 | [News Feed](docs/problems/news-feed.md) | S1–S3 | Fan-out on write or read, celebrity accounts and the hybrid model, timeline caches, cursor pagination, rebuild storms |
+| [Chat and Notifications](docs/problems/chat.md) | S1–S3 | Millions of open connections, delivery and push notifications, idempotent resends, per-conversation ordering, large groups, presence |
 
 Switch problems from the picker in the header; each problem keeps its own design in the browser.
 

@@ -16,6 +16,8 @@ export const SizeSchema = z.object({
     .partial()
     .default({}),
   memoryGb: z.number().positive().optional(),
+  /** Open client connections one instance can hold (persistent-connection gateways). */
+  maxConnections: z.number().positive().optional(),
   latencyMs: z.object({
     base: z.number().nonnegative(),
     cv: z.number().nonnegative(),

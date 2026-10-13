@@ -28,6 +28,8 @@ export const CAPABILITIES = [
   "authn",
   "async-buffer",
   "stream-processing",
+  "persistent-connections",
+  "push-notifications",
   "external",
 ] as const;
 

@@ -31,7 +31,7 @@ Register a new pack in `packages/content/src/index.ts`, and its corpus in `packa
   - `{ type: event, event: link-created }` makes it a consumer of that event;
   - `{ type: schedule, description: … }` makes it a background job.
 - `events`: things that happen to an entity and can be published to a queue (`{ id, label, entity }`).
-- `logic`: the local decisions a handler can make in this problem (`checkExpiry`, `validateUrl`, …), from the logic catalog in `packages/model/src/catalog/logic.ts`. The flow recorder offers only these, and validation rejects others. Leave it out to offer every one.
+- `logic`: the local decisions a handler can make in this problem (`checkExpiry`, `validateUrl`, …), from the logic catalog in `packages/model/src/catalog/logic.ts`. The flow recorder offers only these, and validation rejects others. Leave it out to offer every one; `logic: []` offers none.
 - `decisionPoints`: trade-offs a diagram cannot show, with options and an optional `default` the simulation assumes until the candidate decides.
 - `estimates`: back-of-envelope questions for the estimation gym. Each has a `question`, a `kind` (`count`, `rate`, `bytes` or `byte-rate`), the `answer` in base units (items, bytes, per second), a `tolerance` factor (2 by default) and a `derivation` shown once the candidate has answered. State in the question any number the brief does not give. Derived numbers in `scale` notes are hidden until the estimates are answered.
 - `scenarios`: the scenario ids, in order.
@@ -73,7 +73,7 @@ debrief: |                 # follow-up questions, shown once the scenario passes
   Ask about what the timeline teaches, and set the bounds so that a typical good design and a typical weak one land in different options, away from the bounds. A corpus test checks that every question gets at least two different answers across the goldens and the scenario's mutants.
 
   Checks `timeline-holds` and `timeline-recovers` refer to timelines by id. Keep steps coarse for long timelines (5 s for ten minutes): a step whose state moves costs about a millisecond.
-- `environments`: each with `rates` (requests or job items per second; never for consumers), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
+- `environments`: each with `rates` (requests or job items per second; never for consumers), optional `connections` (clients holding a persistent connection), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
 
 ### Checks
 

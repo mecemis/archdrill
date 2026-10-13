@@ -54,6 +54,8 @@
                 "authn",
                 "async-buffer",
                 "stream-processing",
+                "persistent-connections",
+                "push-notifications",
                 "external"
               ]
             }
@@ -123,6 +125,8 @@
                       "authn",
                       "async-buffer",
                       "stream-processing",
+                      "persistent-connections",
+                      "push-notifications",
                       "external"
                     ]
                   }
@@ -164,6 +168,10 @@
                         }
                       },
                       "memoryGb": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "maxConnections": {
                         "type": "number",
                         "exclusiveMinimum": 0
                       },

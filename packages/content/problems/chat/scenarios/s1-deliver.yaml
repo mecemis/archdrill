@@ -1,0 +1,206 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s1-deliver
+problemId: chat
+title: Send and deliver
+order: 1
+story: |
+  "Twenty million people are connected at peak, each holding a WebSocket
+  open. They send 200,000 messages a second, mostly to one other person. A
+  connected recipient sees the message within a second; one who is not gets a
+  push notification. Phones on bad networks resend messages that seemed to
+  fail. Everyone in a conversation sees the same order."
+focusOperations: [send-message, deliver-message, connect]
+workload:
+  operations:
+    send-message:
+      entity: Message
+      classes:
+        - { id: direct, share: 0.75 }
+        - { id: direct-offline, share: 0.15, counts: { onlineRecipients: 0, offlineRecipients: 1 } }
+        - { id: group, share: 0.1, counts: { onlineRecipients: 8, offlineRecipients: 2 } }
+    connect:
+      entity: Session
+      classes:
+        - { id: user, share: 1 }
+  keys:
+    Session:
+      existing: { distribution: zipf, s: 0.6, population: 2.0e7 }
+  environments:
+    - id: peak
+      label: Peak
+      description: Peak traffic with 20 million connected users.
+      connections: 20000000
+      rates: { send-message: 200000, connect: 6000 }
+dimensions:
+  correctness: 0.35
+  latency: 0.3
+  scalability: 0.2
+  cost: 0.15
+checks:
+  - id: messages-delivered
+    use: event-consumed
+    title: Sent messages reach something that delivers them
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-2]
+    params: { operation: send-message, event: message-sent }
+    why: >-
+      A message that is stored but never handed on reaches nobody until they
+      reload the conversation.
+    fix: >-
+      Publish message-sent and deliver it from a consumer.
+
+  - id: pushed-to-connected
+    use: no-path
+    title: Connected recipients get the message over their connection
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-2, NFR-1]
+    params:
+      operation: deliver-message
+      where:
+        all:
+          - { success: true }
+          - { not: { hasStep: { action: connection.push } } }
+          - { not: { hasStep: { action: cache.get, entity: Session, outcome: miss } } }
+    why: >-
+      Chat is instant only if the server pushes the message down the
+      connection the recipient already has open.
+    fix: >-
+      Look up the recipient's session and push the message through the gateway
+      that holds the connection.
+
+  - id: notified-when-offline
+    use: all-success-paths-contain
+    title: Recipients without a connection get a push notification
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-2]
+    params:
+      operation: deliver-message
+      statuses: [200]
+      step: { action: external.notify }
+    why: >-
+      Someone whose app is closed only learns about a message from a push
+      notification.
+    fix: >-
+      Send recipients without a session a notification through the push
+      provider.
+
+  - id: retries-not-duplicated
+    use: all-success-paths-contain
+    title: A resent message is stored once
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params:
+      operation: send-message
+      statuses: [201]
+      step: { action: store.insertIfAbsent, entity: Message }
+    why: >-
+      Phones resend a message whose acknowledgement got lost. A plain insert
+      stores it twice, and both copies are delivered.
+    fix: >-
+      Let the client generate the message id and store with a conditional
+      insert; a conflict means the message is already there, so answer 201.
+
+  - id: one-order
+    use: all-success-paths-contain
+    title: Messages get a sequence number per conversation
+    dimension: correctness
+    weight: 2
+    requirements: [FR-3]
+    params:
+      operation: send-message
+      statuses: [201]
+      step: { action: counter.increment, entity: ConversationSeq }
+    why: >-
+      Two messages sent at the same moment can arrive in either order; clients
+      need one number to sort by.
+    fix: >-
+      Increment the conversation's counter and store the number with the
+      message.
+
+  - id: no-clock-order
+    use: decision-excludes
+    title: Order does not come from clocks
+    dimension: correctness
+    requirements: [FR-3]
+    params:
+      decision: message-order
+      forbidden:
+        - option: client-time
+          reason: Phones' clocks are wrong by seconds or minutes, so a reply can sort before the message it answers.
+        - option: server-time
+          reason: Different servers' clocks drift apart, and two messages sent at the same moment get timestamps in either order.
+    why: >-
+      Clocks disagree; a sequence number per conversation does not.
+    fix: >-
+      Order by the conversation's sequence number.
+
+  - id: delivered-fast
+    use: latency-below
+    title: Delivery p99 under 1 second at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: deliver-message, environment: peak, percentile: p99, ms: 1000 }
+    why: >-
+      A second is the most a conversation tolerates before it feels laggy.
+    fix: >-
+      Deliver from a consumer that keeps up, pushing to each recipient in
+      parallel.
+
+  - id: send-fast
+    use: latency-below
+    title: Sending p99 under 300 ms at peak
+    dimension: latency
+    requirements: [NFR-1]
+    params: { operation: send-message, environment: peak, percentile: p99, ms: 300 }
+    why: >-
+      The sender's tick mark waits for the message to be stored and published,
+      not delivered.
+    fix: >-
+      Store, publish and answer; deliver in the background.
+
+  - id: connections-held
+    use: utilization-below
+    title: Nothing runs above 85% at peak, connections included
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-3]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      Twenty million open connections need memory on the gateways whether
+      anyone sends anything or not; a full gateway refuses new connections.
+    fix: >-
+      Size and autoscale the connection gateways for connections, not only for
+      messages.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: Peak costs less than $100,000 a month
+    dimension: cost
+    requirements: [NFR-3]
+    params: { environment: peak, monthlyUsd: 100000 }
+    why: >-
+      Holding connections open is the fixed cost of real-time chat; the rest
+      should be small next to it.
+    fix: >-
+      Keep sessions and sequences in memory and messages in a store sized for
+      writes.
+hints:
+  - "How many gateway servers does it take just to hold 20 million connections open?"
+  - "A phone resends a message after a timeout. How does the server know it already has it?"
+  - "Store each message with a conditional insert on a client-generated id and a per-conversation sequence number, publish it, and deliver from a consumer that looks up sessions and pushes through the gateways, with push notifications for the rest."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - A recipient's phone was offline for an hour. How does it catch up when it reconnects?
+  - How would you show "delivered" and "read" ticks?
+  - What changes if messages must be end-to-end encrypted?

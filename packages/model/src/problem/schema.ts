@@ -123,8 +123,8 @@ export const ProblemSchema = z
         }),
       )
       .default([]),
-    /** Local decisions a handler can make in this problem; empty offers every one. */
-    logic: z.array(LogicIdSchema).default([]),
+    /** Local decisions a handler can make in this problem; leave it out to offer every one. */
+    logic: z.array(LogicIdSchema).optional(),
     /** Back-of-envelope questions for the estimation gym. */
     estimates: z.array(EstimateSchema).default([]),
     scenarios: z.array(IdSchema).min(1),

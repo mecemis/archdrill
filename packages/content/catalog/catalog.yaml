@@ -263,7 +263,7 @@ kinds:
   - id: wide-column-db
     label: Wide-column database
     description: Durable, partitioned database built for heavy writes, with counters and time-to-live.
-    capabilities: [durable-store, atomic-increment, ttl, range-scan]
+    capabilities: [durable-store, atomic-increment, ttl, range-scan, conditional-write]
     replicable: true
     holdsData: true
     shardable: true
@@ -280,7 +280,7 @@ kinds:
             latencyMs: { base: 2, cv: 0.8 }
             costPerHour: 0.6
         defaultSize: m
-        notes: Writes are cheap appends, so a node takes about twice as many writes as reads. Run three replicas of every range. Counter columns add in place, so a retried or redelivered increment counts twice.
+        notes: Writes are cheap appends, so a node takes about twice as many writes as reads. Run three replicas of every range. Counter columns add in place, so a retried or redelivered increment counts twice. Conditional writes (IF NOT EXISTS) run a lightweight transaction, a consensus round between replicas that costs several plain writes.
 
   - id: id-generator
     label: Id generator
@@ -384,6 +384,27 @@ kinds:
         defaultSize: m
         notes: Throughput for small messages with simple per-key state, such as counts. A restart replays messages since the last checkpoint, so whatever it writes must tolerate seeing a message twice.
 
+  - id: websocket-gateway
+    label: WebSocket gateway
+    description: Holds clients' persistent connections and relays frames between them and the services behind it.
+    capabilities: [routing, persistent-connections]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: connection-servers
+        label: Connection servers
+        description: Self-managed servers that keep WebSocket connections open (for example Envoy, or a service on an event loop). Any instance can hold any user's connection.
+        startupSec: 60
+        sizes:
+          m:
+            label: 8 vCPU, 32 GB
+            capacityPerSec: { read: 200000, write: 200000 }
+            maxConnections: 250000
+            latencyMs: { base: 1, cv: 0.5 }
+            costPerHour: 0.4
+        defaultSize: m
+        notes: Every open connection holds memory for its buffers, so memory, not CPU, decides how many fit on an instance. A node that goes down drops all of its connections at once, and they all reconnect.
+
   - id: external-api
     label: External API
     description: A third-party service you call over the internet. You do not control its capacity, latency or uptime.
@@ -403,3 +424,16 @@ kinds:
             costPerHour: 0
         defaultSize: quota
         notes: The quota is fixed per project; calls above it are rejected (HTTP 429). Each answer takes tens of milliseconds over the internet.
+      - id: push-provider
+        label: Push notifications
+        description: Mobile push services (Apple Push Notification service, Firebase Cloud Messaging) that deliver notifications to devices without an open connection.
+        capabilities: [push-notifications]
+        managedRedundancy: true
+        sizes:
+          quota:
+            label: "100,000 requests/s"
+            capacityPerSec: { write: 100000 }
+            latencyMs: { base: 80, cv: 0.6 }
+            costPerHour: 0
+        defaultSize: quota
+        notes: Providers throttle senders above their rate and deliver on a best-effort basis. One request can address many devices (multicast), which is how large groups are notified.

@@ -345,6 +345,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "connections": {
+                "default": 0,
+                "type": "number",
+                "minimum": 0
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
@@ -428,6 +433,8 @@
                                 "authn",
                                 "async-buffer",
                                 "stream-processing",
+                                "persistent-connections",
+                                "push-notifications",
                                 "external"
                               ]
                             },
@@ -495,6 +502,8 @@
                                 "authn",
                                 "async-buffer",
                                 "stream-processing",
+                                "persistent-connections",
+                                "push-notifications",
                                 "external"
                               ]
                             },
@@ -557,6 +566,8 @@
                                 "authn",
                                 "async-buffer",
                                 "stream-processing",
+                                "persistent-connections",
+                                "push-notifications",
                                 "external"
                               ]
                             },
@@ -619,6 +630,8 @@
                                 "authn",
                                 "async-buffer",
                                 "stream-processing",
+                                "persistent-connections",
+                                "push-notifications",
                                 "external"
                               ]
                             },
@@ -692,6 +705,11 @@
                   "type": "number",
                   "minimum": 0
                 }
+              },
+              "connections": {
+                "default": 0,
+                "type": "number",
+                "minimum": 0
               },
               "classShares": {
                 "default": {},
@@ -797,6 +815,8 @@
                                 "authn",
                                 "async-buffer",
                                 "stream-processing",
+                                "persistent-connections",
+                                "push-notifications",
                                 "external"
                               ]
                             },
@@ -875,6 +895,8 @@
                                         "authn",
                                         "async-buffer",
                                         "stream-processing",
+                                        "persistent-connections",
+                                        "push-notifications",
                                         "external"
                                       ]
                                     },
@@ -942,6 +964,8 @@
                                         "authn",
                                         "async-buffer",
                                         "stream-processing",
+                                        "persistent-connections",
+                                        "push-notifications",
                                         "external"
                                       ]
                                     },
@@ -1004,6 +1028,8 @@
                                         "authn",
                                         "async-buffer",
                                         "stream-processing",
+                                        "persistent-connections",
+                                        "push-notifications",
                                         "external"
                                       ]
                                     },
@@ -1066,6 +1092,8 @@
                                         "authn",
                                         "async-buffer",
                                         "stream-processing",
+                                        "persistent-connections",
+                                        "push-notifications",
                                         "external"
                                       ]
                                     },
@@ -1157,6 +1185,8 @@
                                     "authn",
                                     "async-buffer",
                                     "stream-processing",
+                                    "persistent-connections",
+                                    "push-notifications",
                                     "external"
                                   ]
                                 },

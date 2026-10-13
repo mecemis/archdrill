@@ -322,7 +322,6 @@
       }
     },
     "logic": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "string",

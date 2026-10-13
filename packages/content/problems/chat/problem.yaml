@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../../schema/problem.schema.json
+id: chat
+version: 1
+title: Chat and Notifications
+levels: [senior, staff]
+brief: |
+  A messaging app with one-to-one and group conversations (groups of up to
+  500 people). Connected users get messages instantly over a WebSocket; users
+  who are not connected get a push notification. Messages appear in the same
+  order for everyone in a conversation, at least once, and never twice. Users
+  see which of their contacts are online.
+scale:
+  - { label: Connected users, value: "20 million at peak", note: "each holds a WebSocket open" }
+  - { label: Messages, value: "200,000 /s at peak", note: "most one-to-one; one in ten to a group" }
+  - { label: Recipients, value: "1 for most messages, 10 in a typical group", note: "large groups: up to 500 members" }
+  - { label: Presence, value: "a heartbeat every 30 s per connected user", note: "the contact list shows 20 contacts' status" }
+requirements:
+  - { id: FR-1, kind: functional, text: "Send a message to a one-to-one or group conversation." }
+  - { id: FR-2, kind: functional, text: "Connected recipients receive the message at once; others get a push notification." }
+  - { id: FR-3, kind: functional, text: "Everyone sees a conversation's messages in the same order." }
+  - { id: FR-4, kind: functional, text: "Users see which of their contacts are online." }
+  - { id: NFR-1, kind: non-functional, text: "Delivery to connected recipients p99 < 1 s; sending p99 < 300 ms." }
+  - { id: NFR-2, kind: non-functional, text: "A message is delivered at least once and shown once, even when the client retries a send." }
+  - { id: NFR-3, kind: non-functional, text: "The service holds every connection at peak with room to spare." }
+entities:
+  - name: Message
+    key: messageId
+    fields: [messageId, conversationId, senderId, seq, body, sentAt]
+    avgBytes: 300
+  - name: ConversationSeq
+    key: conversationId
+    fields: [conversationId, lastSeq]
+    avgBytes: 32
+    # Kept in memory: after a loss it is rebuilt from the latest stored message.
+    ephemeral: true
+  - name: Session
+    key: userId
+    fields: [userId, gatewayNode, connectedAt]
+    avgBytes: 64
+    ephemeral: true
+  - name: Presence
+    key: userId
+    fields: [userId, lastSeen]
+    avgBytes: 32
+    ephemeral: true
+operations:
+  - id: send-message
+    label: Send message
+    method: POST
+    path: "/conversations/{id}/messages"
+    class: write
+    idempotent: false
+    successStatuses: [201]
+    requirements: [FR-1, FR-3, NFR-1, NFR-2]
+    introducedIn: s1-deliver
+  - id: connect
+    label: Connect
+    method: POST
+    path: /sessions
+    class: write
+    idempotent: true
+    successStatuses: [204]
+    requirements: [FR-2]
+    introducedIn: s1-deliver
+  - id: deliver-message
+    label: Deliver message
+    trigger: { type: event, event: message-sent }
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-2, NFR-1]
+    introducedIn: s1-deliver
+  - id: heartbeat
+    label: Heartbeat
+    method: POST
+    path: /presence
+    class: write
+    idempotent: true
+    successStatuses: [204]
+    requirements: [FR-4]
+    introducedIn: s3-presence
+  - id: read-presence
+    label: Read contacts' presence
+    method: GET
+    path: /contacts/presence
+    class: read
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-4]
+    introducedIn: s3-presence
+events:
+  - { id: message-sent, label: Message sent, entity: Message }
+counts:
+  - { id: onlineRecipients, label: connected recipients, default: 1 }
+  - { id: offlineRecipients, label: recipients without a connection, default: 0 }
+  - { id: contactsShown, label: contacts on screen, default: 20 }
+client: { flavor: mobile-app, label: App users }
+logic: []
+decisionPoints:
+  - id: message-order
+    question: What orders the messages of a conversation?
+    options:
+      - { id: client-time, label: The sender's clock }
+      - { id: server-time, label: The receiving server's clock }
+      - { id: sequence, label: A sequence number per conversation }
+    requirements: [FR-3]
+estimates:
+  - id: gateway-nodes
+    question: >-
+      A connection server holds 250,000 open connections. How many keep 20
+      million users connected at 70% of capacity?
+    kind: count
+    answer: 115
+    tolerance: 1.5
+    derivation: >-
+      20,000,000 ÷ (250,000 × 0.7) ≈ 115 servers. Memory for the connections,
+      not CPU for the messages, sizes the fleet.
+  - id: heartbeats
+    question: Every connected user sends a heartbeat every 30 seconds. How many heartbeats a second at peak?
+    kind: rate
+    answer: 666667
+    derivation: >-
+      20,000,000 ÷ 30 ≈ 670,000 heartbeats a second, more than three times the
+      message rate.
+  - id: group-fan-out
+    question: >-
+      One message in fifty goes to a group of 500. At 200,000 messages a
+      second, how many deliveries a second do those groups need?
+    kind: rate
+    answer: 2000000
+    derivation: >-
+      200,000 × 1/50 × 500 = 2 million deliveries a second, ten times the
+      messages themselves.
+  - id: presence-broadcast
+    question: >-
+      If every heartbeat were pushed to each of a user's 200 contacts, how many
+      pushes a second would presence take?
+    kind: rate
+    answer: 133000000
+    derivation: >-
+      670,000 heartbeats × 200 contacts ≈ 133 million pushes a second. Status
+      is looked up for the contacts on screen instead.
+  - id: messages-per-day
+    question: At an average of a third of peak, how many messages a day?
+    kind: count
+    answer: 5760000000
+    derivation: >-
+      200,000 ÷ 3 ≈ 67,000 a second × 86,400 seconds ≈ 5.8 billion messages a
+      day.
+scenarios: [s1-deliver, s2-groups, s3-presence]

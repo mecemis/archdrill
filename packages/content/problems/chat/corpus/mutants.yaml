@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../../schema/mutants.schema.json
+# Each mutant breaks a golden design in one specific way; CI asserts that the
+# evaluator catches it.
+mutants:
+  - id: messages-not-delivered
+    base: gateways-and-sequences
+    description: Messages are published, but nothing delivers them.
+    apply:
+      - removeFlow: { operation: deliver-message }
+    expect:
+      scenario: s1-deliver
+      fails: [messages-delivered]
+      band: not-passing
+
+  - id: messages-not-published
+    base: gateways-and-sequences
+    description: Messages are stored but never published.
+    apply:
+      - removeStep: { operation: send-message, stepId: publish, bypass: ok }
+    expect:
+      scenario: s1-deliver
+      fails: [messages-delivered]
+      band: not-passing
+
+  - id: resend-stored-twice
+    base: gateways-and-sequences
+    description: Messages are stored with a plain insert, so a resend is stored again.
+    apply:
+      - updateStep: { operation: send-message, stepId: store, action: store.insert }
+    expect:
+      scenario: s1-deliver
+      fails: [retries-not-duplicated]
+
+  - id: no-sequence
+    base: gateways-and-sequences
+    description: Messages are stored without a sequence number.
+    apply:
+      - removeStep: { operation: send-message, stepId: seq, bypass: ok }
+    expect:
+      scenario: s1-deliver
+      fails: [one-order]
+
+  - id: client-clock-order
+    base: gateways-and-sequences
+    description: Conversations are ordered by the sender's clock.
+    apply:
+      - setDecision: { decision: message-order, option: client-time }
+    expect:
+      scenario: s1-deliver
+      fails: [no-clock-order]
+
+  - id: notify-everyone
+    base: gateways-and-sequences
+    description: Nothing is pushed over open connections; everyone gets a notification.
+    apply:
+      - removeStep: { operation: deliver-message, stepId: push-online, bypass: ok }
+    expect:
+      scenario: s1-deliver
+      fails: [pushed-to-connected]
+
+  - id: no-notifications
+    base: gateways-and-sequences
+    description: Recipients without a connection are not notified.
+    apply:
+      - removeStep: { operation: deliver-message, stepId: notify, bypass: ok }
+    expect:
+      scenario: s1-deliver
+      fails: [notified-when-offline]
+
+  - id: too-few-gateways
+    base: gateways-and-sequences
+    description: Eighty connection servers, without autoscaling.
+    apply:
+      - setAutoscale: { id: gateways, autoscale: null }
+    expect:
+      scenario: s1-deliver
+      fails: [connections-held]
+
+  - id: unbatched-notifications
+    base: gateways-and-sequences
+    description: Every device gets its own notification request.
+    apply:
+      - updateStep: { operation: deliver-message, stepId: notify, batchSize: null }
+    expect:
+      scenario: s2-groups
+      fails: [within-quota]
+
+  - id: unbatched-presence-reads
+    base: gateways-and-sequences
+    description: The contact list looks up each contact's presence in its own call.
+    apply:
+      - updateStep: { operation: read-presence, stepId: statuses, batchSize: null }
+    expect:
+      scenario: s3-presence
+      fails: [headroom-presence]

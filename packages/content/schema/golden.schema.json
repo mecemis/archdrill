@@ -252,6 +252,8 @@
                             "queue.publish",
                             "counter.increment",
                             "service.call",
+                            "connection.push",
+                            "external.notify",
                             "external.check",
                             "ids.allocate",
                             "coord.leaseRange"

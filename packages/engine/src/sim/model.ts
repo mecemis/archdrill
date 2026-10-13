@@ -71,6 +71,8 @@ export interface Fixtures {
   /** Replicas are set by a timeline's autoscaler, not solved for. */
   readonly fixedReplicas: boolean;
   readonly ctx: SimulationContext;
+  /** Clients holding persistent connections in this environment. */
+  readonly clientConnections: number;
   readonly operations: readonly OperationModel[];
   readonly caches: readonly CacheSpec[];
   readonly connections: readonly Connection[];
@@ -108,7 +110,13 @@ export function createModel(fixtures: Fixtures, previous?: LoopState): Model {
 }
 
 export function profilesOf(model: Model, fixtures: Fixtures, whole = false) {
-  return buildProfiles(fixtures.ctx, fixtures.faults, model.loop.replicas, whole);
+  return buildProfiles(
+    fixtures.ctx,
+    fixtures.faults,
+    model.loop.replicas,
+    whole,
+    fixtures.clientConnections,
+  );
 }
 
 export function propagateModel(model: Model, fixtures: Fixtures): Propagation {
@@ -156,6 +164,7 @@ export function buildFixtures(
     drains: new Map(),
     fixedReplicas: false,
     ctx,
+    clientConnections: environment.connections,
     operations: buildOperations(workload, environment, ctx),
     caches,
     connections: ctx.attempt.architecture.connections,

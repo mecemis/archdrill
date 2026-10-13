@@ -10,6 +10,10 @@ import {
 } from "@archdrill/model";
 import type { z } from "zod";
 import catalogData from "../catalog/catalog.yaml";
+import chatProblem from "../problems/chat/problem.yaml";
+import chatS1 from "../problems/chat/scenarios/s1-deliver.yaml";
+import chatS2 from "../problems/chat/scenarios/s2-groups.yaml";
+import chatS3 from "../problems/chat/scenarios/s3-presence.yaml";
 import newsFeedProblem from "../problems/news-feed/problem.yaml";
 import newsFeedS1 from "../problems/news-feed/scenarios/s1-timeline.yaml";
 import newsFeedS2 from "../problems/news-feed/scenarios/s2-celebrities.yaml";
@@ -94,6 +98,7 @@ export const problemPacks: readonly ProblemPack[] = [
   ]),
   loadProblemPack(rateLimiterProblem, [rateLimiterS1, rateLimiterS2, rateLimiterS3]),
   loadProblemPack(newsFeedProblem, [newsFeedS1, newsFeedS2, newsFeedS3]),
+  loadProblemPack(chatProblem, [chatS1, chatS2, chatS3]),
 ];
 
 export function getProblemPack(problemId: string): ProblemPack | undefined {
