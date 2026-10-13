@@ -24,11 +24,15 @@ interface RegressionState {
   readonly regressions: Readonly<Record<string, Regression>>;
   readonly previous: ReadonlyMap<string, Snapshot>;
   readonly generation: number;
-  /** Compares a new evaluation with the last one; returns the regressions it adds. */
+  /**
+   * Compares a new evaluation with the last one and returns the regressions it
+   * adds. Undo and redo are deliberate, so they only update open marks.
+   */
   observe: (
     evaluation: AttemptEvaluation,
     generation: number,
     current: string,
+    quiet?: boolean,
   ) => [string, Regression][];
   acknowledge: (scenarioId: string) => void;
 }
@@ -57,7 +61,7 @@ export const useRegressions = create<RegressionState>((set, get) => ({
   regressions: {},
   previous: new Map(),
   generation: -1,
-  observe(evaluation, generation, current) {
+  observe(evaluation, generation, current, quiet = false) {
     const state = get();
     const sameDesign = state.generation === generation;
     const next = new Map<string, Snapshot>();
@@ -70,7 +74,9 @@ export const useRegressions = create<RegressionState>((set, get) => ({
       const before = state.previous.get(result.scenarioId);
       const open = regressions[result.scenarioId];
       if (open && now.score >= open.from) delete regressions[result.scenarioId];
-      if (!sameDesign || !before || result.scenarioId === current || !worse(before, now)) continue;
+      else if (open) regressions[result.scenarioId] = { ...open, to: now.score };
+      if (quiet || !sameDesign || !before || result.scenarioId === current) continue;
+      if (!worse(before, now)) continue;
       const reason = [...now.failing].find((title) => !before.failing.has(title)) ?? null;
       const regression = { from: open?.from ?? before.score, to: now.score, reason };
       regressions[result.scenarioId] = regression;

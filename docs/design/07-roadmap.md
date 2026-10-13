@@ -151,6 +151,7 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 - **Layered caches need their own hit ratio.** Averaging a near cache's and Redis's hit ratios by lookups halved the reported ratio; hits at every tier count against the outermost tier's lookups.
 - **A capability selector hit the near cache.** "Every cache hangs" also hung the in-process cache inside the service; in-process components now fail only with their service, unless a fault names their kind.
 - **One change can lower four scenarios at once.** Separate toasts filled the screen; one toast now lists them all.
+- **Code review caught a hit ratio above 100% in disguise.** Dividing all caches' hits by the busiest cache's lookups is right for a near cache in front of Redis but adds up caches that serve different requests; the engine now counts each request once, as a hit if any tier answered.
 - **An implicit grid column grows with its widest child.** A crowded header widened the whole page until the root grid got an explicit `minmax(0, 1fr)` column.
 
 ### M6: Async work and edge cases (M)

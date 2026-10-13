@@ -39,7 +39,7 @@ export function CompareView() {
         </Button>
         <Button
           variant="ghost"
-          onClick={() => useAttemptStore.getState().replace(baseline)}
+          onClick={() => useAttemptStore.getState().replace(baseline, { undoable: true })}
           title="Go back to the baseline design"
         >
           <RotateCcw className="h-4 w-4" />

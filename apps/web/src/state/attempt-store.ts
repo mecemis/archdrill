@@ -6,7 +6,7 @@ import {
   type CommandReturn,
   emptyAttempt,
 } from "@archdrill/model";
-import { applyPatches, type Patch } from "immer";
+import { applyPatches, type Patch, produceWithPatches } from "immer";
 import { ZodError } from "zod";
 import { create } from "zustand";
 import { useToasts } from "./toasts";
@@ -14,7 +14,7 @@ import { useToasts } from "./toasts";
 const MAX_HISTORY = 100;
 
 interface HistoryEntry {
-  readonly label: CommandName;
+  readonly label: CommandName | "replace";
   readonly patches: Patch[];
   readonly inversePatches: Patch[];
 }
@@ -30,14 +30,20 @@ export interface AttemptState {
   readonly future: readonly HistoryEntry[];
   /** Increases when the attempt is replaced wholesale, so comparisons with the previous one stop. */
   readonly generation: number;
+  /** How the attempt last changed: an edit, undo or redo, or a wholesale replacement. */
+  readonly lastChange: "edit" | "history" | "replace";
   /** Applies a command; on failure shows the reason and returns undefined. */
   dispatch: <N extends CommandName>(name: N, args: CommandArgs<N>) => CommandReturn<N> | undefined;
   /** Applies several commands as one undoable step; all or nothing. */
   dispatchAll: (commands: readonly AnyCommand[]) => boolean;
   undo: () => void;
   redo: () => void;
-  /** Replaces the whole attempt (load, reset) and clears history. */
-  replace: (attempt: Attempt) => void;
+  /**
+   * Replaces the whole attempt. By default history is cleared (loading on
+   * start); with `undoable` the replacement is one more undoable step (reset,
+   * import, restoring a baseline).
+   */
+  replace: (attempt: Attempt, options?: { readonly undoable?: boolean }) => void;
 }
 
 /** A new attempt starts with a client, because every operation needs somewhere for traffic to come from. */
@@ -58,6 +64,7 @@ export function createAttemptStore(initial: Attempt) {
     past: [],
     future: [],
     generation: 0,
+    lastChange: "edit",
     dispatch(name, args) {
       try {
         const { attempt, patches, inversePatches, result } = applyCommand(
@@ -67,7 +74,12 @@ export function createAttemptStore(initial: Attempt) {
         );
         if (patches.length === 0) return result;
         const entry = { label: name, patches, inversePatches };
-        set({ attempt, past: [...get().past, entry].slice(-MAX_HISTORY), future: [] });
+        set({
+          attempt,
+          past: [...get().past, entry].slice(-MAX_HISTORY),
+          future: [],
+          lastChange: "edit",
+        });
         return result;
       } catch (error) {
         useToasts.getState().notify(describeError(error), "error");
@@ -95,6 +107,7 @@ export function createAttemptStore(initial: Attempt) {
         attempt,
         past: [...get().past, { label, patches, inversePatches }].slice(-MAX_HISTORY),
         future: [],
+        lastChange: "edit",
       });
       return true;
     },
@@ -106,6 +119,7 @@ export function createAttemptStore(initial: Attempt) {
         attempt: applyPatches(get().attempt, entry.inversePatches),
         past: past.slice(0, -1),
         future: [entry, ...get().future],
+        lastChange: "history",
       });
     },
     redo() {
@@ -115,10 +129,24 @@ export function createAttemptStore(initial: Attempt) {
         attempt: applyPatches(get().attempt, entry.patches),
         past: [...get().past, entry],
         future: rest,
+        lastChange: "history",
       });
     },
-    replace(attempt) {
-      set({ attempt, past: [], future: [], generation: get().generation + 1 });
+    replace(attempt, options) {
+      const generation = get().generation + 1;
+      if (!options?.undoable) {
+        set({ attempt, past: [], future: [], generation, lastChange: "replace" });
+        return;
+      }
+      const [, patches, inversePatches] = produceWithPatches(get().attempt, () => attempt);
+      const entry: HistoryEntry = { label: "replace", patches, inversePatches };
+      set({
+        attempt,
+        past: [...get().past, entry].slice(-MAX_HISTORY),
+        future: [],
+        generation,
+        lastChange: "replace",
+      });
     },
   }));
 }

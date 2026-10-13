@@ -1,5 +1,5 @@
 import { ACTIONS, type Connection, DEFAULT_POLICY } from "@archdrill/model";
-import type { CallPathStep } from "../paths/types";
+import type { CallPathStep, PathStep } from "../paths/types";
 import { bulkheadShed, type CallModel, callModel } from "./calls";
 import { type ComponentFault, NO_FAULT } from "./faults";
 import { callShare, type OutcomeState } from "./outcomes";
@@ -104,6 +104,28 @@ export type IngressModel = ReturnType<typeof ingressModel>;
 
 type Lookups = { existing: number; absent: number; hot: number };
 
+/**
+ * Counts a request for an existing key once per entity it looked up in any
+ * cache, and once more as a hit if any cache tier answered, however many
+ * tiers it passed.
+ */
+function countEntityLookups(
+  steps: readonly PathStep[],
+  weight: number,
+  into: Map<string, { lookups: number; hits: number }>,
+): void {
+  const looked = new Map<string, boolean>();
+  for (const step of steps) {
+    if (step.kind !== "call" || step.action !== "cache.get" || !step.entity) continue;
+    if (step.outcome === "error") continue;
+    looked.set(step.entity, (looked.get(step.entity) ?? false) || step.outcome === "hit");
+  }
+  for (const [entity, hit] of looked) {
+    const entry = into.get(entity) ?? { lookups: 0, hits: 0 };
+    into.set(entity, { lookups: entry.lookups + weight, hits: entry.hits + (hit ? weight : 0) });
+  }
+}
+
 /** One pass of load propagation over every operation's paths and request classes. */
 export function propagate(
   operations: readonly OperationModel[],
@@ -117,6 +139,7 @@ export function propagate(
   const lookups = new Map<string, Lookups>();
   const traffic = new Map<string, number>();
   const tallies = new Map<string, CallTally>();
+  const entityLookups = new Map<string, { lookups: number; hits: number }>();
   const add = (into: Map<string, Load>, id: string, rate: number, write: boolean) => {
     const load = into.get(id) ?? { read: 0, write: 0 };
     into.set(
@@ -156,6 +179,7 @@ export function propagate(
       for (const path of op.analysis.paths) {
         const weight = arriving * cls.share * pathProbability(path, cls, state);
         if (weight === 0) continue;
+        if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
           const call = calls.get(step, cls.hotKey);
@@ -193,5 +217,5 @@ export function propagate(
       }
     }
   }
-  return { loads, hotLoads, retries, lookups, traffic, calls: tallies };
+  return { loads, hotLoads, retries, lookups, traffic, calls: tallies, entityLookups };
 }

@@ -29,7 +29,12 @@ export function ExchangeButtons() {
         notify(`That design is for another problem (${attempt.problemId}).`, "error");
         return;
       }
-      useAttemptStore.getState().replace(attempt);
+      if (attempt.problemVersion !== activePack.problem.version) {
+        notify(
+          `That design was made for version ${attempt.problemVersion} of the problem; scenarios may have changed since.`,
+        );
+      }
+      useAttemptStore.getState().replace(attempt, { undoable: true });
       useUi.getState().select(null);
       useUi.getState().armSlot(null);
       notify(`Loaded ${file.name}.`);

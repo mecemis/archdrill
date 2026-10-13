@@ -57,6 +57,26 @@ describe("utilization-below with a hot key", () => {
   });
 });
 
+describe("hit-ratio-above with several caches", () => {
+  const params = { entity: "Link", environment: "spike", min: 0.5 };
+
+  it("counts each request once through a near cache and Redis", () => {
+    const nested = runCheckWithLoad("hit-ratio-above", params, withNearCache(sharded), viral);
+
+    expect(nested.status).toBe("pass");
+    expect(Number(/is ([\d.]+)%/.exec(nested.message)?.[1])).toBeLessThanOrEqual(100);
+  });
+
+  it("does not add up caches that serve different requests", () => {
+    // Two operations' worth of lookups against one cache must not exceed 100%.
+    const outcome = runCheckWithLoad("hit-ratio-above", params, sharded, viral);
+    const percentage = Number(/is ([\d.]+)%/.exec(outcome.message)?.[1]);
+
+    expect(percentage).toBeGreaterThan(0);
+    expect(percentage).toBeLessThanOrEqual(100);
+  });
+});
+
 describe("overprovisioned", () => {
   it("estimates what idle instances cost", () => {
     const quiet = WorkloadSchema.parse({
@@ -74,6 +94,22 @@ describe("overprovisioned", () => {
     expect(outcome.details[0]).toMatch(
       /^Link API: 30 instances at 7% utilisation; about 4 would do, saving \$[\d,]+\/month$/,
     );
+  });
+
+  it("suggests a lower minimum when the fleet already autoscales", () => {
+    const quiet = WorkloadSchema.parse({
+      ...viral,
+      environments: [{ id: "avg", label: "Average", rates: { redirect: 6000 } }],
+    });
+    const fleet = applyCommand(
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 30 }).attempt,
+      "setAutoscale",
+      { id: "api", autoscale: { max: 60, targetUtilization: 0.7 } },
+    ).attempt;
+
+    const outcome = runCheckWithLoad("overprovisioned", { environment: "avg" }, fleet, quiet);
+
+    expect(outcome.details[0]).toMatch(/its autoscaling minimum; a minimum of 4 would do/);
   });
 });
 

@@ -86,7 +86,9 @@ export function Header() {
             <Button
               variant="danger"
               onClick={() => {
-                replace(starterAttempt(activePack.problem.id, activePack.problem.version));
+                replace(starterAttempt(activePack.problem.id, activePack.problem.version), {
+                  undoable: true,
+                });
                 useUi.getState().select(null);
                 useUi.getState().armSlot(null);
                 setConfirmReset(false);

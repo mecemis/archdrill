@@ -43,9 +43,15 @@ export const overprovisioned = defineCheck({
         Math.ceil((c.utilization * c.instances) / RIGHT_SIZED_UTILIZATION),
       );
       const saving = c.costBreakdown.instances * (1 - needed / c.instances);
+      const autoscaled = ctx.attempt.architecture.components.find(
+        (x) => x.id === c.componentId,
+      )?.autoscale;
+      const advice = autoscaled
+        ? `a minimum of ${needed} would do, saving ${usd(saving)}/month`
+        : `about ${needed} would do, saving ${usd(saving)}/month`;
       return {
         componentId: c.componentId,
-        line: `${label(c.componentId)}: ${Math.round(c.instances)} instances at ${Math.round(c.utilization * 100)}% utilisation; about ${needed} would do, saving ${usd(saving)}/month`,
+        line: `${label(c.componentId)}: ${Math.round(c.instances)} instances at ${Math.round(c.utilization * 100)}% utilisation${autoscaled ? ", its autoscaling minimum" : ""}; ${advice}`,
       };
     });
     return {

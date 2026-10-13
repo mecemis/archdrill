@@ -42,6 +42,8 @@ export interface Propagation {
   /** Retries per second reaching each component. */
   readonly retries: ReadonlyMap<string, number>;
   readonly lookups: ReadonlyMap<string, { existing: number; absent: number; hot: number }>;
+  /** Per entity: requests for existing keys that looked it up in any cache, and how many any tier answered. */
+  readonly entityLookups: ReadonlyMap<string, { lookups: number; hits: number }>;
   /** Requests per second crossing each connection, retries included. */
   readonly traffic: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: calls, attempts and failures per second. */
@@ -179,6 +181,7 @@ export function summarizeComponents(
       retryLoad: flow.retries.get(id) ?? 0,
       faults: faults.get(id)?.labels ?? [],
       latency: componentLatency(load, profile, hotLoad),
+      hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
       storageGb,
       monthlyCost: instanceCost + requestCost + storageCost,
       costBreakdown: { instances: instanceCost, requests: requestCost, storage: storageCost },
@@ -242,12 +245,14 @@ export interface LatencyInputs {
   readonly timeoutOf: (step: CallPathStep) => number | undefined;
 }
 
-function callLatency(step: CallPathStep, inputs: LatencyInputs): Moments {
-  const call = inputs.callFor(step, false);
+function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean): Moments {
+  const call = inputs.callFor(step, hotKey);
   if (step.outcome === "error") return call.failureLatency;
   const hop = inputs.inProcess.has(step.target) ? { mean: 0, variance: 0 } : NETWORK_HOP;
   const timeout = inputs.timeoutOf(step);
-  const measured = inputs.components.get(step.target)?.latency;
+  const component = inputs.components.get(step.target);
+  // Requests for the hot key queue at the shard that holds it.
+  const measured = hotKey ? component?.hotLatency : component?.latency;
   // A call that succeeded came back before the caller's timeout.
   const service =
     measured && timeout !== undefined
@@ -261,12 +266,17 @@ function callLatency(step: CallPathStep, inputs: LatencyInputs): Moments {
   return total;
 }
 
-function pathLatency(path: Path, ingressLatency: Moments, inputs: LatencyInputs): Moments {
+function pathLatency(
+  path: Path,
+  ingressLatency: Moments,
+  inputs: LatencyInputs,
+  hotKey: boolean,
+): Moments {
   let total = ingressLatency;
   for (const step of path.steps) {
     if (step.kind !== "call") continue;
     // Batched allocation: only one request in a batch pays for the call.
-    total = addMoments(total, mixMoments(callLatency(step, inputs), callShare(step)));
+    total = addMoments(total, mixMoments(callLatency(step, inputs, hotKey), callShare(step)));
   }
   return total;
 }
@@ -318,11 +328,13 @@ export function summarizeOperations(
     let unhandled = 0;
     let errorStatus = 0;
     for (const path of op.analysis.paths) {
-      const probability = op.classes.reduce(
-        (sum, cls) => sum + cls.share * pathProbability(path, cls, state),
-        0,
-      );
-      const moments = pathLatency(path, ingressLatency, inputs);
+      const byClass = op.classes.map((cls) => ({
+        hot: cls.hotKey,
+        p: cls.share * pathProbability(path, cls, state),
+      }));
+      const probability = byClass.reduce((sum, c) => sum + c.p, 0);
+      const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
+      const moments = pathLatency(path, ingressLatency, inputs, false);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
@@ -330,7 +342,13 @@ export function summarizeOperations(
       else errorStatus += probability;
       paths.push({ pathId: path.id, probability, latency: summarize([{ weight: 1, ...moments }]) });
       // Latency is measured on successful requests: fast failures would otherwise pull the tail down.
-      if (succeeded) mixture.push({ weight: pass * probability, ...moments });
+      if (succeeded) {
+        mixture.push({ weight: pass * (probability - hotProbability), ...moments });
+        if (hotProbability > 0) {
+          const hot = pathLatency(path, ingressLatency, inputs, true);
+          mixture.push({ weight: pass * hotProbability, ...hot });
+        }
+      }
     }
     result.set(op.operation.id, {
       operation: op.operation.id,

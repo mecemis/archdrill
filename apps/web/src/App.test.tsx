@@ -303,6 +303,22 @@ describe("App", () => {
     expect(within(tab).queryByText(/^↓\d+/)).toBeNull();
   });
 
+  it("does not warn about undo and redo", () => {
+    useAttemptStore.getState().replace(redirectDesign());
+    useUi.getState().setScenario("s1-create");
+    renderApp();
+    const tab = () => screen.getByRole("button", { name: /S2 Redirect/ });
+
+    act(() => {
+      useAttemptStore.getState().dispatch("updateComponent", { id: "api", replicas: 1 });
+    });
+    act(() => useAttemptStore.getState().undo());
+    expect(within(tab()).queryByText(/^↓\d+/)).toBeNull();
+    act(() => useAttemptStore.getState().redo());
+
+    expect(within(tab()).queryByText(/^↓\d+/)).toBeNull();
+  });
+
   it("imports an exported design and refuses one for another problem", async () => {
     renderApp();
     const file = (text: string) => new File([text], "design.json", { type: "application/json" });

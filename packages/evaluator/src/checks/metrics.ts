@@ -223,18 +223,14 @@ export const hitRatioAbove = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const caches = env?.caches.filter((c) => c.entity === params.entity) ?? [];
     if (!env || caches.length === 0) return notApplicable(`No cache serves ${params.entity}.`);
-    // With layered caches (a near cache in front of a shared one) every lookup
-    // passes the outermost tier, which sees the most lookups; hits at any tier count.
-    const lookups = Math.max(0, ...caches.map((c) => c.lookupRate));
-    if (lookups <= 0) {
+    // Each request counts once, however many cache tiers it passes.
+    const effective = env.entityHitRatios.get(params.entity);
+    if (!effective || effective.lookupRate <= 0) {
       return notApplicable(
         `No ${params.entity} lookups reach a cache at ${env.environment.label}.`,
       );
     }
-    const ratio = Math.min(
-      1,
-      caches.reduce((sum, c) => sum + c.hitRatio * c.lookupRate, 0) / lookups,
-    );
+    const ratio = effective.hitRatio;
     const evidence: Evidence[] = caches.map((c) => ({
       type: "component",
       componentId: c.componentId,

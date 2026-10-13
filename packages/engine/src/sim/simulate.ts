@@ -214,6 +214,12 @@ export function simulateEnvironment(
     }),
     components,
     caches: fixtures.caches.map((spec) => summarizeCache(spec, final, model.state)),
+    entityHitRatios: new Map(
+      [...final.entityLookups].map(([entity, { lookups, hits }]) => [
+        entity,
+        { lookupRate: lookups, hitRatio: lookups > 0 ? hits / lookups : 0 },
+      ]),
+    ),
     connections: final.traffic,
     calls: summarizeCalls(final, model.calls.shedOf, model.loop.timedOut),
     monthlyCost: [...components.values()].reduce((sum, c) => sum + c.monthlyCost, 0),

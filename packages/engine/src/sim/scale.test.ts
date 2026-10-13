@@ -14,6 +14,7 @@ import {
 } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
+import { wholeInstances } from "./setup";
 import { simulateEnvironment } from "./simulate";
 
 const viral = WorkloadSchema.parse({
@@ -80,6 +81,12 @@ describe("hot keys", () => {
     expect(redis?.hottestShardUtilization).toBeCloseTo(redis?.utilization ?? 0, 12);
   });
 
+  it("make the hot key's calls queue at its shard", () => {
+    const redis = simulate(shardedDesign(), 300_000).components.get("redis");
+
+    expect(redis?.hotLatency.mean).toBeGreaterThan(redis?.latency.mean ?? 0);
+  });
+
   it("are absorbed by a near cache in the service", () => {
     const metrics = simulate(withNearCache(shardedDesign()), 400_000);
     const near = metrics.caches.find((c) => c.componentId === "near");
@@ -101,6 +108,12 @@ describe("autoscaling", () => {
     // 30,000 requests at 3,000 per instance and 70% target: 14.3, so 15 instances.
     expect(api?.instances).toBe(15);
     expect(api?.utilization).toBeCloseTo(30_000 / 45_000, 6);
+  });
+
+  it("rounds to whole instances without billing for solver noise", () => {
+    expect(wholeInstances(10.0000004)).toBe(10);
+    expect(wholeInstances(10.2)).toBe(11);
+    expect(wholeInstances(1)).toBe(1);
   });
 
   it("stops at its maximum", () => {

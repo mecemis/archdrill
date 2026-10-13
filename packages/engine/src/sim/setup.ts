@@ -74,6 +74,14 @@ export const cacheKey = (componentId: string, entity: string | undefined) =>
   `${componentId}|${entity ?? ""}`;
 
 /**
+ * Rounds autoscaled replicas up to whole instances, with a tolerance for the
+ * fixed point stopping a hair above an exact count.
+ */
+export function wholeInstances(replicas: number): number {
+  return Math.ceil(replicas - 1e-6 * Math.max(1, replicas));
+}
+
+/**
  * Capacity and latency of every component that does work, under the
  * environment's faults, with autoscaled components at the given replicas
  * (rounded up to whole instances when `whole` is set, as they are billed).
@@ -90,7 +98,7 @@ export function buildProfiles(
     const profile = componentProfile(
       component,
       ctx.catalog,
-      replicas === undefined ? undefined : whole ? Math.ceil(replicas - 1e-9) : replicas,
+      replicas === undefined ? undefined : whole ? wholeInstances(replicas) : replicas,
     );
     if (profile)
       profiles.set(component.id, faultedProfile(profile, faults.get(component.id) ?? NO_FAULT));

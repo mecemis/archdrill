@@ -12,18 +12,19 @@ import { useUi } from "./ui-store";
 export function useRegressionWatch(): void {
   const evaluation = useEvaluation();
   const generation = useAttemptStore((s) => s.generation);
+  const lastChange = useAttemptStore((s) => s.lastChange);
   const current = useUi((s) => s.scenarioId);
   useEffect(() => {
     const added = useRegressions
       .getState()
-      .observe(evaluation, generation, useUi.getState().scenarioId);
+      .observe(evaluation, generation, useUi.getState().scenarioId, lastChange === "history");
     const [first] = added;
     if (added.length === 1 && first) {
       useToasts.getState().notify(describeRegression(...first));
     } else if (added.length > 1) {
       useToasts.getState().notify(describeRegressions(added));
     }
-  }, [evaluation, generation]);
+  }, [evaluation, generation, lastChange]);
   useEffect(() => {
     useRegressions.getState().acknowledge(current);
   }, [current]);
