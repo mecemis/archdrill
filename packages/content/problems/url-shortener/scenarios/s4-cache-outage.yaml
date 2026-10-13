@@ -71,6 +71,21 @@ workload:
           at: 30
           label: Cache cluster restarts
           target: { capability: volatile-kv }
+      predictions:
+        - id: store-load
+          question: How busy does the link store get right after the restart?
+          measure: { kind: peak-utilization, target: { holds: Link } }
+          options:
+            - { id: calm, label: Under half its capacity, below: 0.5 }
+            - { id: busy, label: Busy but within capacity, below: 1 }
+            - { id: overloaded, label: Over capacity }
+        - id: recovery
+          question: How long until redirects are back at 99.9%?
+          measure: { kind: recovery-seconds, operation: redirect, threshold: 0.999, after: 30 }
+          options:
+            - { id: seconds, label: A few seconds, below: 5 }
+            - { id: minute, label: Within a minute, below: 60 }
+            - { id: longer, label: Longer than a minute }
 dimensions:
   availability: 0.35
   correctness: 0.30

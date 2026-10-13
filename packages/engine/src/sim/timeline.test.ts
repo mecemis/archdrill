@@ -159,6 +159,61 @@ describe("simulateTimeline", () => {
     for (const series of result.caches.values()) expect(series).toHaveLength(result.times.length);
   });
 
+  it("answers its predictions from what happened", () => {
+    const outage = timeline({
+      events: [
+        {
+          kind: "fault",
+          at: 20,
+          until: 40,
+          fault: { kind: "down", target: { capability: "durable-store" } },
+        },
+      ],
+      predictions: [
+        {
+          id: "lowest",
+          question: "How low do redirects go?",
+          measure: { kind: "lowest-success", operation: "redirect" },
+          options: [
+            { id: "most-fail", label: "Most fail", below: 0.5 },
+            { id: "some-fail", label: "Some fail", below: 0.999 },
+            { id: "unaffected", label: "Unaffected" },
+          ],
+        },
+        {
+          id: "recovery",
+          question: "When are they back?",
+          measure: { kind: "recovery-seconds", operation: "redirect", threshold: 0.999, after: 20 },
+          options: [
+            { id: "fast", label: "Within 10 s", below: 10 },
+            { id: "slow", label: "Later" },
+          ],
+        },
+        {
+          id: "store",
+          question: "How busy is the store?",
+          measure: { kind: "peak-utilization", target: { capability: "durable-store" } },
+          options: [
+            { id: "calm", label: "Under half", below: 0.5 },
+            { id: "busy", label: "More" },
+          ],
+        },
+      ],
+    });
+    const result = simulateTimeline(workload, outage, context(cacheAsideAttempt()));
+
+    expect(result.predictions.get("lowest")?.optionId).toBe("some-fail");
+    expect(result.predictions.get("recovery")).toEqual({ value: 20, optionId: "slow" });
+    expect(result.predictions.get("store")?.optionId).toBe("calm");
+    // What the canvas and the path mix need at every step.
+    const db = result.components.get("db");
+    expect(db?.faults[30]).not.toEqual([]);
+    expect(db?.faults[10]).toEqual([]);
+    expect(result.connections.get("api--db")).toHaveLength(result.times.length);
+    const mix = result.paths.get("redirect")?.[30] ?? [];
+    expect(mix.reduce((sum, p) => sum + p.share, 0)).toBeCloseTo(1, 3);
+  });
+
   it("is deterministic", () => {
     const outage = timeline({
       events: [
