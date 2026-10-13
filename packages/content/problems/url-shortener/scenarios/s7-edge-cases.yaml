@@ -54,6 +54,24 @@ workload:
       rates: { redirect: 300000, create-link: 3000, purge-expired: 500 }
       faults:
         - { kind: down, target: { capability: external }, mode: hang }
+  timelines:
+    - id: bulk-import
+      label: A customer imports links
+      description: >-
+        For two minutes a customer imports links in bulk: four times the
+        usual creates, all of them to scan.
+      durationSec: 480
+      stepSec: 5
+      rates: { redirect: 300000, create-link: 3000, purge-expired: 500 }
+      events:
+        - kind: load
+          at: 60
+          label: The import starts
+          rates: { create-link: 12000 }
+        - kind: load
+          at: 180
+          label: The import ends
+          rates: { create-link: 3000 }
 dimensions:
   correctness: 0.45
   security: 0.25
@@ -105,6 +123,49 @@ checks:
     fix: >-
       Delete the cache entry after disabling the link, and keep in-process
       caches on a TTL well under a minute.
+
+  - id: scans-recover-after-import
+    use: timeline-recovers
+    title: Scans are back to normal within a minute of an import ending
+    dimension: operability
+    weight: 2
+    severity: major
+    requirements: [FR-5]
+    params:
+      timeline: bulk-import
+      metric: success-rate
+      operation: scan-link
+      threshold: 0.999
+      after: 180
+      withinSec: 60
+    why: >-
+      A burst of new links can push the scanner past the API's quota. Failed
+      scans are delivered again, and those deliveries call the API too: a
+      consumer without room to spare can stay overloaded by its own retries
+      long after the burst has passed.
+    fix: >-
+      Check URLs in batches so a burst stays within the quota, and give the
+      workers room to work through the backlog.
+
+  - id: scan-backlog-drains
+    use: timeline-recovers
+    title: The scan backlog is gone within two minutes of an import ending
+    dimension: operability
+    weight: 1
+    requirements: [FR-5]
+    params:
+      timeline: bulk-import
+      metric: backlog
+      operation: scan-link
+      threshold: 1000
+      after: 180
+      withinSec: 120
+    why: >-
+      Every link still waiting for its scan may be a phishing link that
+      already works.
+    fix: >-
+      Let the workers scale out, and keep their dependencies within their
+      limits while they catch up.
 
   - id: scan-failures-retried
     use: status-for-condition

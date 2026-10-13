@@ -566,6 +566,28 @@ mutants:
       scenario: s7-edge-cases
       fails: [keeps-up, scan-disables-quickly]
 
+  - id: unbatched-scans
+    base: postgres-redis-cache-aside
+    description: >-
+      The worker checks URLs one at a time; a bulk import exceeds the API's
+      quota, and the redeliveries of failed scans keep it exceeded afterwards.
+    apply:
+      - updateStep: { operation: scan-link, stepId: check, batchSize: null }
+    expect:
+      scenario: s7-edge-cases
+      fails: [scans-recover-after-import]
+
+  - id: autoscaling-target-too-high
+    base: postgres-redis-cache-aside
+    description: >-
+      The redirect service scales at 80% utilisation, which leaves no room
+      for the growth during the minute new instances take to start.
+    apply:
+      - setAutoscale: { id: redirect-api, autoscale: { max: 120, targetUtilization: 0.8 } }
+    expect:
+      scenario: s5-hot-keys
+      fails: [surge-served]
+
   - id: scanner-without-timeout
     base: postgres-redis-cache-aside
     description: The worker waits for the URL-safety API without a timeout.

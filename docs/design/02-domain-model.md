@@ -218,6 +218,12 @@ Two capabilities arrive with them: `async-buffer` (a queue: a managed queue or K
 
 Timelines run separately from environments, and checks refer to them by id.
 
+**As built (M9).**
+- Timelines also take `{ kind: restart, at, target }`: the selected components restart and lose what they hold in memory.
+- Load events can ramp with `curve: exponential`.
+- Store reads take `coalesce: true` (single-flight).
+- Catalog flavors give `startupSec`, the time a new instance takes to start taking traffic.
+
 `data[]` binds entities to stores, for example `{ entity: Link, key: code, constraints: [unique(code)] }`. A `store.read(Link)` against a store that does not hold `Link` is a validation error.
 
 ### Connection policy

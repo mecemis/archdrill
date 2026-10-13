@@ -135,7 +135,7 @@ export const EnvironmentSchema = z.object({
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
 /** Longest timeline, in seconds; longer runs show nothing new and cost evaluation time. */
-export const MAX_TIMELINE_SEC = 600;
+export const MAX_TIMELINE_SEC = 1800;
 
 /**
  * Something that happens at a moment of a timeline: the load moves to new

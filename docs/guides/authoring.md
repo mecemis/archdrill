@@ -45,7 +45,12 @@ debrief: |                 # follow-up questions, shown once the scenario passes
 - `operations.<id>`: the entity the requests address and their **classes** with shares that sum to 1. Class flags shape outcomes: `exists: false` (unknown keys), `expired`, `disabled`, `invalidInput`, `customAlias`, `aliasTaken`, `hotKey` (every request asks for one key), `malicious`. Consumers get no workload: they receive the classes of the messages published to them.
 - `keys`: Zipf popularity of existing and absent keys, which drives cache hit ratios.
 - `dataset`, `keyspace`, `replication`: stored entities (for storage cost and collisions), the keyspace and the decision that sets code length, and the decision that sets the replication mode.
-- `timelines` (optional): how the design behaves over time. Each has a `durationSec`, starting `rates`, and `events`: `load` (new rates, at once or over `rampSec`) and `fault` (from `at` until `until`). Checks `timeline-holds` and `timeline-recovers` refer to them by id.
+- `timelines` (optional): how the design behaves over time. Each has a `durationSec`, a `stepSec`, starting `rates`, and `events`:
+  - `load`: new rates, at once or over `rampSec`, with `curve: linear` or `exponential`;
+  - `fault`: a fault from `at` until `until`;
+  - `restart`: components that lose what they hold in memory.
+
+  Checks `timeline-holds` and `timeline-recovers` refer to timelines by id. Keep steps coarse for long timelines (5 s for ten minutes): a step whose state moves costs about a millisecond.
 - `environments`: each with `rates` (requests or job items per second; never for consumers), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
 
 ### Checks

@@ -89,6 +89,8 @@ function TimelineCharts({ metrics }: { readonly metrics: TimelineMetrics }) {
     return { label: `${componentLabel(attempt, component ?? "")} · ${entity ?? ""}`, values };
   });
   const backlogs = operations.filter(([, s]) => s.backlog.some((b) => b > 0));
+  // Components whose instance count changes: autoscaled services that scale.
+  const scaled = [...metrics.components].filter(([, s]) => new Set(s.instances).size > 1);
 
   return (
     <>
@@ -129,6 +131,19 @@ function TimelineCharts({ metrics }: { readonly metrics: TimelineMetrics }) {
             domain={[0, busiest]}
             format={(v) => percent(v, 0)}
             limit={{ value: 1, label: "capacity" }}
+            bands={bands}
+          />
+        )}
+        {scaled.length > 0 && (
+          <LineChart
+            title="Running instances"
+            times={metrics.times}
+            series={scaled.map(([id, series]) => ({
+              label: componentLabel(attempt, id),
+              values: series.instances,
+            }))}
+            domain={[0, Math.max(1, ...scaled.flatMap(([, s]) => s.instances)) * 1.1]}
+            format={(v) => String(Math.round(v))}
             bands={bands}
           />
         )}

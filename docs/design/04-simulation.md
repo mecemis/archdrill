@@ -254,7 +254,24 @@ Lease waste on crash is not modelled yet.
 - **Repeated steps.** A step whose inputs did not change and whose state did not move repeats the previous results, so a two-minute timeline costs a few solves.
 - **Series and marks.** Each step records, per operation: rate, success, p50, p99 and accumulated backlog. Per component it records utilisation of the busiest part and running instances, and per cache the hit ratio. Fault starts and ends, load changes, and components crossing capacity are marked.
 - **Agreement.** Constant rates without events settle on exactly what `simulateEnvironment` reports (tested).
-- **Not yet dynamic.** Cache warm-up, autoscaling lag, breaker state, retry timing, failover phases and backlog draining arrive with M9; until then every step is the steady state of its moment.
+**Dynamics (as built, M9).** Between steps, slower state moves on its own:
+
+- **Cache warm-up.** A `restart` event empties caches, and a cache that comes back from a crash starts empty too. A cache that started empty `w` seconds ago can only hold what was asked for since, so its TTL is capped at `w` in Che's approximation (time-dependent Che).
+  - Without coalescing, requests for a cold key keep missing while its first read loads, so the window starts one store latency later. Under a stampede that latency grows, and with it the herd.
+  - Reads marked `coalesce` (single-flight) share that one read.
+- **Autoscaling.** An autoscaler wants `utilisation × instances / target` instances, averaged over the last 30 s.
+  - New instances take traffic after the flavor's `startupSec` (60 s for services).
+  - Surplus instances go only after a 300 s cooldown since the last scale-out.
+  - The first step starts from the steady state, so constant load keeps the same instances.
+- **Circuit breakers.** A breaker that fails most calls stays open for 10 s, failing calls fast even after the dependency recovers. A trial call then decides whether it closes or opens for another 10 s.
+- **Backlogs.** Consumers and jobs that cannot keep up leave work waiting. Each later step offers the backlog on top of new work; what the handler cannot take stays waiting.
+- **Retries.** Retries and backoff stay inside a step: backoffs of tens of milliseconds blend into the second they happen in. Redeliveries do show over time, and can keep a dependency overloaded after the trigger has gone: a metastable failure the S7 import timeline shows.
+- **Ramps.** Load events ramp linearly or exponentially (the same factor every second, as a link spreads).
+- **Cost.**
+  - Che's characteristic time does not depend on the rate, so it is computed once per cache.
+  - Erlang C is memoised.
+  - Steps after the first solve to 1e-5.
+  - A dynamic step costs about 0.7 ms; S5's twelve-minute surge in 5 s steps costs about 150 ms.
 
 ## Discrete-event engine (superseded)
 
