@@ -1,10 +1,17 @@
-import { ACTIONS, type Connection, DEFAULT_POLICY } from "@archdrill/model";
-import type { CallPathStep, PathStep } from "../paths/types";
+import { ACTIONS, type Connection, DEFAULT_POLICY, type RequestClass } from "@archdrill/model";
+import type { CallPathStep, Path, PathStep } from "../paths/types";
 import { bulkheadShed, type CallModel, callModel } from "./calls";
 import { type ComponentFault, NO_FAULT } from "./faults";
-import { callShare, type OutcomeState } from "./outcomes";
+import { callCost, callShare, collectsBatch, type OutcomeState } from "./outcomes";
 import { cacheKey, type OperationModel } from "./setup";
-import { type CallTally, type Load, type Propagation, pathProbability } from "./summary";
+import {
+  batchKey,
+  type CallTally,
+  type Load,
+  type Propagation,
+  pathProbability,
+  type ResolvedOperation,
+} from "./summary";
 
 /** Quantities the fixed point iterates on, each relaxed with damping. */
 export interface LoopState {
@@ -86,21 +93,58 @@ export function callModels(
 
 export type CallModels = ReturnType<typeof callModels>;
 
-/** How ingress hops lose requests: overload and faults on the components along the route. */
+/**
+ * How components on the way to the handler lose work: overload and faults.
+ * A queue's deliveries are reads on the queue; every other hop counts as the
+ * operation's class.
+ */
 export function ingressModel(faults: ReadonlyMap<string, ComponentFault>, loop: LoopState) {
   const overload = (id: string) => loop.drop.get(id) ?? 0;
   const lost = (id: string, write: boolean) => {
     const fault = faults.get(id) ?? NO_FAULT;
     return write ? fault.failWrite : fault.failRead;
   };
-  const pass = (op: OperationModel) => {
-    const write = op.operation.class === "write";
-    return op.ingress.reduce((share, id) => share * (1 - overload(id)) * (1 - lost(id, write)), 1);
-  };
-  return { overload, lost, pass };
+  const writes = (op: OperationModel, id: string) =>
+    op.operation.trigger.type === "event" && op.analysis.ingress?.components[0] === id
+      ? false
+      : op.operation.class === "write";
+  const pass = (op: OperationModel) =>
+    op.ingress.reduce(
+      (share, id) => share * (1 - overload(id)) * (1 - lost(id, writes(op, id))),
+      1,
+    );
+  return { overload, lost, writes, pass };
 }
 
 export type IngressModel = ReturnType<typeof ingressModel>;
+
+/**
+ * Deliveries of a message whose processing keeps failing before the queue
+ * moves it to a dead-letter queue. Failures are taken as correlated (a fault,
+ * an overloaded dependency): a redelivered message fails again.
+ */
+export const MAX_DELIVERIES = 5;
+
+type Published = Map<string, Map<string, { cls: RequestClass; rate: number }>>;
+
+/** A consumer receives the messages published about its event, with their classes. */
+function resolveRate(
+  op: OperationModel,
+  published: Published,
+): { rate: number; classes: RequestClass[] } {
+  const trigger = op.operation.trigger;
+  if (trigger.type !== "event") return { rate: op.rate, classes: [...op.classes] };
+  const messages = [...(published.get(trigger.event)?.values() ?? [])];
+  const rate = messages.reduce((sum, m) => sum + m.rate, 0);
+  if (rate <= 0) return { rate: 0, classes: [] };
+  return { rate, classes: messages.map((m) => ({ ...m.cls, share: m.rate / rate })) };
+}
+
+function succeeds(path: Path, op: OperationModel): boolean {
+  return (
+    path.terminal.kind === "respond" && op.operation.successStatuses.includes(path.terminal.status)
+  );
+}
 
 type Lookups = { existing: number; absent: number; hot: number };
 
@@ -161,24 +205,45 @@ export function propagate(
     });
   };
 
+  const published: Published = new Map();
+  const resolved = new Map<string, ResolvedOperation>();
+  const batchArrivals = new Map<string, number>();
+  const publish = (event: string, publisher: string, cls: RequestClass, rate: number) => {
+    const byClass = published.get(event) ?? new Map();
+    const key = `${publisher}/${cls.id}`;
+    byClass.set(key, { cls, rate: (byClass.get(key)?.rate ?? 0) + rate });
+    published.set(event, byClass);
+  };
+
   for (const op of operations) {
-    const isWrite = op.operation.class === "write";
-    let arriving = op.rate;
+    const { rate, classes } = resolveRate(op, published);
+    const trigger = op.operation.trigger.type;
+    let arriving = rate;
     const route = op.analysis.ingress;
+    const enter = (id: string) => {
+      const write = ingress.writes(op, id);
+      const lost = ingress.lost(id, write);
+      // Work routed to a failed node is not done there.
+      add(loads, id, arriving * (1 - lost), write);
+      arriving *= (1 - ingress.overload(id)) * (1 - lost);
+    };
+    // Work that starts inside the system enters at the first component on its
+    // route: a queue delivers messages; a scheduled job starts in its handler.
+    const entry = route?.components[0];
+    if (trigger !== "request" && entry !== undefined && op.ingress.includes(entry)) enter(entry);
     route?.connections.forEach((connectionId, index) => {
       const hop = route.components[index + 1];
       addTraffic(connectionId, arriving);
-      if (hop && op.ingress.includes(hop)) {
-        const lost = ingress.lost(hop, isWrite);
-        // Requests routed to a failed node do no work there.
-        add(loads, hop, arriving * (1 - lost), isWrite);
-        arriving *= (1 - ingress.overload(hop)) * (1 - lost);
-      }
+      if (hop && op.ingress.includes(hop)) enter(hop);
     });
-    for (const cls of op.classes) {
+    let redelivered = 0;
+    for (const cls of classes) {
       for (const path of op.analysis.paths) {
-        const weight = arriving * cls.share * pathProbability(path, cls, state);
-        if (weight === 0) continue;
+        const once = arriving * cls.share * pathProbability(path, cls, state);
+        if (once === 0) continue;
+        const deliveries = trigger === "event" && !succeeds(path, op) ? MAX_DELIVERIES : 1;
+        const weight = once * deliveries;
+        redelivered += weight - once;
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
         for (const step of path.steps) {
           if (step.kind !== "call") continue;
@@ -189,7 +254,7 @@ export function propagate(
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          add(loads, step.target, attempts * reach, write);
+          add(loads, step.target, attempts * reach * callCost(step), write);
           if (cls.hotKey) add(hotLoads, step.target, attempts * reach, write);
           retries.set(
             step.target,
@@ -203,6 +268,13 @@ export function propagate(
             shortCircuited:
               failed && call.failure > 0 ? (callRate * call.shortCircuit) / call.failure : 0,
           });
+          if (collectsBatch(step)) {
+            const key = batchKey(op.operation.id, step.stepId);
+            batchArrivals.set(key, (batchArrivals.get(key) ?? 0) + weight);
+          }
+          if (step.action === "queue.publish" && step.event && !failed) {
+            publish(step.event, op.operation.id, cls, weight);
+          }
           // A lookup that never reached the cache does not warm or age its entries.
           if (step.action === "cache.get" && !failed) {
             const key = cacheKey(step.target, step.entity);
@@ -216,6 +288,21 @@ export function propagate(
         }
       }
     }
+    // Redelivered messages pass the queue and the handler again.
+    if (redelivered > 0) {
+      for (const id of op.ingress) add(loads, id, redelivered, ingress.writes(op, id));
+    }
+    resolved.set(op.operation.id, { rate, classes, redeliveries: redelivered });
   }
-  return { loads, hotLoads, retries, lookups, traffic, calls: tallies, entityLookups };
+  return {
+    loads,
+    hotLoads,
+    retries,
+    lookups,
+    traffic,
+    calls: tallies,
+    entityLookups,
+    operations: resolved,
+    batchArrivals,
+  };
 }

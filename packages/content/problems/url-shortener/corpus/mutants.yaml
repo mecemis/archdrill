@@ -505,3 +505,148 @@ mutants:
     expect:
       scenario: s5-hot-keys
       invalid: [in-process-shared]
+
+  - id: no-safety-scan
+    base: postgres-redis-cache-aside
+    description: Link creation neither checks URLs nor publishes them for a scan.
+    apply:
+      - removeStep: { operation: create-link, stepId: publish, bypass: ok }
+      - removeFlow: { operation: scan-link }
+    expect:
+      scenario: s7-edge-cases
+      fails: [unsafe-urls-stopped]
+      band: not-passing
+
+  - id: scan-ignores-verdict
+    base: postgres-redis-cache-aside
+    description: The scan consumer acknowledges a malicious verdict without disabling the link.
+    apply:
+      - linkOutcome: { operation: scan-link, stepId: check, outcome: malicious, target: s200 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [unsafe-urls-stopped]
+      band: not-passing
+
+  - id: scan-acknowledges-errors
+    base: postgres-redis-cache-aside
+    description: When the URL-safety API errors, the consumer answers "done", so the message is never delivered again.
+    apply:
+      - linkOutcome: { operation: scan-link, stepId: check, outcome: error, target: s200 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [scan-failures-retried]
+
+  - id: scan-skips-eviction
+    base: postgres-redis-cache-aside
+    description: The consumer disables a malicious link in the store but leaves it in Redis for an hour.
+    apply:
+      - removeStep: { operation: scan-link, stepId: evict, bypass: ok }
+    expect:
+      scenario: s7-edge-cases
+      fails: [scan-invalidates-caches]
+
+  - id: starved-worker
+    base: postgres-redis-cache-aside
+    description: One small worker without autoscaling scans new links and purges expired ones.
+    apply:
+      - setAutoscale: { id: worker, autoscale: null }
+      - updateComponent: { id: worker, replicas: 1 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [keeps-up, scan-disables-quickly]
+
+  - id: scanner-without-timeout
+    base: postgres-redis-cache-aside
+    description: The worker waits for the URL-safety API without a timeout.
+    apply:
+      - setConnectionPolicy: { id: worker--safety, timeoutMs: null }
+    expect:
+      scenario: s7-edge-cases
+      fails: [scanner-timeout]
+
+  - id: consumer-not-subscribed
+    base: postgres-redis-cache-aside
+    description: The worker is not connected to the queue it is supposed to consume.
+    apply:
+      - removeConnection: { id: worker--link-events }
+    expect:
+      scenario: s7-edge-cases
+      invalid: [flow-handler-unreachable]
+
+  - id: delete-on-read
+    base: postgres-redis-cache-aside
+    description: The redirect deletes an expired link itself before answering 410.
+    apply:
+      - addStep:
+          operation: redirect
+          id: purge-now
+          step: { type: call, target: links-db, action: store.delete, entity: Link }
+          attach: { to: outcome, stepId: expiry-db, outcome: expired }
+          continueWith: { outcome: ok }
+      - linkOutcome: { operation: redirect, stepId: purge-now, outcome: error, target: r410 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [purge-off-the-read-path]
+
+  - id: unbatched-purge
+    base: postgres-redis-cache-aside
+    description: The purge job deletes expired links one at a time.
+    apply:
+      - updateStep: { operation: purge-expired, stepId: delete, batchSize: null }
+    expect:
+      scenario: s7-edge-cases
+      fails: [purge-batched]
+
+  - id: immediate-code-reuse
+    base: postgres-redis-cache-aside
+    description: An expired code is handed to the next new link right away.
+    apply:
+      - setDecision: { decision: code-reuse, option: immediately }
+    expect:
+      scenario: s7-edge-cases
+      fails: [safe-code-reuse]
+
+  - id: reuse-with-permanent-redirects
+    base: dynamodb-redis-cache-aside
+    description: Codes are reused after a grace period, but redirects are 301s that browsers cache for good.
+    apply:
+      - setDecision: { decision: redirect-status, option: "301" }
+    expect:
+      scenario: s7-edge-cases
+      fails: [reuse-without-permanent-redirects]
+
+  - id: undecided-expired-status
+    base: postgres-redis-cache-aside
+    description: Expired links answer 410, but the expired-status decision was never recorded.
+    apply:
+      - setDecision: { decision: expired-status, option: null }
+    expect:
+      scenario: s7-edge-cases
+      fails: [expired-status-as-decided]
+
+  - id: fail-open-unscanned
+    base: dynamodb-redis-cache-aside
+    description: When the URL-safety API errors, the link is accepted and never checked again.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: check, outcome: error, target: c201 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [unsafe-urls-stopped]
+
+  - id: fail-closed-check
+    base: dynamodb-redis-cache-aside
+    description: When the URL-safety API errors, link creation fails with 503.
+    apply:
+      - linkOutcome: { operation: create-link, stepId: check, outcome: error, target: c503 }
+    expect:
+      scenario: s7-edge-cases
+      fails: [creates-survive-scanner-outage]
+
+  - id: batched-check-in-request
+    base: dynamodb-redis-cache-aside
+    description: The synchronous URL check waits for a batch of 50 requests.
+    apply:
+      - updateStep: { operation: create-link, stepId: check, batchSize: 50 }
+    expect:
+      scenario: s7-edge-cases
+      invalid: [step-batch-in-request]

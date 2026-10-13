@@ -10,10 +10,11 @@ export type ActionEffect =
   | "delete"
   | "populate"
   | "populate-negative"
-  | "invalidate";
+  | "invalidate"
+  | "publish";
 
 /** Step parameters an action requires. */
-export type ActionParam = "ttlSec";
+export type ActionParam = "ttlSec" | "event";
 
 /** Step parameters an action accepts but does not require. */
 export type OptionalActionParam = "batchSize";
@@ -108,7 +109,28 @@ export const ACTIONS = {
     effect: "delete",
     outcomes: ["ok", "error"],
     params: [],
-    description: "Delete an entity by key.",
+    optionalParams: ["batchSize"],
+    description:
+      "Delete an entity by key. With a batch size (for background jobs), one call deletes that many entities.",
+  },
+  "queue.publish": {
+    label: "publish",
+    capability: "async-buffer",
+    effect: "publish",
+    outcomes: ["ok", "error"],
+    params: ["event"],
+    description:
+      "Publish a message about an event to a queue and continue without waiting for consumers. Delivery is at least once: a consumer can see a message twice.",
+  },
+  "external.check": {
+    label: "check URL",
+    capability: "external",
+    effect: "read",
+    outcomes: ["clean", "malicious", "error"],
+    params: [],
+    optionalParams: ["batchSize"],
+    description:
+      "Ask an external URL-safety service whether a URL is malicious. It has a request quota; with a batch size, one call checks that many URLs.",
   },
   "ids.allocate": {
     label: "allocate id",
@@ -138,6 +160,18 @@ export const ActionIdSchema = z.enum(ACTION_IDS as [ActionId, ...ActionId[]]);
 
 export function getAction(id: ActionId): ActionDef {
   return ACTIONS[id];
+}
+
+/** Capabilities whose actions work on a problem entity (caches and stores). */
+const ENTITY_CAPABILITIES: ReadonlySet<Capability> = new Set([
+  "volatile-kv",
+  "durable-store",
+  "conditional-write",
+]);
+
+/** Whether a step with this action names the entity it works on. */
+export function actionTakesEntity(id: ActionId): boolean {
+  return ENTITY_CAPABILITIES.has(getAction(id).capability);
 }
 
 /** Whether a step with this action may carry the parameter (required or optional). */

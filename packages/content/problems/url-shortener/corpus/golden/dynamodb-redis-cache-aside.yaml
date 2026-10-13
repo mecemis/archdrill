@@ -4,6 +4,10 @@ description: >-
   10-second near cache → Redis cache-aside (3 shards × 2 replicas) →
   DynamoDB. The cache turns most per-request charges into memory hits; no
   negative caching, so unknown codes still reach the table. On-demand DynamoDB absorbs the full read peak when the cache is gone, at a price.
+  Every new link is checked with the URL-safety API right after the insert:
+  a malicious one is disabled and answered with 400, and when the API fails
+  the link is accepted and published for a batched rescan by the same
+  service, which also purges expired links 25 at a time.
 expect:
   s5-hot-keys: { minScore: 90 }
   s4-cache-outage: { minScore: 90 }
@@ -11,6 +15,7 @@ expect:
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
+  s7-edge-cases: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -34,12 +39,19 @@ attempt:
         label: Links table
         size: on-demand
         data: [{ entity: Link }]
+      - { id: link-events, kind: queue, flavor: managed-queue, label: Link events, size: on-demand }
+      - { id: safety, kind: external-api, flavor: url-safety, label: URL safety, size: quota }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--link-api, from: lb, to: link-api }
       - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true } }
       - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
       - { id: link-api--near, from: link-api, to: near }
+      - { id: link-api--safety, from: link-api, to: safety, policy: { timeoutMs: 300 } }
+      - id: link-api--link-events
+        from: link-api
+        to: link-events
+        policy: { timeoutMs: 100, retries: 1 }
   flows:
     - operation: redirect
       handler: link-api
@@ -114,7 +126,7 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c409, error: c503 }
+          next: { ok: check, conflict: c409, error: c503 }
         generate:
           type: logic
           logic: generateRandomCode
@@ -124,7 +136,7 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: generate-retry, error: c503 }
+          next: { ok: check, conflict: generate-retry, error: c503 }
         generate-retry:
           type: logic
           logic: generateRandomCode
@@ -134,7 +146,24 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c503, error: c503 }
+          next: { ok: check, conflict: c503, error: c503 }
+        check:
+          type: call
+          target: safety
+          action: external.check
+          next: { clean: c201, malicious: reject, error: publish }
+        reject:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: c400, notFound: c400, error: c503 }
+        publish:
+          type: call
+          target: link-events
+          action: queue.publish
+          event: link-created
+          next: { ok: c201, error: c503 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
@@ -158,7 +187,49 @@ attempt:
         d204: { type: respond, status: 204 }
         d404: { type: respond, status: 404 }
         d503: { type: respond, status: 503 }
-  decisions: { code-strategy: random-conditional, code-length: "8", redirect-status: "302" }
+    - operation: scan-link
+      handler: link-api
+      root: check
+      steps:
+        check:
+          type: call
+          target: safety
+          action: external.check
+          batchSize: 50
+          next: { clean: s200, malicious: disable, error: s503 }
+        disable:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: s200, error: s503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: s200, error: s503 }
+        s200: { type: respond, status: 200 }
+        s503: { type: respond, status: 503 }
+    - operation: purge-expired
+      handler: link-api
+      root: delete
+      steps:
+        delete:
+          type: call
+          target: links
+          action: store.delete
+          entity: Link
+          batchSize: 25
+          next: { ok: p200, error: p503 }
+        p200: { type: respond, status: 200 }
+        p503: { type: respond, status: 503 }
+  decisions:
+    code-strategy: random-conditional
+    code-length: "8"
+    redirect-status: "302"
+    expired-status: "410"
+    code-reuse: after-grace
   layout:
     visitors: { x: 0, y: 120 }
     lb: { x: 220, y: 120 }
@@ -166,3 +237,5 @@ attempt:
     near: { x: 440, y: -40 }
     redis: { x: 680, y: 20 }
     links: { x: 680, y: 220 }
+    link-events: { x: 680, y: 380 }
+    safety: { x: 440, y: 320 }

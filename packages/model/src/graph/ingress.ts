@@ -1,6 +1,7 @@
-import type { Architecture } from "../attempt/schema";
+import type { Architecture, Attempt } from "../attempt/schema";
 import { INGRESS_CAPABILITIES } from "../catalog/capabilities";
 import type { CatalogIndex } from "../catalog/schema";
+import type { Operation } from "../problem/schema";
 
 export interface IngressRoute {
   /** Component ids from a client to the handler, inclusive. */
@@ -75,4 +76,44 @@ function buildRoute(
     link = previous.get(link.from);
   }
   return { components, connections };
+}
+
+/**
+ * Queues that carry messages about an event: the targets of the publish
+ * steps for it, in any flow.
+ */
+export function queuesFor(event: string, attempt: Attempt): Set<string> {
+  const queues = new Set<string>();
+  for (const flow of attempt.flows) {
+    for (const step of Object.values(flow.steps)) {
+      if (step.type === "call" && step.action === "queue.publish" && step.event === event) {
+        queues.add(step.target);
+      }
+    }
+  }
+  return queues;
+}
+
+/**
+ * How work reaches an operation's handler. Requests come from a client over
+ * the ingress route; messages come from a queue that the handler consumes
+ * (it connects to a queue some flow publishes the event to); scheduled jobs
+ * start in the handler itself.
+ */
+export function findOperationRoute(
+  operation: Operation,
+  attempt: Attempt,
+  catalog: CatalogIndex,
+  handlerId: string,
+): IngressRoute | null {
+  const trigger = operation.trigger;
+  if (trigger.type === "request") return findIngressRoute(attempt.architecture, catalog, handlerId);
+  if (trigger.type === "schedule") return { components: [handlerId], connections: [] };
+  const queues = queuesFor(trigger.event, attempt);
+  const connection = [...attempt.architecture.connections]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .find((c) => c.from === handlerId && queues.has(c.to) && c.mode === "sync");
+  return connection
+    ? { components: [connection.to, handlerId], connections: [connection.id] }
+    : null;
 }

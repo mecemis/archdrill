@@ -26,6 +26,8 @@ export const CAPABILITIES = [
   "consensus",
   "rate-limiting",
   "authn",
+  "async-buffer",
+  "external",
 ] as const;
 
 export const CapabilitySchema = z.enum(CAPABILITIES);

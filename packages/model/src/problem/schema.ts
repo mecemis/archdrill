@@ -19,11 +19,32 @@ export const EntitySchema = z.object({
 });
 export type Entity = z.infer<typeof EntitySchema>;
 
+/** Something that happens in the system and can be published to a queue, such as a link being created. */
+export const EventSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1),
+  entity: z.string().min(1),
+});
+export type ProblemEvent = z.infer<typeof EventSchema>;
+
+/**
+ * What starts an operation: a client request, a message about an event that
+ * a consumer takes from a queue, or a schedule (a background job).
+ */
+export const TriggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("request") }),
+  z.object({ type: z.literal("event"), event: IdSchema }),
+  z.object({ type: z.literal("schedule"), description: z.string().min(1) }),
+]);
+export type Trigger = z.infer<typeof TriggerSchema>;
+
 export const OperationSchema = z.object({
   id: IdSchema,
   label: z.string().min(1),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-  path: z.string().min(1),
+  /** HTTP method and path, for operations that clients request. */
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+  path: z.string().min(1).optional(),
+  trigger: TriggerSchema.prefault({ type: "request" }),
   class: z.enum(["read", "write"]),
   idempotent: z.boolean(),
   /** Statuses that count as a correct answer for availability purposes. */
@@ -65,6 +86,7 @@ export const ProblemSchema = z
     requirements: z.array(RequirementSchema).min(1),
     entities: z.array(EntitySchema).min(1),
     operations: z.array(OperationSchema).min(1),
+    events: z.array(EventSchema).default([]),
     decisionPoints: z.array(DecisionPointSchema).default([]),
     scenarios: z.array(IdSchema).min(1),
   })
@@ -74,7 +96,33 @@ export const ProblemSchema = z
     uniqueBy(problem.entities, (e) => e.name, "entity", ["entities"], ctx);
     uniqueBy(problem.operations, (o) => o.id, "operation", ["operations"], ctx);
     uniqueBy(problem.decisionPoints, (d) => d.id, "decision point", ["decisionPoints"], ctx);
+    const events = new Set(problem.events.map((e) => e.id));
+    const entities = new Set(problem.entities.map((e) => e.name));
+    uniqueBy(problem.events, (e) => e.id, "event", ["events"], ctx);
+    problem.events.forEach((event, i) => {
+      if (!entities.has(event.entity)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `event "${event.id}" is about unknown entity "${event.entity}"`,
+          path: ["events", i, "entity"],
+        });
+      }
+    });
     problem.operations.forEach((op, i) => {
+      if (op.trigger.type === "request" && (!op.method || !op.path)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `operation "${op.id}" is requested by clients, so it needs a method and a path`,
+          path: ["operations", i],
+        });
+      }
+      if (op.trigger.type === "event" && !events.has(op.trigger.event)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `operation "${op.id}" consumes unknown event "${op.trigger.event}"`,
+          path: ["operations", i, "trigger", "event"],
+        });
+      }
       op.requirements.forEach((req, j) => {
         if (!requirementIds.has(req)) {
           ctx.addIssue({

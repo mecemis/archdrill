@@ -65,7 +65,17 @@ export interface PathMetrics {
 
 export interface OperationMetrics {
   readonly operation: string;
+  /** What starts it: client requests, messages from a queue, or a schedule. */
+  readonly trigger: "request" | "event" | "schedule";
+  /** Requests per second; for a consumer, messages published to it; for a job, items to process. */
   readonly rate: number;
+  /**
+   * Consumers and jobs that cannot keep up fall behind instead of rejecting
+   * work: items per second added to their backlog. Zero for requests.
+   */
+  readonly backlogGrowth: number;
+  /** Deliveries per second of messages that failed before (consumers only). */
+  readonly redeliveries: number;
   /** Share of requests that end with one of the operation's success statuses. */
   readonly successRate: number;
   /** Share of requests rejected before reaching the handler's steps. */
@@ -79,7 +89,11 @@ export interface OperationMetrics {
     /** Answered with a status that is not a success for this operation (e.g. 503 after a rejected call). */
     readonly errorStatus: number;
   };
-  /** Latency of successful requests; failed requests are reported by the success rate instead. */
+  /**
+   * Latency of successful requests; failed requests are reported by the
+   * success rate instead. For consumers and jobs it is the lag from when the
+   * item is ready (published, due) until it is done, waits for batches included.
+   */
   readonly latency: LatencySummary;
   readonly paths: readonly PathMetrics[];
 }

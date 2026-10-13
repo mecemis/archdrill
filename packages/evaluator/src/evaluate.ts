@@ -7,7 +7,7 @@ import {
 } from "@archdrill/engine";
 import type { Attempt, CatalogIndex, Issue, Problem, Scenario } from "@archdrill/model";
 import { CHECKS } from "./checks/registry";
-import type { CheckContext } from "./checks/types";
+import { type CheckContext, notApplicable } from "./checks/types";
 import { type CheckResult, type Scorecard, scoreScenario, toCheckResult } from "./score";
 
 export type ScenarioResult =
@@ -37,6 +37,31 @@ export type ScenarioResult =
  * that fails on a path nobody looked at, so the scenario is not scored.
  */
 export type Readiness = OperationStatus | "too-complex";
+
+/**
+ * Consumers of an event are optional: a design may handle the work another
+ * way (a synchronous check instead of a scan). Those without a flow are
+ * skipped, with their labels.
+ */
+function unusedConsumers(ctx: CheckContext): Map<string, string> {
+  const unused = new Map<string, string>();
+  for (const operation of ctx.problem.operations) {
+    if (operation.trigger.type !== "event") continue;
+    if (!ctx.attempt.flows.some((f) => f.operation === operation.id)) {
+      unused.set(operation.id, `a "${operation.label}" consumer`);
+    }
+  }
+  return unused;
+}
+
+/** Operations a check's parameters refer to. */
+function operationsIn(params: unknown): string[] {
+  if (typeof params !== "object" || params === null) return [];
+  return ["operation", "readOperation"].flatMap((key) => {
+    const value = (params as Record<string, unknown>)[key];
+    return typeof value === "string" ? [value] : [];
+  });
+}
 
 function readiness(ctx: CheckContext, operation: string): Readiness {
   const analysis = ctx.analysis.operations.get(operation);
@@ -72,7 +97,9 @@ export function evaluateScenario(scenario: Scenario, ctx: CheckContext): Scenari
   const blocking = blockingIssues(scenario, ctx.analysis.issues);
   if (blocking.length > 0) return { scenarioId: scenario.id, status: "invalid", blocking };
 
+  const unused = unusedConsumers(ctx);
   const notReady = scenario.focusOperations
+    .filter((operation) => !unused.has(operation))
     .map((operation) => ({ operation, status: readiness(ctx, operation) }))
     .filter((op) => op.status !== "ready");
   if (notReady.length > 0)
@@ -83,7 +110,12 @@ export function evaluateScenario(scenario: Scenario, ctx: CheckContext): Scenari
     const check = CHECKS.get(instance.use);
     if (!check) throw new Error(`Scenario "${scenario.id}" uses unknown check "${instance.use}".`);
     const params = check.params.parse(instance.params);
-    return toCheckResult(instance, check.run(params, scenarioCtx));
+    const skipped = operationsIn(params).find((operation) => unused.has(operation));
+    const outcome =
+      skipped === undefined
+        ? check.run(params, scenarioCtx)
+        : notApplicable(`This design does not use ${unused.get(skipped)}.`);
+    return toCheckResult(instance, outcome);
   });
   return {
     scenarioId: scenario.id,

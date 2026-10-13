@@ -5,6 +5,7 @@ import { decisionExcludes } from "./decisions";
 import { noAcknowledgedDataLoss } from "./durability";
 import { ingressHasCapability } from "./ingress";
 import {
+  backlogStable,
   costWithinBudget,
   hitRatioAbove,
   latencyBelow,
@@ -19,6 +20,7 @@ import {
   retryOnlyIdempotent,
   stableUnderRetries,
 } from "./resilience";
+import { unsafeContentStopped } from "./safety";
 import { autoscalingConfigured, overprovisioned } from "./scale";
 import { recognizeStrategy } from "./strategy";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
@@ -50,6 +52,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     decisionExcludes,
     overprovisioned,
     autoscalingConfigured,
+    backlogStable,
+    unsafeContentStopped,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -150,7 +154,14 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
         );
     }
     for (const id of Object.keys(env.rates)) {
-      if (!(id in workload.operations))
+      const trigger = problem.operations.find((o) => o.id === id)?.trigger;
+      if (trigger?.type === "event")
+        issues.push(
+          issue(
+            `environment "${env.id}" sets a rate for "${id}", whose rate follows from the flows that publish ${trigger.event}`,
+          ),
+        );
+      else if (!(id in workload.operations))
         issues.push(
           issue(`environment "${env.id}" sets a rate for "${id}", which has no workload`),
         );

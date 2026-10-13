@@ -13,6 +13,8 @@ export interface CallPathStep {
   readonly ttlSec: number | undefined;
   /** For batched allocation: ids per call. */
   readonly batchSize: number | undefined;
+  /** For publish steps: the event the message is about. */
+  readonly event: string | undefined;
   readonly outcome: string;
 }
 

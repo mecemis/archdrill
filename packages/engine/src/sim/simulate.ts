@@ -205,13 +205,20 @@ export function simulateEnvironment(
   const connections = fixtures.connections;
   return {
     environment,
-    operations: summarizeOperations(fixtures.operations, model.state, model.ingress.pass, {
-      components,
-      callFor: model.calls.get,
-      replicaAck: replicaAckMs(workload, ctx),
-      timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,
-      inProcess: new Set([...profiles].filter(([, p]) => p.inProcess).map(([id]) => id)),
-    }),
+    operations: summarizeOperations(
+      fixtures.operations,
+      final.operations,
+      model.state,
+      model.ingress.pass,
+      {
+        components,
+        callFor: model.calls.get,
+        replicaAck: replicaAckMs(workload, ctx),
+        timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,
+        inProcess: new Set([...profiles].filter(([, p]) => p.inProcess).map(([id]) => id)),
+        batchArrivals: final.batchArrivals,
+      },
+    ),
     components,
     caches: fixtures.caches.map((spec) => summarizeCache(spec, final, model.state)),
     entityHitRatios: new Map(

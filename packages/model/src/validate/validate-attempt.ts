@@ -6,9 +6,14 @@ import {
   stepOutcomes,
   unhandledOutcomes,
 } from "../attempt/steps";
-import { ACTIONS, actionTakesParam, CONDITIONAL_OUTCOMES } from "../catalog/actions";
+import {
+  ACTIONS,
+  actionTakesEntity,
+  actionTakesParam,
+  CONDITIONAL_OUTCOMES,
+} from "../catalog/actions";
 import type { CatalogIndex } from "../catalog/schema";
-import { findIngressRoute } from "../graph/ingress";
+import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
 import type { Issue } from "./issues";
 
@@ -197,7 +202,8 @@ function validateFlows(attempt: Attempt, ctx: ValidationContext): Issue[] {
 
 function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Issue[] {
   const location = { type: "flow", operation: flow.operation } as const;
-  if (!ctx.problem.operations.some((op) => op.id === flow.operation)) {
+  const operation = ctx.problem.operations.find((op) => op.id === flow.operation);
+  if (!operation) {
     return [error("flow-unknown-operation", `Unknown operation "${flow.operation}".`, location)];
   }
   const handler = attempt.architecture.components.find((c) => c.id === flow.handler);
@@ -216,11 +222,14 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
       ),
     );
   }
-  if (!findIngressRoute(attempt.architecture, ctx.catalog, handler.id)) {
+  if (!findOperationRoute(operation, attempt, ctx.catalog, handler.id)) {
+    const trigger = operation.trigger;
     issues.push(
       error(
         "flow-handler-unreachable",
-        `No client can reach "${handler.label}". Connect a client to it, directly or through a load balancer.`,
+        trigger.type === "event"
+          ? `"${handler.label}" does not consume ${trigger.event}. Connect it to a queue that a flow publishes ${trigger.event} to.`
+          : `No client can reach "${handler.label}". Connect a client to it, directly or through a load balancer.`,
         location,
       ),
     );
@@ -359,13 +368,27 @@ function validateCallStep(
       error("step-action-not-supported", `"${target.label}" does not support ${step.action}.`, loc),
     );
   }
-  if (action.effect !== "allocate") {
+  if (actionTakesEntity(step.action)) {
     issues.push(...validateStepEntity(stepId, step, target, loc, ctx));
   } else if (step.entity !== undefined) {
     issues.push(
       error(
         "step-unexpected-param",
-        `Step ${stepId} (${step.action}) hands out keys and does not take an entity.`,
+        `Step ${stepId} (${step.action}) does not work on an entity.`,
+        loc,
+      ),
+    );
+  }
+  if (step.event !== undefined && !ctx.problem.events.some((e) => e.id === step.event)) {
+    issues.push(
+      error("step-unknown-event", `Step ${stepId} publishes unknown event "${step.event}".`, loc),
+    );
+  }
+  if (step.event !== undefined && !actionTakesParam(step.action, "event")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) does not publish an event.`,
         loc,
       ),
     );
@@ -375,6 +398,16 @@ function validateCallStep(
       error(
         "step-unexpected-param",
         `Step ${stepId} (${step.action}) does not take a batch size.`,
+        loc,
+      ),
+    );
+  }
+  const trigger = ctx.problem.operations.find((o) => o.id === flow.operation)?.trigger;
+  if ((step.batchSize ?? 1) > 1 && action.effect !== "allocate" && trigger?.type === "request") {
+    issues.push(
+      error(
+        "step-batch-in-request",
+        `Step ${stepId} would wait for other requests to fill a batch. Batch in a consumer or a scheduled job instead.`,
         loc,
       ),
     );

@@ -1,0 +1,462 @@
+id: s7-edge-cases
+problemId: url-shortener
+title: Edge cases
+order: 7
+story: |
+  "Let's go through the corners. Links expire: about 500 a second at peak,
+  and nobody wants them in the table forever. Can an expired code be given to
+  someone else? Phishers have found your service too: about one new link in
+  500 points to a phishing or malware site, and it has to stop redirecting
+  within a minute. You can call a URL-safety API, with a quota of 5,000
+  requests a second. What happens to link creation when that API stops
+  answering?"
+focusOperations: [create-link, redirect, purge-expired, scan-link]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.965 }
+        - { id: expired, share: 0.02, expired: true }
+        - { id: disabled, share: 0.005, disabled: true }
+        - { id: unknown, share: 0.01, exists: false }
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.973 }
+        - { id: custom-free, share: 0.015, customAlias: true }
+        - { id: custom-taken, share: 0.002, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.008, invalidInput: true }
+        - { id: malicious, share: 0.002, malicious: true }
+    purge-expired:
+      entity: Link
+      classes:
+        - { id: expired, share: 1, expired: true }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: peak
+      label: Peak
+      description: Peak traffic, with the purge job working through links that expired.
+      rates: { redirect: 300000, create-link: 3000, purge-expired: 500 }
+    - id: scanner-down
+      label: Peak, URL-safety API not answering
+      description: >-
+        The URL-safety API stops answering: connections hang until the caller
+        gives up.
+      rates: { redirect: 300000, create-link: 3000, purge-expired: 500 }
+      faults:
+        - { kind: down, target: { capability: external }, mode: hang }
+dimensions:
+  correctness: 0.45
+  security: 0.25
+  operability: 0.2
+  latency: 0.1
+checks:
+  - id: unsafe-urls-stopped
+    use: unsafe-content-stopped
+    title: Links to malicious sites are stopped
+    dimension: security
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-5]
+    params: { operation: create-link, entity: Link }
+    why: >-
+      A short link hides where it leads, which is exactly why phishers use
+      them. A link that nobody checks keeps sending visitors to a phishing
+      page, and the shortener's domain ends up on blocklists itself.
+    fix: >-
+      Check the URL with the URL-safety API: before the insert (answer 400 for
+      a malicious URL), or in a consumer of link-created that disables the
+      link when the API flags it.
+
+  - id: scan-disables-quickly
+    use: latency-below
+    title: A malicious link is disabled within 10 seconds of creation
+    dimension: security
+    weight: 2
+    requirements: [FR-5]
+    params: { operation: scan-link, environment: peak, percentile: p99, ms: 10000 }
+    why: >-
+      An asynchronous scan leaves a window in which the link already works.
+      Most of the 60 seconds should be left for caches to forget the link.
+    fix: >-
+      Keep the consumer close to the publish rate (enough workers, no long
+      batches), and give it headroom so no backlog builds up.
+
+  - id: scan-invalidates-caches
+    use: invalidation-on-write
+    title: Caches stop serving a link the scan disabled within 50 seconds
+    dimension: security
+    weight: 2
+    requirements: [FR-5]
+    params: { operation: scan-link, readOperation: redirect, entity: Link, maxStalenessSec: 50 }
+    why: >-
+      Disabling the link in the store does nothing for a copy in the cache.
+      With a TTL of an hour, the phishing link keeps redirecting for an hour.
+    fix: >-
+      Delete the cache entry after disabling the link, and keep in-process
+      caches on a TTL well under a minute.
+
+  - id: scan-failures-retried
+    use: status-for-condition
+    title: A failed scan is retried, not acknowledged
+    dimension: security
+    weight: 2
+    requirements: [FR-5]
+    params:
+      operation: scan-link
+      when: { hasStep: { outcome: error } }
+      statuses: [500, 503]
+    why: >-
+      Delivery is at least once: a consumer that reports failure gets the
+      message again later. A consumer that answers "done" after an error
+      drops the message, and that link is never scanned.
+    fix: >-
+      Route every error outcome in the consumer to 503 so the queue delivers
+      the message again. Make the consumer's writes safe to repeat.
+
+  - id: disabled-never-redirected
+    use: all-success-paths-contain
+    title: A disabled link never redirects
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-4, FR-5]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { logic: checkStatus, outcome: active }
+    why: >-
+      The scan disables a link in the store; that only helps if every
+      redirect looks at the status, from the cache and from the store.
+    fix: >-
+      Add a status check on every path that redirects: after a cache hit and
+      after a store read.
+
+  - id: expired-not-redirected
+    use: all-success-paths-contain
+    title: Expiry is checked on the read path
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-3]
+    params:
+      operation: redirect
+      statuses: [301, 302, 307, 308]
+      step: { logic: checkExpiry, outcome: valid }
+    why: >-
+      The purge job runs behind: an expired link stays in the store (and in
+      caches) until the job reaches it. Only a check on the read path makes
+      expiry exact.
+    fix: >-
+      Add a checkExpiry step before every redirect, after a cache hit and
+      after a store read.
+
+  - id: expired-status-as-decided
+    use: status-for-condition
+    title: Expired links answer the status you decided on
+    dimension: correctness
+    weight: 1
+    requirements: [FR-3]
+    params:
+      operation: redirect
+      when: { hasStep: { logic: checkExpiry, outcome: expired } }
+      decision: expired-status
+    why: >-
+      Whether an expired link answers 404 or 410 is a product decision;
+      once it is made, every expired path should give that answer.
+    fix: >-
+      Record the status under Decisions and route every expired outcome to it.
+
+  - id: purge-off-the-read-path
+    use: no-path
+    title: Redirects never delete expired links themselves
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-3, NFR-1]
+    params:
+      operation: redirect
+      where: { hasStep: { action: store.delete } }
+    why: >-
+      Deleting on read turns a read into a write on the primary, at redirect
+      volume, on the path with the tightest latency budget.
+    fix: >-
+      Answer the expired status on the read path and leave deletion to the
+      purge job.
+
+  - id: purge-deletes
+    use: all-success-paths-contain
+    title: The purge job deletes expired links
+    dimension: operability
+    weight: 2
+    requirements: [FR-3]
+    params:
+      operation: purge-expired
+      statuses: [200]
+      step: { action: store.delete, entity: Link, outcome: ok }
+    why: >-
+      Expired links that are never deleted take storage, index memory and
+      backup time forever: about 40 million of them a day at this rate.
+    fix: >-
+      Give the purge job a flow that deletes expired links from the store.
+
+  - id: purge-batched
+    use: all-success-paths-contain
+    title: The purge job deletes in batches
+    dimension: operability
+    weight: 1
+    severity: minor
+    requirements: [FR-3]
+    params:
+      operation: purge-expired
+      statuses: [200]
+      step: { action: store.delete, entity: Link, batched: true }
+    why: >-
+      Every delete pays a round trip, a transaction and an index update.
+      Deleting a few hundred rows per statement amortises that and keeps the
+      purge from competing with creates for the primary.
+    fix: >-
+      Set a batch size on the purge job's delete step.
+
+  - id: keeps-up
+    use: backlog-stable
+    title: The purge job and consumers keep up at peak
+    dimension: operability
+    weight: 2
+    severity: major
+    requirements: [FR-3, FR-5]
+    params: { environment: peak }
+    why: >-
+      Background work that falls behind does not fail loudly; its backlog
+      grows until the lag is hours and the queue or the table is full.
+    fix: >-
+      Give workers capacity above the rate of work they receive, and make
+      sure what they call has headroom too.
+
+  - id: headroom-at-peak
+    use: utilization-below
+    title: No component, or the API quota, runs above 85% at peak
+    dimension: operability
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      The URL-safety quota is a capacity like any other, but nobody can add
+      instances to it. Checking every link twice, or once per retry, uses it
+      up.
+    fix: >-
+      Check each URL once (before the insert or in the consumer), and batch
+      the consumer's checks if you need more room.
+
+  - id: creates-survive-scanner-outage
+    use: success-rate-above
+    title: Link creation survives the URL-safety API going down (99.9%)
+    dimension: operability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, environment: scanner-down, min: 0.999 }
+    why: >-
+      A third-party API will go down, and you cannot fix it. If creation
+      waits for it, your availability is at most theirs.
+    fix: >-
+      Scan asynchronously, or call the API with a short timeout and let the
+      link through when it errors, publishing it for a scan later.
+
+  - id: scanner-timeout
+    use: dependency-timeout-bounded
+    title: Calls to the URL-safety API give up within a second
+    dimension: operability
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params: { capability: external, maxMs: 1000 }
+    why: >-
+      A hanging third-party call holds a worker until the client default
+      (often 30 seconds) runs out, in the create path and in consumers alike.
+    fix: >-
+      Set a timeout well under a second on every connection to the API.
+
+  - id: create-p99
+    use: latency-below
+    title: Create p99 stays under 200 ms
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: create-link, environment: peak, percentile: p99, ms: 200 }
+    why: >-
+      A synchronous check adds the API's round trip, tens of milliseconds over
+      the internet, to every create.
+    fix: >-
+      Scan in a consumer, or keep the synchronous call's timeout short.
+
+  - id: safe-code-reuse
+    use: decision-excludes
+    title: An expired code is not reused right away
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-3, NFR-3]
+    params:
+      decision: code-reuse
+      forbidden:
+        - option: immediately
+          reason: >-
+            caches, browsers and bookmarks still map the code to the old
+            destination, and visitors of the old link land on someone else's
+            page.
+    why: >-
+      A short link lives on in printed material, chats and browser caches
+      long after it expires.
+    fix: >-
+      Never reuse codes (the code space is large enough), or reuse them only
+      after a grace period longer than every cache TTL.
+
+  - id: reuse-without-permanent-redirects
+    use: decision-excludes
+    title: Reused codes are never cached as permanent redirects
+    dimension: correctness
+    weight: 1
+    requirements: [FR-3]
+    params:
+      decision: redirect-status
+      when: { decision: code-reuse, options: [after-grace, immediately] }
+      forbidden:
+        - option: "301"
+          reason: >-
+            browsers cache a 301 without an expiry, so visitors who followed
+            the old link keep going to its destination after the code is reused.
+        - option: "308"
+          reason: >-
+            browsers cache a 308 without an expiry, so visitors who followed
+            the old link keep going to its destination after the code is reused.
+    why: >-
+      A permanent redirect is cached by browsers until they choose to forget
+      it; no grace period on your side covers that.
+    fix: >-
+      Use 302 or 307, or a 301 with a short Cache-Control max-age, if codes
+      can be reused.
+
+  - id: unknown-code-404
+    use: status-for-condition
+    title: Unknown codes answer 404
+    dimension: correctness
+    weight: 1
+    requirements: [FR-2]
+    params:
+      operation: redirect
+      when:
+        any:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - hasStep: { action: cache.get, entity: Link, outcome: negativeHit }
+      statuses: [404]
+    why: >-
+      Unknown codes are typos, scrapers and enumeration attempts; they need a
+      clean 404.
+    fix: >-
+      Route notFound (and a negative cache hit) to 404.
+
+  - id: invalid-url-400
+    use: status-for-condition
+    title: Invalid URLs answer 400
+    dimension: correctness
+    weight: 1
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      when: { hasStep: { logic: validateUrl, outcome: invalid } }
+      statuses: [400]
+    why: >-
+      The caller sent something wrong; 400 says so instead of inviting
+      retries.
+    fix: >-
+      Route the invalid outcome of validateUrl to 400.
+
+  - id: taken-alias-409
+    use: status-for-condition
+    title: A taken alias answers 409
+    dimension: correctness
+    weight: 1
+    requirements: [FR-1]
+    params:
+      operation: create-link
+      when:
+        all:
+          - hasStep: { logic: hasCustomAlias, outcome: custom }
+          - hasStep: { action: store.insertIfAbsent, outcome: conflict }
+      statuses: [409]
+    why: >-
+      The user chose that alias and needs to know it is taken.
+    fix: >-
+      Route the conflict outcome of the alias insert to 409 Conflict.
+
+  - id: rate-limited-redirects
+    use: ingress-has-capability
+    title: Redirects are rate-limited per client
+    dimension: security
+    signal: senior
+    requirements: [NFR-3]
+    params: { operation: redirect, capability: rate-limiting }
+    why: >-
+      Enumeration scans try millions of codes from a few clients; a per-client
+      limit makes them slow and visible.
+    fix: >-
+      Put a gateway with per-client limits in front of redirects.
+
+  - id: negative-caching
+    use: no-path
+    title: Unknown codes are negatively cached
+    dimension: security
+    signal: senior
+    requirements: [NFR-1]
+    params:
+      operation: redirect
+      where:
+        all:
+          - hasStep: { action: store.read, entity: Link, outcome: notFound }
+          - not: { hasStep: { action: cache.setNegative, entity: Link } }
+    why: >-
+      An enumeration scan is a flood of unknown codes; without negative
+      entries, every one of them reaches the store.
+    fix: >-
+      Cache "does not exist" for a short TTL before answering 404.
+
+  - id: creation-does-not-wait
+    use: all-success-paths-contain
+    title: Creation publishes the link instead of waiting for a scan
+    dimension: latency
+    signal: senior
+    requirements: [FR-5, NFR-1]
+    params:
+      operation: create-link
+      statuses: [201]
+      step: { action: queue.publish, event: link-created, outcome: ok }
+    why: >-
+      Publishing an event decouples creation from the scanner's latency and
+      uptime, and lets other consumers (analytics, previews) subscribe later.
+    fix: >-
+      Publish link-created after the insert and scan in a consumer.
+hints:
+  - "Which parts of expiry belong on the read path, and which can wait for a background job?"
+  - "When does a malicious link stop working if you scan it after creation? Count the caches."
+  - "Delete expired links in batches in a scheduled job, scan new links in a consumer of link-created that disables and invalidates, and answer 503 on errors so the queue retries."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - The queue delivers a message twice. What does your consumer do the second time?
+  - The publish fails after the insert succeeded. Is that link ever scanned? (Look up the transactional outbox.)
+  - Should a link created while the URL-safety API was down be scanned later, and how would you find those links?
+  - Why not simply never reuse codes? How long would 7 characters last at 1,000 links a second?

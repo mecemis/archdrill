@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Attempt, DEFAULT_POLICY } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
+import { asyncAttempt } from "../testing/async";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
 import { createLinkAttempt } from "../testing/write-path";
 import type { IssueCode } from "./issues";
@@ -306,5 +307,81 @@ describe("validateAttempt", () => {
     const attempt = mutate("setDecision", { decision: "redirect-status", option: "s307" });
 
     expect(codes(attempt)).toContain("decision-unknown-option");
+  });
+});
+
+describe("validateAttempt for asynchronous work", () => {
+  const errors = (attempt: Attempt) =>
+    validateAttempt(attempt, ctx).filter((i) => i.severity === "error");
+
+  it("accepts a consumer of a published event and a scheduled job", () => {
+    expect(errors(asyncAttempt())).toEqual([]);
+  });
+
+  it("asks a consumer to connect to a queue that receives its event", () => {
+    const attempt = mutate("removeConnection", { id: "worker--queue" }, asyncAttempt());
+
+    const issue = errors(attempt).find((i) => i.code === "flow-handler-unreachable");
+    expect(issue?.message).toMatch(/does not consume link-created/);
+  });
+
+  it("does not let a consumer receive an event that nobody publishes", () => {
+    const attempt = mutate(
+      "removeStep",
+      { operation: "create-link", stepId: "publish", bypass: "ok" },
+      asyncAttempt(),
+    );
+
+    expect(codes(attempt)).toContain("flow-handler-unreachable");
+  });
+
+  it("rejects publishing an event the problem does not define", () => {
+    const attempt = mutate(
+      "updateStep",
+      { operation: "create-link", stepId: "publish", event: "link-deleted" },
+      asyncAttempt(),
+    );
+
+    expect(codes(attempt)).toContain("step-unknown-event");
+  });
+
+  it("requires a publish step to name its event", () => {
+    const raw = JSON.parse(JSON.stringify(asyncAttempt()));
+    delete raw.flows.find((f: { operation: string }) => f.operation === "create-link").steps.publish
+      .event;
+
+    expect(codes(raw)).toContain("step-missing-param");
+  });
+
+  it("lets jobs collect batches but not requests, which cannot wait for each other", () => {
+    const job = mutate(
+      "updateStep",
+      { operation: "purge-expired", stepId: "delete", batchSize: 100 },
+      asyncAttempt(),
+    );
+    let request = mutate("createFlow", { operation: "disable-link", handler: "api" }, job);
+    request = mutate(
+      "addStep",
+      {
+        operation: "disable-link",
+        step: { type: "call", target: "db", action: "store.delete", entity: "Link", batchSize: 10 },
+        attach: { to: "root" },
+      },
+      request,
+    );
+
+    expect(codes(job)).not.toContain("step-batch-in-request");
+    expect(codes(request)).toContain("step-batch-in-request");
+  });
+
+  it("drops the event when a publish step switches to another action", () => {
+    const attempt = mutate(
+      "updateStep",
+      { operation: "create-link", stepId: "publish", action: "cache.delete", entity: "Link" },
+      asyncAttempt(),
+    );
+    const step = attempt.flows.find((f) => f.operation === "create-link")?.steps.publish;
+
+    expect(step?.type === "call" && step.event).toBeUndefined();
   });
 });
