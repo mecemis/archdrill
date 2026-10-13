@@ -203,7 +203,8 @@ function relaxComponents(
       flow.hotLoads.get(id),
       profile,
     );
-    const onHot = 1 / profile.shards;
+    // Ordinary keys share the hot key's shard; a per-key limit throttles the hot key alone.
+    const onHot = profile.sharded ? 1 / profile.shards : 0;
     const ordinary = onHot * dropAt(hottest) + (1 - onHot) * dropAt(normal);
     delta = Math.max(delta, relax(loop.drop, id, ordinary, damping));
     delta = Math.max(delta, relax(loop.hotDrop, id, dropAt(hottest), damping));

@@ -12,7 +12,10 @@ description: >-
   circuit breaker; a KGS hands out keys in batches. New links are published
   to a managed queue; a worker scans them with the URL-safety API in batches
   of 100, disables
-  and evicts malicious ones, and purges expired links in batches.
+  and evicts malicious ones, and purges expired links in batches. Redirects
+  publish clicks fire-and-forget to Kafka in batches of 100; Flink sums them
+  per link over 10-second windows and writes the windows' totals to
+  Cassandra in batches of 1,000.
 expect:
   s5-hot-keys: { minScore: 90 }
   s1-create: { minScore: 90 }
@@ -21,6 +24,7 @@ expect:
   s4-cache-outage: { minScore: 90 }
   s6-dependency-failure: { minScore: 90 }
   s7-edge-cases: { minScore: 90 }
+  s8-click-analytics: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -64,6 +68,22 @@ attempt:
         replicas: 2
         autoscale: { max: 8, targetUtilization: 0.7 }
       - { id: safety, kind: external-api, flavor: url-safety, label: URL safety, size: quota }
+      - { id: clicks, kind: queue, flavor: kafka, label: Clicks, size: m, replicas: 8 }
+      - id: click-counter
+        kind: stream-processor
+        flavor: flink
+        label: Click counter
+        size: m
+        replicas: 4
+        autoscale: { max: 16, targetUtilization: 0.7 }
+      - id: click-stats
+        kind: wide-column-db
+        flavor: cassandra
+        label: Click stats
+        size: m
+        shards: 1
+        replicas: 3
+        data: [{ entity: LinkStats }]
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--redirect-api, from: lb, to: redirect-api }
@@ -107,6 +127,12 @@ attempt:
         from: worker
         to: redis
         policy: { timeoutMs: 20, circuitBreaker: true }
+      - { id: redirect-api--clicks, from: redirect-api, to: clicks }
+      - { id: click-counter--clicks, from: click-counter, to: clicks }
+      - id: click-counter--click-stats
+        from: click-counter
+        to: click-stats
+        policy: { timeoutMs: 500, circuitBreaker: true }
   flows:
     - operation: redirect
       handler: redirect-api
@@ -138,7 +164,16 @@ attempt:
         expiry-hit:
           type: logic
           logic: checkExpiry
-          next: { valid: r302, expired: r410 }
+          next: { valid: click, expired: r410 }
+        click:
+          type: call
+          target: clicks
+          action: queue.publish
+          event: link-clicked
+          fireAndForget: true
+          bufferSize: 100000
+          batchSize: 100
+          next: { ok: r302 }
         read:
           type: call
           target: links-db
@@ -159,7 +194,7 @@ attempt:
           action: cache.set
           entity: Link
           ttlSec: 3600
-          next: { ok: r302, error: r302 }
+          next: { ok: click, error: click }
         negative:
           type: call
           target: redis
@@ -279,6 +314,20 @@ attempt:
           next: { ok: p200, error: p503 }
         p200: { type: respond, status: 200 }
         p503: { type: respond, status: 503 }
+    - operation: record-click
+      handler: click-counter
+      root: total
+      steps:
+        total:
+          type: call
+          target: click-stats
+          action: store.insert
+          entity: LinkStats
+          aggregateSec: 10
+          batchSize: 1000
+          next: { ok: c200, error: c503 }
+        c200: { type: respond, status: 200 }
+        c503: { type: respond, status: 503 }
   decisions:
     code-strategy: kgs
     redirect-status: "302"
@@ -298,3 +347,6 @@ attempt:
     link-events: { x: 940, y: 320 }
     worker: { x: 1160, y: 320 }
     safety: { x: 1380, y: 320 }
+    clicks: { x: 700, y: -200 }
+    click-counter: { x: 940, y: -200 }
+    click-stats: { x: 1160, y: -200 }

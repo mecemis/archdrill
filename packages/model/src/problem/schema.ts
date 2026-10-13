@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema } from "../catalog/schema";
+import { EstimateSchema } from "./estimates";
 import { WorkloadSchema } from "./workload";
 
 export const HttpStatusSchema = z.number().int().min(100).max(599);
@@ -88,6 +89,8 @@ export const ProblemSchema = z
     operations: z.array(OperationSchema).min(1),
     events: z.array(EventSchema).default([]),
     decisionPoints: z.array(DecisionPointSchema).default([]),
+    /** Back-of-envelope questions for the estimation gym. */
+    estimates: z.array(EstimateSchema).default([]),
     scenarios: z.array(IdSchema).min(1),
   })
   .superRefine((problem, ctx) => {
@@ -96,6 +99,7 @@ export const ProblemSchema = z
     uniqueBy(problem.entities, (e) => e.name, "entity", ["entities"], ctx);
     uniqueBy(problem.operations, (o) => o.id, "operation", ["operations"], ctx);
     uniqueBy(problem.decisionPoints, (d) => d.id, "decision point", ["decisionPoints"], ctx);
+    uniqueBy(problem.estimates, (e) => e.id, "estimate", ["estimates"], ctx);
     const events = new Set(problem.events.map((e) => e.id));
     const entities = new Set(problem.entities.map((e) => e.name));
     uniqueBy(problem.events, (e) => e.id, "event", ["events"], ctx);

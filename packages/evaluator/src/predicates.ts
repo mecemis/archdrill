@@ -22,6 +22,7 @@ const EFFECTS = [
   "populate-negative",
   "invalidate",
   "publish",
+  "increment",
 ] as const satisfies readonly ActionEffect[];
 
 /** Matches one step of a path. Every given field must match; omitted fields match anything. */
@@ -40,6 +41,10 @@ export const StepMatcherSchema = z.strictObject({
   event: oneOrMany(z.string().min(1)).optional(),
   /** Matches store reads that coalesce concurrent misses (single-flight), or that do not. */
   coalesced: z.boolean().optional(),
+  /** Matches writes that sum per key over a window before writing, or that do not. */
+  aggregated: z.boolean().optional(),
+  /** Matches publishes that hand messages to a local buffer, or that wait for the queue. */
+  fireAndForget: z.boolean().optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -80,7 +85,9 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
       matcher.targetKind ||
       matcher.event ||
       matcher.batched !== undefined ||
-      matcher.coalesced !== undefined;
+      matcher.coalesced !== undefined ||
+      matcher.aggregated !== undefined ||
+      matcher.fireAndForget !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
   if (matcher.logic) return false;
@@ -95,6 +102,18 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
     return false;
   }
   if (matcher.coalesced !== undefined && matcher.coalesced !== (step.coalesce === true)) {
+    return false;
+  }
+  if (
+    matcher.aggregated !== undefined &&
+    matcher.aggregated !== (step.aggregateSec !== undefined)
+  ) {
+    return false;
+  }
+  if (
+    matcher.fireAndForget !== undefined &&
+    matcher.fireAndForget !== (step.fireAndForget === true)
+  ) {
     return false;
   }
   return true;

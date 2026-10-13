@@ -35,7 +35,12 @@ export function batchShare(step: PathStep): number {
  * job's batched deletes) collect items first and succeed or fail together.
  */
 export function prefetches(step: PathStep): boolean {
-  return step.kind === "call" && ACTIONS[step.action].effect === "allocate";
+  // Only batched calls prefetch; most steps have no batch, so skip the action lookup.
+  return (
+    step.kind === "call" &&
+    step.batchSize !== undefined &&
+    ACTIONS[step.action].effect === "allocate"
+  );
 }
 
 /** Whether items wait for a batch to fill before the call is made. */
@@ -52,6 +57,11 @@ export function callShare(step: PathStep): number {
   return step.kind === "call" && step.outcome === "error" && prefetches(step)
     ? 1
     : batchShare(step);
+}
+
+/** Whether a step sums what arrives per key over a window, then writes once per key. */
+export function aggregates(step: PathStep): step is CallPathStep & { aggregateSec: number } {
+  return step.kind === "call" && step.aggregateSec !== undefined;
 }
 
 /** Load one call puts on its target, in single-item calls. */
@@ -137,6 +147,8 @@ export function outcomeProbability(
   prior: readonly PathStep[] = [],
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
+  // The request hands a fire-and-forget message to its buffer and moves on.
+  if (step.fireAndForget) return step.outcome === "ok" ? 1 : 0;
   // A batched allocation is only made once per batch, so only then can it fail.
   const failure = state.callFailure(step, cls.hotKey) * (prefetches(step) ? batchShare(step) : 1);
   if (step.outcome === "error") return failure;

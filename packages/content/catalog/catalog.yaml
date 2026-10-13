@@ -154,7 +154,6 @@ kinds:
       - id: redis
         label: Redis
         description: In-memory data store with rich data types and optional replication.
-        capabilities: [atomic-increment]
         sizes:
           s:
             label: 13 GB
@@ -175,7 +174,7 @@ kinds:
             latencyMs: { base: 0.5, cv: 0.6 }
             costPerHour: 0.87
         defaultSize: m
-        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover.
+        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover. Counts that must survive a restart belong in a durable store, since a restart empties the cache.
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.
@@ -192,7 +191,7 @@ kinds:
   - id: relational-db
     label: Relational database
     description: Durable SQL database with transactions, unique constraints and secondary indexes.
-    capabilities: [durable-store, unique-constraint, conditional-write, transactions, secondary-index, range-scan]
+    capabilities: [durable-store, unique-constraint, conditional-write, transactions, secondary-index, range-scan, atomic-increment]
     replicable: true
     holdsData: true
     shardable: true
@@ -246,6 +245,7 @@ kinds:
         capabilities: [atomic-increment]
         storagePricePerGbMonth: 0.25
         requestCost: { readPerMillion: 0.125, writePerMillion: 0.625 }
+        perKeyCapacityPerSec: { write: 1000 }
         sizes:
           on-demand:
             label: on-demand
@@ -253,7 +253,29 @@ kinds:
             latencyMs: { base: 4, cv: 0.5 }
             costPerHour: 0
         defaultSize: on-demand
-        notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). Per-partition limits matter for hot keys and are modelled with peak-traffic scenarios.
+        notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). One item lives in one partition, which takes at most 1,000 writes a second, however much capacity the table has.
+
+  - id: wide-column-db
+    label: Wide-column database
+    description: Durable, partitioned database built for heavy writes, with counters and time-to-live.
+    capabilities: [durable-store, atomic-increment, ttl, range-scan]
+    replicable: true
+    holdsData: true
+    shardable: true
+    writeScaling: primaries
+    flavors:
+      - id: cassandra
+        label: Cassandra
+        description: Leaderless, partitioned database (Apache Cassandra or ScyllaDB). Shards are the groups of nodes that own a range of keys; replicas are the copies of each range.
+        storagePricePerGbMonth: 0.1
+        sizes:
+          m:
+            label: 8 vCPU node
+            capacityPerSec: { read: 15000, write: 30000 }
+            latencyMs: { base: 2, cv: 0.8 }
+            costPerHour: 0.6
+        defaultSize: m
+        notes: Writes are cheap appends, so a node takes about twice as many writes as reads. Run three replicas of every range. Counter columns add in place, so a retried or redelivered increment counts twice.
 
   - id: id-generator
     label: Id generator
@@ -277,7 +299,7 @@ kinds:
   - id: coordination
     label: Coordination service
     description: Strongly consistent store for small coordination data such as leases, counters and leader election.
-    capabilities: [consensus, leases, atomic-increment]
+    capabilities: [consensus, leases]
     replicable: true
     holdsData: false
     writeScaling: primaries
@@ -336,6 +358,26 @@ kinds:
             costPerHour: 0.4
         defaultSize: m
         notes: Throughput per broker for small messages with replication factor 3. Consumers track their own offsets; at-least-once delivery is the default.
+
+  - id: stream-processor
+    label: Stream processor
+    description: Consumes a log partition by partition and keeps per-key state in memory, so it can count and sum over windows. It takes messages from a queue, not requests.
+    capabilities: [stream-processing]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: flink
+        label: Flink
+        description: A stream processing job (Apache Flink, or Kafka Streams inside a service) whose per-key state is checkpointed, so a restart resumes where it left off.
+        startupSec: 120
+        sizes:
+          m:
+            label: 8 vCPU task manager
+            capacityPerSec: { read: 100000, write: 100000 }
+            latencyMs: { base: 1, cv: 0.5 }
+            costPerHour: 0.4
+        defaultSize: m
+        notes: Throughput for small messages with simple per-key state, such as counts. A restart replays messages since the last checkpoint, so whatever it writes must tolerate seeing a message twice.
 
   - id: external-api
     label: External API

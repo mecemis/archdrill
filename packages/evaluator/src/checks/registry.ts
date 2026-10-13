@@ -1,4 +1,10 @@
 import { type Problem, REPLICATION_MODES, type Scenario } from "@archdrill/model";
+import {
+  eventConsumed,
+  idempotentConsumerWrites,
+  noSyncWriteOnReadPath,
+  publishesWithoutWaiting,
+} from "./analytics";
 import { invalidationOnWrite } from "./consistency";
 import { populateAfterMiss } from "./dataflow";
 import { decisionExcludes } from "./decisions";
@@ -57,6 +63,10 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     unsafeContentStopped,
     timelineHolds,
     timelineRecovers,
+    noSyncWriteOnReadPath,
+    publishesWithoutWaiting,
+    idempotentConsumerWrites,
+    eventConsumed,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

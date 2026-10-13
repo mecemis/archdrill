@@ -361,7 +361,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 ---
 
-## S8 (v0.2): Click analytics
+## S8: Click analytics
 
 **Story.** "Product wants per-link click counts, at most a minute stale."
 
@@ -372,6 +372,33 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - counts fresh within 60 s;
   - hot-key counter mitigation (pre-aggregation or sharded counters).
 - **Decision interplay:** 301 caching hides repeat clicks, so `decision-consistent(redirect-status, analytics)`.
+
+**As built (M11).** Requirements FR-6 (per-link counts at most a minute behind) and NFR-6 (counting never slows or fails a redirect, and never counts a click twice); entities `LinkStats` (keyed by code) and `Click` (keyed by click id); the `link-clicked` event and the `record-click` consumer.
+
+- **Environments:** peak (300,000 redirects a second, every one to a live link a click), the click queue hanging, and a viral link taking 100,000 clicks a second (the canvas default).
+- **Gates:** `no-write-on-redirect` and `clicks-counted` (something consumes the clicks).
+- **Checks:**
+  - clicks published fire-and-forget through a bounded buffer;
+  - redirects at 99.99% and under 50 ms p99 while the queue hangs;
+  - counts at most a minute behind;
+  - every click of a viral link counted, with 15% headroom;
+  - no click counted twice, and no increment retried;
+  - no 301 or 308;
+  - under $60,000 a month at peak.
+- **Signals:** summing per link before writing (senior), and writing window totals rather than increments (staff).
+- **Golden:** the Postgres design publishes clicks to Kafka (8 brokers) in batches of 100, fire-and-forget. A Flink job sums them per link over 10-second windows and writes the windows' totals to Cassandra (one range, three replicas) in batches of 1,000. Totals keyed by link and window make replays harmless. The pipeline costs about $5,000 a month, and the design passes all eight scenarios.
+- **Mutants (10):**
+  - an increment on the redirect path;
+  - a publish that waits for the queue;
+  - an unbounded buffer;
+  - clicks nobody consumes;
+  - increments instead of totals, with and without retries;
+  - a write per click;
+  - two-minute windows;
+  - 301;
+  - a managed queue billed per message.
+
+**Estimates.** The pack asks nine back-of-envelope questions: links a day (86.4 M), links after five years (158 B), storage before replication (79 TB), peak redirects (300 k/s), 7-character base62 codes (3.5 × 10¹²), memory for the top 20 million links (14 GB), clicks a day (8.6 B), click-log bandwidth at peak (60 MB/s) and storage for counts (1.3 TB).
 
 ---
 
@@ -388,11 +415,13 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
 
+**As built (M11).** S8 adds ten mutants, 79 in all, and the Postgres golden now passes all eight scenarios.
+
 **As built (M6).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 69 mutants. Two of them pass S7 in different ways: the Postgres design publishes every new link to a managed queue that a worker scans; the DynamoDB design checks each link before the create answers and publishes only the links whose check failed, for a batched rescan.
 
 | ID | Create path | Read path |
 |---|---|---|
-| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones (all seven scenarios) |
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones; clicks go fire-and-forget to Kafka, Flink sums them per link and writes window totals to Cassandra (all eight scenarios) |
 | `postgres-redis-fixed-fleet` | as above, without the gateway | the same with fixed fleets and no near cache (expected not to pass S5) |
 | `dynamodb-redis-cache-aside` | random 8-character codes, one retry; a URL check before answering, failing open into a rescan | an autoscaling service with a near cache → Redis cache-aside → DynamoDB; the same service purges in batches of 25 |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |

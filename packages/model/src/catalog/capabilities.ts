@@ -27,11 +27,26 @@ export const CAPABILITIES = [
   "rate-limiting",
   "authn",
   "async-buffer",
+  "stream-processing",
   "external",
 ] as const;
 
 export const CapabilitySchema = z.enum(CAPABILITIES);
 export type Capability = z.infer<typeof CapabilitySchema>;
+
+/**
+ * Whether a component can run an operation's flow: services run any; stream
+ * processors only take messages from a queue.
+ */
+export function canHandle(
+  capabilities: ReadonlySet<Capability>,
+  consumesMessages: boolean,
+): boolean {
+  return (
+    capabilities.has("stateless-compute") ||
+    (consumesMessages && capabilities.has("stream-processing"))
+  );
+}
 
 /** Capabilities that let a component sit between a client and a handler on an ingress route. */
 export const INGRESS_CAPABILITIES: ReadonlySet<Capability> = new Set([

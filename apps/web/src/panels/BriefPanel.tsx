@@ -2,6 +2,7 @@ import { Lightbulb } from "lucide-react";
 import { useState } from "react";
 import { activePack } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
+import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { Prose } from "../ui/Prose";
 import { Button, SectionTitle } from "../ui/primitives";
@@ -10,6 +11,10 @@ export function BriefPanel() {
   const scenarioId = useUi((s) => s.scenarioId);
   const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
   const { problem } = activePack;
+  const estimates = useAttemptStore((s) => s.attempt.estimates);
+  const [derivedShown, setDerivedShown] = useState(false);
+  // Derived numbers give the estimates away: they wait until the candidate has worked them out.
+  const showDerived = derivedShown || problem.estimates.every((e) => estimates[e.id] !== undefined);
   const focusRequirements = new Set(
     problem.operations
       .filter((op) => scenario?.focusOperations.includes(op.id))
@@ -36,11 +41,24 @@ export function BriefPanel() {
               <dt className="font-medium text-zinc-500">{item.label}</dt>
               <dd className="text-zinc-800">
                 {item.value}
-                {item.note && <span className="text-zinc-500"> · {item.note}</span>}
+                {item.note && showDerived && <span className="text-zinc-500"> · {item.note}</span>}
               </dd>
             </div>
           ))}
         </dl>
+        {!showDerived && problem.scale.some((item) => item.note) && (
+          <p className="text-xs text-zinc-500">
+            Work out the derived numbers under Estimate, or{" "}
+            <button
+              type="button"
+              className="underline hover:text-zinc-900"
+              onClick={() => setDerivedShown(true)}
+            >
+              show them now
+            </button>
+            .
+          </p>
+        )}
       </section>
       <section className="flex flex-col gap-2">
         <SectionTitle>Requirements</SectionTitle>

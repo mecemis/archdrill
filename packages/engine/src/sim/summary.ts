@@ -15,7 +15,13 @@ import {
   type WeightedMoments,
 } from "./math/gamma";
 import { queueWait } from "./math/queueing";
-import { callShare, collectsBatch, type OutcomeState, outcomeProbability } from "./outcomes";
+import {
+  aggregates,
+  callShare,
+  collectsBatch,
+  type OutcomeState,
+  outcomeProbability,
+} from "./outcomes";
 import type { CacheSpec, OperationModel } from "./setup";
 import { cacheKey } from "./setup";
 import type {
@@ -55,6 +61,11 @@ export interface Propagation {
   readonly operations: ReadonlyMap<string, ResolvedOperation>;
   /** Items per second reaching each step that collects a batch, keyed by `batchKey`. */
   readonly batchArrivals: ReadonlyMap<string, number>;
+  /**
+   * Per component: items its batched calls carry beyond the load they cost.
+   * Providers that price per request bill every item, batched or not.
+   */
+  readonly batchedItems: ReadonlyMap<string, Load>;
 }
 
 export interface ResolvedOperation {
@@ -108,10 +119,13 @@ export function shardUtilizations(
   profile: ComponentProfile,
 ): { readonly normal: number; readonly hottest: number } {
   const all = utilizationOf(load, profile);
-  if (!profile.sharded || total(hotLoad) <= 0) return { normal: all, hottest: all };
+  if (total(hotLoad) <= 0) return { normal: all, hottest: all };
+  // One key lives in one partition, which takes only so many writes.
+  const keyLimit = (hotLoad?.write ?? 0) / profile.perKeyWriteCapacity;
+  if (!profile.sharded) return { normal: all, hottest: Math.max(all, keyLimit) };
   const hot = utilizationOf(hotLoad, profile);
   const normal = all - hot;
-  return { normal, hottest: profile.shards * hot + normal };
+  return { normal, hottest: Math.max(profile.shards * hot + normal, keyLimit) };
 }
 
 /** Share of arrivals rejected at a utilisation. */
@@ -133,7 +147,9 @@ export function componentLatency(
   if (hottest === normal) return latencyAt(normal, profile);
   const calls = total(load);
   const hot = total(hotLoad);
-  const onHotShard = calls > 0 ? (hot + (calls - hot) / profile.shards) / calls : 0;
+  // On a sharded store ordinary keys share the hot shard; a per-key limit slows the hot key alone.
+  const sharing = profile.sharded ? (calls - hot) / profile.shards : 0;
+  const onHotShard = calls > 0 ? (hot + sharing) / calls : 0;
   const a = latencyAt(hottest, profile);
   const b = latencyAt(normal, profile);
   const mean = onHotShard * a.mean + (1 - onHotShard) * b.mean;
@@ -176,9 +192,10 @@ export function summarizeComponents(
   for (const [id, profile] of profiles) {
     const load = flow.loads.get(id) ?? { read: 0, write: 0 };
     const hotLoad = flow.hotLoads.get(id);
+    const extra = flow.batchedItems.get(id) ?? { read: 0, write: 0 };
     const requestCost = profile.requestCost
-      ? ((load.read * profile.requestCost.readPerMillion +
-          load.write * profile.requestCost.writePerMillion) *
+      ? (((load.read + extra.read) * profile.requestCost.readPerMillion +
+          (load.write + extra.write) * profile.requestCost.writePerMillion) *
           SECONDS_PER_MONTH) /
         1e6
       : 0;
@@ -286,6 +303,14 @@ function batchWait(
   return { mean: fill / 2, variance: fill ** 2 / 12 };
 }
 
+const NO_WAIT: Moments = { mean: 0, variance: 0 };
+
+/** Time an item waits for its aggregation window to close: uniform over the window. */
+function windowWait(windowSec: number): Moments {
+  const ms = windowSec * 1000;
+  return { mean: ms / 2, variance: ms ** 2 / 12 };
+}
+
 function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean): Moments {
   const call = inputs.callFor(step, hotKey);
   if (step.outcome === "error") return call.failureLatency;
@@ -313,12 +338,21 @@ function pathLatency(
   inputs: LatencyInputs,
   hotKey: boolean,
   batchers: number,
+  unkeyed: ReadonlySet<string>,
 ): Moments {
   let total = ingressLatency;
   for (const step of path.steps) {
-    if (step.kind !== "call") continue;
-    const latency = callLatency(step, inputs, hotKey);
-    if (collectsBatch(step)) {
+    // The request does not wait for a message it hands to a local buffer.
+    if (step.kind !== "call" || step.fireAndForget) continue;
+    const latency = callLatency(step, inputs, hotKey && !unkeyed.has(step.stepId));
+    if (aggregates(step)) {
+      // Every item waits for its window to close, then for its batch, then for the write.
+      const batch = collectsBatch(step) ? batchWait(step, path, inputs, batchers) : NO_WAIT;
+      total = addMoments(
+        total,
+        addMoments(addMoments(windowWait(step.aggregateSec), batch), latency),
+      );
+    } else if (collectsBatch(step)) {
       // Every item waits for its batch, then for the call that carries it.
       total = addMoments(total, addMoments(batchWait(step, path, inputs, batchers), latency));
     } else {
@@ -343,9 +377,12 @@ export function pathProbability(
   path: Path,
   cls: OperationModel["classes"][number],
   state: OutcomeState,
+  /** Steps a hot key does not make hot (keyed by something else). */
+  unkeyed: ReadonlySet<string> = NO_UNKEYED,
 ): number {
   let probability = 1;
   const steps = path.steps;
+  const cold = cls.hotKey && unkeyed.size > 0 ? { ...cls, hotKey: false } : cls;
   for (let index = 0; index < steps.length && probability > 0; index++) {
     const step = steps[index] as PathStep;
     // Only a conditional insert looks back along the path (where its key came from).
@@ -353,10 +390,13 @@ export function pathProbability(
       step.kind === "call" && step.action === "store.insertIfAbsent"
         ? steps.slice(0, index)
         : NO_STEPS;
-    probability *= outcomeProbability(step, cls, state, prior);
+    const asked = cold !== cls && unkeyed.has(step.stepId) ? cold : cls;
+    probability *= outcomeProbability(step, asked, state, prior);
   }
   return probability;
 }
+
+const NO_UNKEYED: ReadonlySet<string> = new Set();
 
 export function summarizeOperations(
   operations: readonly OperationModel[],
@@ -396,11 +436,11 @@ export function summarizeOperations(
     for (const path of op.analysis.paths) {
       const byClass = classes.map((cls) => ({
         hot: cls.hotKey,
-        p: cls.share * pathProbability(path, cls, state),
+        p: cls.share * pathProbability(path, cls, state, op.unkeyed),
       }));
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
-      const moments = pathLatency(path, ingressLatency, inputs, false, batchers);
+      const moments = pathLatency(path, ingressLatency, inputs, false, batchers, op.unkeyed);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
@@ -418,7 +458,7 @@ export function summarizeOperations(
       if (succeeded) {
         mixture.push({ weight: pass * (probability - hotProbability), ...moments });
         if (hotProbability > 0) {
-          const hot = pathLatency(path, ingressLatency, inputs, true, batchers);
+          const hot = pathLatency(path, ingressLatency, inputs, true, batchers, op.unkeyed);
           mixture.push({ weight: pass * hotProbability, ...hot });
         }
       }

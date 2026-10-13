@@ -72,6 +72,10 @@ export function enumeratePaths(
               batchSize: step.batchSize,
               event: step.event,
               ...(step.coalesce === undefined ? {} : { coalesce: step.coalesce }),
+              ...(step.aggregateSec === undefined ? {} : { aggregateSec: step.aggregateSec }),
+              ...(step.counterShards === undefined ? {} : { counterShards: step.counterShards }),
+              ...(step.fireAndForget === undefined ? {} : { fireAndForget: step.fireAndForget }),
+              ...(step.bufferSize === undefined ? {} : { bufferSize: step.bufferSize }),
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };

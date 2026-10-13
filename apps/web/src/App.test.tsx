@@ -303,7 +303,12 @@ describe("App", () => {
 
     const tab = screen.getByRole("button", { name: /S2 Redirect/ });
     expect(within(tab).getByText(/^↓\d+/)).toBeDefined();
-    expect(screen.getByText(/^S2 Redirect \(read path\) dropped from \d+ to \d+/)).toBeDefined();
+    // One scenario is named in full; several are listed (S8 counts redirects too).
+    expect(
+      screen.getByText(
+        /^S2 Redirect \(read path\) dropped from \d+ to \d+|lowered \d+ scenarios: S2 /,
+      ),
+    ).toBeDefined();
     fireEvent.click(tab);
     expect(within(tab).queryByText(/^↓\d+/)).toBeNull();
   });
@@ -477,5 +482,41 @@ describe("App with background work", () => {
     fireEvent.change(form().getByLabelText("Action"), { target: { value: "store.delete" } });
 
     expect(form().queryByLabelText(/Batch size/)).toBeNull();
+  });
+});
+
+describe("estimation gym", () => {
+  beforeEach(() => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+  });
+
+  it("checks a whiteboard number against its tolerance band, and undo takes it back", () => {
+    renderApp();
+    fireEvent.click(screen.getByRole("tab", { name: "Estimate" }));
+    const question = screen.getByLabelText("How many links are created on an average day?");
+    const card = question.closest("li") as HTMLElement;
+
+    fireEvent.change(question, { target: { value: "1B" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Check" }));
+    expect(within(card).getByText("Off: 12× too high")).toBeDefined();
+
+    fireEvent.change(question, { target: { value: "90M" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Check" }));
+    expect(within(card).getByText("Spot on")).toBeDefined();
+    expect(screen.getByTestId("estimate-summary").textContent).toMatch(
+      /^1 of \d+ answered · 1 spot on/,
+    );
+    expect(useAttemptStore.getState().attempt.estimates["links-per-day"]).toBe(90e6);
+
+    act(() => useAttemptStore.getState().undo());
+    expect(useAttemptStore.getState().attempt.estimates["links-per-day"]).toBe(1e9);
+  });
+
+  it("keeps the derived numbers in the brief until the candidate asks for them", () => {
+    renderApp();
+
+    expect(screen.queryByText(/158 B links over 5 years/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "show them now" }));
+    expect(screen.getByText(/158 B links over 5 years/)).toBeDefined();
   });
 });

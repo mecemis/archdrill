@@ -35,7 +35,7 @@ test("builds a read path from an empty canvas and gets it evaluated", async ({ p
   await connect(page, "service-1", "key-value-db-1");
 
   await page.locator('.react-flow__node[data-id="key-value-db-1"]').click();
-  await page.getByRole("checkbox", { name: /Link/ }).check();
+  await page.getByRole("checkbox", { name: /^Link key/ }).check();
   await page.locator('.react-flow__node[data-id="service-1"]').click();
   await page.getByLabel("Size").selectOption({ label: "8 vCPU" });
   const replicas = page.getByRole("slider", { name: "Replicas" });
@@ -69,7 +69,7 @@ test("points at the gate that a broken flow fails", async ({ page }) => {
   await connect(page, "visitors", "service-1");
   await connect(page, "service-1", "key-value-db-1");
   await page.locator('.react-flow__node[data-id="key-value-db-1"]').click();
-  await page.getByRole("checkbox", { name: /Link/ }).check();
+  await page.getByRole("checkbox", { name: /^Link key/ }).check();
 
   await page.getByRole("button", { name: /S2 Redirect/ }).click();
   await page.getByRole("tab", { name: "Flow" }).click();

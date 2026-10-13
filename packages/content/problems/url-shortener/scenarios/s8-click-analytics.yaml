@@ -1,0 +1,287 @@
+id: s8-click-analytics
+problemId: url-shortener
+title: Click analytics
+order: 8
+story: |
+  "Link owners want to see how many times each link was clicked, at most a
+  minute behind. Every redirect is a click: 300,000 a second at peak, and a
+  viral link can take 100,000 a second on its own. Counting must never slow
+  down or fail a redirect, even while the pipeline behind it is down, and a
+  click must never be counted twice, even when a consumer restarts. Where do
+  the counts live, and what do they cost?"
+focusOperations: [redirect, record-click]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.98 }
+        - { id: viral, share: 0, hotKey: true }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: disabled, share: 0.005, disabled: true }
+        - { id: unknown, share: 0.01, exists: false }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+    LinkStats: 2.0e10
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: peak
+      label: Peak
+      description: Peak traffic. Every redirect to a live link is a click.
+      rates: { redirect: 300000 }
+    - id: queue-down
+      label: Peak, click queue not answering
+      description: >-
+        The queue that takes clicks stops answering: connections hang until
+        the caller gives up.
+      rates: { redirect: 300000 }
+      faults:
+        - { kind: down, target: { capability: async-buffer }, mode: hang }
+    - id: viral
+      label: A viral link
+      description: Peak traffic, with one link taking a third of it, 100,000 clicks a second.
+      rates: { redirect: 300000 }
+      classShares:
+        redirect: { live: 0.647, viral: 0.333 }
+dimensions:
+  correctness: 0.3
+  scalability: 0.25
+  availability: 0.2
+  latency: 0.1
+  cost: 0.15
+checks:
+  - id: no-write-on-redirect
+    use: no-sync-write-on-read-path
+    title: Redirects never wait for a write
+    dimension: scalability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-6, NFR-1]
+    params: { operation: redirect }
+    why: >-
+      An increment per click turns the read path into a write path: 300,000
+      writes a second, with a viral link's 100,000 on a single row. The
+      redirect also takes on the store's latency and its failures.
+    fix: >-
+      Publish a click event from the redirect and count in a consumer.
+
+  - id: clicks-counted
+    use: event-consumed
+    title: Clicks reach something that counts them
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-6]
+    params: { operation: redirect, event: link-clicked }
+    why: >-
+      Owners were promised counts. A click that is never published, or
+      published to a queue nobody reads, is never counted.
+    fix: >-
+      Publish link-clicked from the redirect and consume it with a worker or a
+      stream processor that writes the counts.
+
+  - id: clicks-published
+    use: publishes-without-waiting
+    title: Redirects hand clicks to a bounded buffer and move on
+    dimension: availability
+    weight: 2
+    requirements: [FR-6, NFR-6]
+    params: { operation: redirect, event: link-clicked, statuses: [301, 302, 307, 308] }
+    why: >-
+      A publish that waits for the queue adds its round trip to every
+      redirect, and a slow queue becomes a slow redirect. Fire-and-forget into
+      a local buffer keeps the redirect independent of the pipeline; a bound on
+      the buffer keeps a long queue outage from exhausting memory.
+    fix: >-
+      Publish fire-and-forget (a producer that batches in the background) with
+      a bounded buffer. When the buffer is full, drop clicks rather than
+      redirects.
+
+  - id: redirects-survive-queue-outage
+    use: success-rate-above
+    title: Redirects keep 99.99% while the click queue is down
+    dimension: availability
+    weight: 2
+    severity: major
+    requirements: [NFR-2, NFR-6]
+    params: { operation: redirect, environment: queue-down, min: 0.9999 }
+    why: >-
+      Analytics is a side effect. Losing some clicks during an outage is
+      acceptable; losing redirects is not.
+    fix: >-
+      Never let a failed publish fail the redirect: publish fire-and-forget,
+      or handle the publish error by redirecting anyway, with a short timeout.
+
+  - id: redirects-fast-queue-down
+    use: latency-below
+    title: Redirect p99 stays under 50 ms while the click queue is down
+    dimension: latency
+    requirements: [NFR-1, NFR-6]
+    params: { operation: redirect, environment: queue-down, percentile: p99, ms: 50 }
+    why: >-
+      A hanging queue holds every redirect that waits for it until the caller
+      gives up.
+    fix: >-
+      Publish fire-and-forget, or put a short timeout on the publish.
+
+  - id: counts-fresh
+    use: latency-below
+    title: Counts are at most a minute behind the clicks
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-6]
+    params: { operation: record-click, environment: peak, percentile: p99, ms: 60000 }
+    why: >-
+      Owners were promised counts at most a minute old. Aggregation windows,
+      batches and consumer lag all add up against that minute.
+    fix: >-
+      Keep aggregation windows well under a minute, and give consumers enough
+      capacity that no backlog builds up.
+
+  - id: viral-clicks-counted
+    use: success-rate-above
+    title: A viral link's clicks are all counted
+    dimension: scalability
+    weight: 2
+    severity: major
+    requirements: [FR-6]
+    params: { operation: record-click, environment: viral, min: 0.999 }
+    why: >-
+      100,000 increments a second on one link all land on one row, in one
+      partition: no amount of total capacity helps. Throttled increments are
+      redelivered, add to the load, and are finally dropped.
+    fix: >-
+      Sum clicks per link over a few seconds before writing (one write per
+      link and window), or spread a hot link's count over several rows.
+
+  - id: headroom-viral
+    use: utilization-below
+    title: Nothing runs above 85% with a viral link
+    dimension: scalability
+    requirements: [FR-6, NFR-2]
+    params: { environment: viral, max: 0.85 }
+    why: >-
+      A component at its limit has no room for the next spike, and a hot row
+      that is nearly saturated is one share of a tweet away from failing.
+    fix: >-
+      Size the pipeline for peak, and keep a hot link's writes off a single
+      row.
+
+  - id: no-double-count
+    use: idempotent-consumer-writes
+    title: A redelivered click is not counted twice
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [NFR-6]
+    params: { operation: record-click }
+    why: >-
+      Queues deliver at least once, and a consumer that restarts replays
+      messages since its last checkpoint. An increment applied twice counts
+      twice, and nothing ever corrects it.
+    fix: >-
+      Record each click id with a conditional insert and count only when it is
+      new, or write each link's window total under the link and the window (a
+      put), which a replay simply writes again.
+
+  - id: increments-not-retried
+    use: retry-only-idempotent
+    title: Increments are not retried blindly
+    dimension: correctness
+    requirements: [NFR-6]
+    params: { operation: record-click }
+    why: >-
+      A timed-out increment may have been applied. Retrying it counts the
+      click again.
+    fix: >-
+      Do not retry increments on the connection; let the queue redeliver, and
+      make the consumer skip clicks it has already counted.
+
+  - id: countable-redirects
+    use: decision-excludes
+    title: Repeat clicks reach the server
+    dimension: correctness
+    requirements: [FR-6]
+    params:
+      decision: redirect-status
+      forbidden:
+        - option: "301"
+          reason: Browsers cache a 301 without expiry, so a visitor's repeat clicks never reach the server and are never counted.
+        - option: "308"
+          reason: Browsers cache a 308 like a 301, so repeat clicks are never counted.
+    why: >-
+      A permanent redirect is cached by the browser. Counts then show unique
+      visitors at best, never clicks.
+    fix: >-
+      Answer 302 or 307 (or a 301 with a short max-age, if repeat clicks within
+      it need not count).
+
+  - id: within-budget
+    use: cost-within-budget
+    title: The design costs less than $60,000 a month at peak
+    dimension: cost
+    weight: 2
+    severity: major
+    requirements: [FR-6]
+    params: { environment: peak, monthlyUsd: 60000 }
+    why: >-
+      Counting is a feature, not the product. Per-request pricing (a managed
+      queue, an on-demand table) charges for every one of 800 billion clicks a
+      month.
+    fix: >-
+      Use a log you size by throughput (such as Kafka) rather than a queue
+      billed per message, and write aggregated counts to a store sized for the
+      write rate.
+
+  - id: aggregates-per-link
+    use: all-success-paths-contain
+    title: Counts are summed per link before they are written
+    dimension: scalability
+    signal: senior
+    requirements: [FR-6]
+    params:
+      operation: record-click
+      statuses: [200]
+      step: { aggregated: true }
+    why: >-
+      Summing per link over a few seconds collapses a viral link to one write
+      per window, and trades a little freshness for far fewer writes.
+    fix: >-
+      Give the counting step an aggregation window of a few seconds.
+
+  - id: totals-not-increments
+    use: all-success-paths-contain
+    title: Counts are written as window totals, which a replay cannot inflate
+    dimension: correctness
+    signal: staff
+    requirements: [NFR-6]
+    params:
+      operation: record-click
+      statuses: [200]
+      step: { action: store.insert, aggregated: true }
+    why: >-
+      Writing each window's total under the link and the window is idempotent
+      by construction: replaying a window writes the same total again. Reading
+      the count adds up the windows, which a background job can compact.
+    fix: >-
+      Instead of incrementing, put each link's total for the window.
+hints:
+  - "300,000 clicks a second. If every redirect writes a count, which row gets the viral link's 100,000 writes a second, and how many can it take?"
+  - "What happens to a redirect when the queue it publishes to is slow? And when it is down for ten minutes?"
+  - "Publish clicks fire-and-forget into a bounded buffer, consume them with a stream processor that sums per link over a few seconds, and write window totals (or dedupe click ids before incrementing) into a store sized for the writes."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - The dashboard also wants unique visitors per day. Can you count those with counters? (Look up HyperLogLog.)
+  - A bot clicks a link 10,000 times a minute. Should those clicks count, and where would you filter them?
+  - Product wants clicks per country and per hour for the last 90 days. Where do those queries run? (Look up OLAP stores such as ClickHouse or Druid.)
+  - How would you rebuild every count from scratch after a bug in the aggregation?

@@ -310,9 +310,42 @@ The original plan was a sampled per-request discrete-event engine. [ADR 0008](..
 - **A snapshot needs a stable identity.** The canvas re-projects whenever its load changes, and the first version built a new snapshot on every render, which looped. Each moment now builds its snapshot once.
 - **Predictions need bounds that separate designs.** A question is only worth asking if designs answer it differently. Running every question against the corpus showed a wide spread, for example S4's store load ranges from calm (DynamoDB) to overloaded (MySQL with Memcached, and the retry storm). It also caught a bound in the wrong place: most designs lose 49.8% of creates during S6's failover, right at a 50% bound. The options now sit away from where designs land.
 
-### M11: Click analytics and the estimation gym (L)
+### M11: Click analytics and the estimation gym (L) ✅
 - S8 click analytics: logs and streams, stream aggregation, counters that stay fresh within a minute, hot counters, and idempotent consumers whose writes are not naturally idempotent.
 - Estimation gym: back-of-envelope questions per problem, with tolerance bands.
+
+**Delivered (2026-10-13):**
+- **Model and catalog.**
+  - An `increment` action, and aggregation windows on increments and totals.
+  - Counter shards, fire-and-forget publishes with a buffer, and batches where nothing waits for them.
+  - Cassandra, a Flink stream processor that only takes messages, and DynamoDB's per-item write limit.
+  - Counters live in durable stores only.
+- **Engine.**
+  - Distinct keys per window under Zipf popularity.
+  - Lossy publishes that add no latency.
+  - Per-key throttling of the hot key alone, and hotness only for rows keyed like the request.
+  - Per-request pricing billed per item.
+- **Evaluator.** `no-sync-write-on-read-path`, `publishes-without-waiting`, `event-consumed` and `idempotent-consumer-writes`.
+- **S8.**
+  - Peak, a hanging click queue and a viral link.
+  - Two gates, ten scored checks, and senior and staff signals.
+  - The Postgres golden counts clicks with Kafka, Flink and Cassandra and passes all eight scenarios.
+  - Ten mutants (79 in all).
+- **Estimation gym.**
+  - Nine questions, answered as on a whiteboard and judged spot on, close or off.
+  - Answers are kept in the design.
+  - The brief's derived numbers wait until the estimates are answered.
+- **Web.** A settings editor for call steps (windows, batches, shards, fire-and-forget, TTL, single-flight), which earlier steps could not change after they were added.
+- **Speed.** Analytic evaluation with the analytics pipeline in every scenario stays at p95 78 ms.
+
+**Learned along the way:**
+- **Aggregation helps less than intuition says.** At 300,000 clicks a second, 10-second windows still write 37% as many rows as clicks, because most links in a window are clicked once. What aggregation does collapse is the hot key, to one write per window. That makes batching the writes, not just windowing them, what keeps the store small.
+- **One shared design carries every feature into every scenario.** Once redirects publish clicks, S5's spike of a million redirects a second is also a million clicks a second. The click log needed producer batching and eight brokers before S5 passed again, and the average-day budget had to absorb the pipeline.
+- **Batching must not discount per-request prices.** A batch costs one call in load, but DynamoDB bills every item. The first version billed calls, which made per-click counting in DynamoDB look cheap.
+- **An optional consumer needs a gate when it is the point.** Consumers are optional in general (S7 can scan synchronously), so a design that published clicks and never counted them still scored 60. `event-consumed` makes counting required where the scenario is about counting.
+- **The analytic budget is shared.** The first S8 build took analytic p95 from 55 to 91 ms. Two lookups in the hottest loop (an action table per step, a set per step) brought it back to 78 ms.
+
+**v0.2 is done** when timelines and S8 hold to the same standard as v0.1: goldens pass, mutants are caught, and evaluation stays within its budgets.
 
 ## v0.3: Pattern breadth
 
@@ -325,7 +358,7 @@ New problems are chosen to cover *different* patterns, not more of the same.
 | Chat / notifications | websockets, ordering, delivery semantics, presence, offline delivery |
 | Order and payment processing | idempotency, outbox, sagas, exactly-once effects, reconciliation |
 
-Back in the URL shortener, v0.3 also adds a store's own TTL deletion as an alternative to a purge job, a transactional outbox for `link-created`, and a check for idempotent consumers whose writes are not naturally idempotent (S8's counters).
+Back in the URL shortener, v0.3 also adds a store's own TTL deletion as an alternative to a purge job, a transactional outbox for `link-created`, and exactly-once processing (checkpointed state with transactional writes) as a third way to count clicks once.
 
 Also in v0.3:
 - A problem authoring guide and a JSON Schema for editors.

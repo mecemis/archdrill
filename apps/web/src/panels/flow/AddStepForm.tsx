@@ -16,6 +16,7 @@ import { operationById, respondLabel, runsInBackground } from "../../state/trigg
 import { type Slot, useUi } from "../../state/ui-store";
 import { COMMON_STATUSES } from "../../ui/outcome";
 import { Button, Field, Select } from "../../ui/primitives";
+import { applicableParams, StepParams, type TunableValues } from "./StepParams";
 import { componentLabel, stepTitle } from "./step-label";
 
 type Mode = "call" | "logic" | "respond" | "goto";
@@ -24,10 +25,6 @@ const DEFAULT_TTL: Partial<Record<ActionId, number>> = {
   "cache.set": 3600,
   "cache.setNegative": 60,
 };
-const MAX_BATCH = 1_000_000;
-
-/** Batched allocation fetches keys ahead; other batches collect items, which wait for the batch. */
-const prefetches = (action: ActionId) => ACTIONS[action].effect === "allocate";
 
 function callableTargets(attempt: Attempt, flow: Flow): string[] {
   return attempt.architecture.connections
@@ -56,9 +53,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
   const actions = useMemo(() => actionsFor(attempt, target), [attempt, target]);
   const [action, setAction] = useState<ActionId | "">(actions[0] ?? "");
   const [entity, setEntity] = useState(activePack.problem.entities[0]?.name ?? "");
-  const [ttl, setTtl] = useState(3600);
-  const [batchSize, setBatchSize] = useState(1);
-  const [coalesce, setCoalesce] = useState(false);
+  const [params, setParams] = useState<TunableValues>({ ttlSec: 3600 });
   const [event, setEvent] = useState(activePack.problem.events[0]?.id ?? "");
   const [logic, setLogic] = useState<LogicId>("checkExpiry");
   const background = runsInBackground(operationById(flow.operation));
@@ -76,20 +71,15 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
     if (!actions.includes(action as ActionId)) setAction(actions[0] ?? "");
   }, [actions, action]);
   useEffect(() => {
-    if (action) setTtl(DEFAULT_TTL[action] ?? 3600);
+    if (action) setParams({ ttlSec: DEFAULT_TTL[action] ?? 3600 });
   }, [action]);
 
-  // Requests cannot wait for other requests to fill a batch; only prefetching works there.
-  const batchable =
-    action !== "" && actionTakesParam(action, "batchSize") && (background || prefetches(action));
   const draft = buildStep(mode, {
     target,
     action,
     entity,
     event,
-    ttl,
-    batchSize: batchable ? batchSize : 1,
-    coalesce,
+    params: action === "" ? {} : applicableParams(action, params, background),
     logic,
     status,
   });
@@ -192,46 +182,13 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
               </Select>
             </Field>
           )}
-          {action && actionTakesParam(action, "coalesce") && (
-            <label className="flex items-center gap-2 text-sm text-zinc-800">
-              <input
-                type="checkbox"
-                checked={coalesce}
-                onChange={(e) => setCoalesce(e.target.checked)}
-              />
-              Coalesce concurrent reads of a key (single-flight)
-            </label>
-          )}
-          {batchable && (
-            <Field
-              label={
-                prefetches(action)
-                  ? "Batch size (keys per call; 1 = every request)"
-                  : "Batch size (items per call; items wait for the batch to fill)"
-              }
-            >
-              <input
-                type="number"
-                min={1}
-                max={MAX_BATCH}
-                value={batchSize}
-                onChange={(e) =>
-                  setBatchSize(Math.min(MAX_BATCH, Math.max(1, Math.round(Number(e.target.value)))))
-                }
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-              />
-            </Field>
-          )}
-          {action && actionTakesParam(action, "ttlSec") && (
-            <Field label="TTL (seconds)">
-              <input
-                type="number"
-                min={1}
-                value={ttl}
-                onChange={(e) => setTtl(Math.max(1, Number(e.target.value)))}
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-              />
-            </Field>
+          {action && (
+            <StepParams
+              action={action}
+              values={params}
+              onChange={setParams}
+              background={background}
+            />
           )}
         </>
       )}
@@ -299,25 +256,20 @@ function buildStep(
     action: ActionId | "";
     entity: string;
     event: string;
-    ttl: number;
-    batchSize: number;
-    coalesce: boolean;
+    params: TunableValues;
     logic: LogicId;
     status: number;
   },
 ): StepInput | null {
   if (mode === "call") {
     if (!v.target || !v.action) return null;
-    const batched = actionTakesParam(v.action, "batchSize") && v.batchSize > 1;
     return {
       type: "call",
       target: v.target,
       action: v.action,
       ...(actionTakesEntity(v.action) ? { entity: v.entity } : {}),
       ...(actionTakesParam(v.action, "event") ? { event: v.event } : {}),
-      ...(actionTakesParam(v.action, "coalesce") && v.coalesce ? { coalesce: true } : {}),
-      ...(actionTakesParam(v.action, "ttlSec") ? { ttlSec: v.ttl } : {}),
-      ...(batched ? { batchSize: v.batchSize } : {}),
+      ...v.params,
     };
   }
   if (mode === "logic") return { type: "logic", logic: v.logic };

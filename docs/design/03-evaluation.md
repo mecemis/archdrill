@@ -123,6 +123,15 @@ Both point at what a fault hits or what runs over capacity at those moments; fai
 
 **As built (M9)**, timeline checks can also bound a consumer's backlog (`metric: backlog`, in items), and step matchers can ask whether a store read is coalesced (`coalesced: true`).
 
+**As built (M11)**, four checks cover counting and analytics:
+
+- **`no-sync-write-on-read-path(operation)`**: no path of a read operation waits for a write to a store (a write, conditional write, delete or increment; populating a cache does not count).
+- **`publishes-without-waiting(operation, event, statuses)`**: paths that answer with the given statuses publish the event fire-and-forget, through a bounded buffer. A publish that waits for the queue keeps half the credit, and an unbounded buffer three quarters.
+- **`event-consumed(operation, event)`**: the operation publishes the event, and a consumer of it is ready to run. A consumer is otherwise optional (a design may do the work another way), so this check is what makes counting required in S8.
+- **`idempotent-consumer-writes(operation)`**: on a consumer's successful paths, every increment comes after a conditional insert that recorded the message as new, keyed by something other than what is counted. Writes that replace (window totals) pass as they are.
+
+Increments have their own effect (`increment`), which step matchers can name. Step matchers can also ask for aggregated writes (`aggregated: true`) and fire-and-forget publishes (`fireAndForget: true`). Estimates (the estimation gym) are judged separately and never affect scenario scores.
+
 **Metric checks** (from the simulation, per environment)
 - `p99-below(op, ms)`, `p50-below(op, ms)`.
 - `error-rate-below(op, rate, environment)`.

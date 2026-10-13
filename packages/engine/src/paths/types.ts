@@ -17,6 +17,14 @@ export interface CallPathStep {
   readonly event: string | undefined;
   /** For store reads: concurrent misses for a key share one read. */
   readonly coalesce?: boolean;
+  /** For counts and totals in consumers: what arrives per key is summed over this window, then written once. */
+  readonly aggregateSec?: number;
+  /** For increments: each key's count is spread over this many rows. */
+  readonly counterShards?: number;
+  /** For publishes: the message goes to a local buffer and the request continues at once. */
+  readonly fireAndForget?: boolean;
+  /** For fire-and-forget publishes: messages held while the queue is unreachable. */
+  readonly bufferSize?: number;
   readonly outcome: string;
 }
 

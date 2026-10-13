@@ -5,14 +5,16 @@ import {
   liveStepIds,
   type Step,
 } from "@archdrill/model";
-import { CornerDownRight, Plus, Trash2, Unlink } from "lucide-react";
+import { CornerDownRight, Plus, SlidersHorizontal, Trash2, Unlink } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { stepNumbers } from "../../canvas/projection";
 import { useAttemptStore } from "../../state/store";
 import { operationById, runsInBackground } from "../../state/triggers";
 import { type Attach, type Slot, useUi } from "../../state/ui-store";
 import { OutcomeChip } from "../../ui/outcome";
+import { Button } from "../../ui/primitives";
 import { AddStepForm } from "./AddStepForm";
+import { hasTunableParams, paramsUpdate, StepParams, type TunableValues } from "./StepParams";
 import { stepTitle } from "./step-label";
 
 interface TreeContext {
@@ -193,6 +195,8 @@ function StepRow({
   const inserting = slot?.before === stepId && slot.operation === operation;
   const isLeaf = step.type === "respond";
   const [choosing, setChoosing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const tunable = step.type === "call" && hasTunableParams(step.action);
   const continuations = isLeaf ? [] : distinctContinuations(step, attempt);
   const remove = (bypass?: string) => {
     setChoosing(false);
@@ -221,6 +225,11 @@ function StepRow({
           {stepTitle(step, attempt, ctx.background)}
         </span>
         <span className="ml-auto flex gap-0.5 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100">
+          {tunable && (
+            <IconButton label="Edit this step's settings" onClick={() => setEditing(!editing)}>
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </IconButton>
+          )}
           {!isLeaf && (
             <IconButton
               label="Insert a step before this one"
@@ -234,6 +243,15 @@ function StepRow({
           </IconButton>
         </span>
       </div>
+      {editing && step.type === "call" && (
+        <StepSettings
+          operation={operation}
+          stepId={stepId}
+          step={step}
+          background={ctx.background}
+          onClose={() => setEditing(false)}
+        />
+      )}
       {choosing && (
         <div className="flex flex-col gap-1 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs">
           <p className="font-medium text-rose-900">Remove this step and keep what follows…</p>
@@ -365,5 +383,48 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+/** Edits a call step's parameters; changes apply together, as one undoable change. */
+function StepSettings({
+  operation,
+  stepId,
+  step,
+  background,
+  onClose,
+}: {
+  readonly operation: string;
+  readonly stepId: string;
+  readonly step: Extract<Step, { type: "call" }>;
+  readonly background: boolean;
+  readonly onClose: () => void;
+}) {
+  const dispatch = useAttemptStore((s) => s.dispatch);
+  const [values, setValues] = useState<TunableValues>(step);
+  const apply = () => {
+    dispatch("updateStep", { operation, stepId, ...paramsUpdate(step.action, values, background) });
+    onClose();
+  };
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-md border border-sky-300 bg-sky-50 p-3"
+      data-testid="step-settings"
+    >
+      <StepParams
+        action={step.action}
+        values={values}
+        onChange={setValues}
+        background={background}
+      />
+      <div className="flex gap-2">
+        <Button variant="primary" onClick={apply}>
+          Apply
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }

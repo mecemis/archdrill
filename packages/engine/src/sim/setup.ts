@@ -62,6 +62,13 @@ export interface OperationModel {
   readonly ingress: readonly string[];
   /** Events the operation's flow publishes. */
   readonly publishes: ReadonlySet<string>;
+  /** Popularity of the keys requests address, for handlers that aggregate per key. */
+  readonly keyPopularity: Zipf | undefined;
+  /**
+   * Steps on entities keyed by something other than the request's key (an
+   * event id rather than a link code): a hot key does not make them hot.
+   */
+  readonly unkeyed: ReadonlySet<string>;
 }
 
 export interface CacheSpec {
@@ -144,6 +151,7 @@ export function buildOperations(
     rate,
     analysis,
     classes,
+    ...requestKeys(analysis, workload, ctx.problem),
     ingress: (analysis.ingress?.components ?? []).filter((id) => {
       const c = ctx.attempt.architecture.components.find((x) => x.id === id);
       return c ? !ctx.catalog.capabilities(c.kind, c.flavor).has("traffic-source") : false;
@@ -164,6 +172,37 @@ export function buildOperations(
     }
   }
   return publishersFirst(models);
+}
+
+/** The entity a request addresses: its workload's, or for a consumer its event's. */
+function requestEntity(operation: Operation, workload: Workload, problem: Problem) {
+  const trigger = operation.trigger;
+  const name =
+    trigger.type === "event"
+      ? problem.events.find((e) => e.id === trigger.event)?.entity
+      : workload.operations[operation.id]?.entity;
+  return name === undefined ? undefined : problem.entities.find((e) => e.name === name);
+}
+
+function requestKeys(
+  analysis: OperationAnalysis,
+  workload: Workload,
+  problem: Problem,
+): Pick<OperationModel, "keyPopularity" | "unkeyed"> {
+  const entity = requestEntity(analysis.operation, workload, problem);
+  const keyOf = (name: string) => problem.entities.find((e) => e.name === name)?.key;
+  const unkeyed = new Set<string>();
+  for (const path of analysis.paths) {
+    for (const step of path.steps) {
+      if (step.kind === "call" && step.entity && entity && keyOf(step.entity) !== entity.key) {
+        unkeyed.add(step.stepId);
+      }
+    }
+  }
+  return {
+    keyPopularity: entity ? workload.keys[entity.name]?.existing : undefined,
+    unkeyed,
+  };
 }
 
 function publishedEvents(analysis: OperationAnalysis): Set<string> {

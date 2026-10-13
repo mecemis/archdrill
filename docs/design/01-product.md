@@ -16,7 +16,7 @@ The product answers one question well: *"If an interviewer pushed on this part o
 ## Core loop
 
 1. **Read the brief.** Functional and non-functional requirements, scale numbers, constraints.
-2. **Estimate** (optional, phase 2). Back-of-envelope numbers are checked within tolerance bands.
+2. **Estimate** (optional). Back-of-envelope numbers are checked within tolerance bands (the estimation gym, M11).
 3. **Build the topology.** Place components from the catalog on the canvas, wire connections, and configure them (sizes, replicas, shards, TTLs, replication, policies).
 4. **Work through scenarios in order.** For each one:
    - read the scenario story: what the interviewer is pushing on, the workload, and any faults;

@@ -22,6 +22,7 @@ Register a new pack in `packages/content/src/index.ts`, and its corpus in `packa
   - `{ type: schedule, description: … }` makes it a background job.
 - `events`: things that happen to an entity and can be published to a queue (`{ id, label, entity }`).
 - `decisionPoints`: trade-offs a diagram cannot show, with options and an optional `default` the simulation assumes until the candidate decides.
+- `estimates`: back-of-envelope questions for the estimation gym. Each has a `question`, a `kind` (`count`, `rate`, `bytes` or `byte-rate`), the `answer` in base units (items, bytes, per second), a `tolerance` factor (2 by default) and a `derivation` shown once the candidate has answered. State in the question any number the brief does not give. Derived numbers in `scale` notes are hidden until the estimates are answered.
 - `scenarios`: the scenario ids, in order.
 
 ## A scenario
@@ -81,6 +82,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 | `overprovisioned`, `autoscaling-configured` | Fleet sizing |
 | `recognize-strategy`, `decision-excludes` | Approaches and decisions |
 | `unsafe-content-stopped` | New content is checked before or after it is stored |
+| `no-sync-write-on-read-path`, `publishes-without-waiting`, `event-consumed`, `idempotent-consumer-writes` | Reads stay reads; events are published without waiting and consumed; increments survive redelivery |
 
 `validateScenarioConfig` rejects unknown checks, invalid parameters, unknown operations and requirements, and workload mistakes; the content tests run it for every scenario.
 

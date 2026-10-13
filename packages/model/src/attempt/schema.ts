@@ -10,6 +10,8 @@ export const MAX_REPLICAS = 1000;
 export const MAX_SHARDS = 1024;
 export const MAX_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 10;
+export const MAX_AGGREGATE_SEC = 3600;
+export const MAX_BUFFER_MESSAGES = 100_000_000;
 
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 export type Position = z.infer<typeof PositionSchema>;
@@ -88,6 +90,14 @@ export const CallStepSchema = z.object({
   event: IdSchema.optional(),
   /** For store reads: concurrent reads of the same key in one instance share one call (single-flight). */
   coalesce: z.boolean().optional(),
+  /** For counts and totals in consumers: sum what arrives per key over this many seconds, then write once. */
+  aggregateSec: z.number().int().min(1).max(MAX_AGGREGATE_SEC).optional(),
+  /** For increments: spread each key's count over this many rows. */
+  counterShards: z.number().int().min(2).max(MAX_SHARDS).optional(),
+  /** For publishes: hand the message to a local buffer and continue without waiting. */
+  fireAndForget: z.boolean().optional(),
+  /** For fire-and-forget publishes: messages held while the queue is unreachable. */
+  bufferSize: z.number().int().min(1).max(MAX_BUFFER_MESSAGES).optional(),
   next: NextSchema,
 });
 export type CallStep = z.infer<typeof CallStepSchema>;
@@ -135,6 +145,8 @@ export const AttemptSchema = z.object({
   architecture: ArchitectureSchema,
   flows: z.array(FlowSchema).default([]),
   decisions: z.record(IdSchema, IdSchema).default({}),
+  /** The candidate's back-of-envelope answers, by estimate id, in base units. */
+  estimates: z.record(IdSchema, z.number().positive()).default({}),
   /** Presentation only. Never read by analysis or evaluation. */
   layout: z.record(IdSchema, PositionSchema).default({}),
 });
@@ -152,6 +164,7 @@ export function emptyAttempt(problemId: string, problemVersion: number): Attempt
     architecture: { components: [], connections: [] },
     flows: [],
     decisions: {},
+    estimates: {},
     layout: {},
   };
 }

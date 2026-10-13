@@ -13,6 +13,7 @@ import {
   setConnectionMode,
   setConnectionPolicy,
   setDecision,
+  setEstimate,
   updateComponent,
 } from "./architecture";
 import {
@@ -45,6 +46,7 @@ export const COMMANDS = {
   setConnectionMode,
   setConnectionPolicy,
   setDecision,
+  setEstimate,
   createFlow,
   setFlowHandler,
   removeFlow,

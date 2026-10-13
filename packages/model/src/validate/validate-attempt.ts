@@ -12,6 +12,7 @@ import {
   actionTakesParam,
   CONDITIONAL_OUTCOMES,
 } from "../catalog/actions";
+import { canHandle } from "../catalog/capabilities";
 import type { CatalogIndex } from "../catalog/schema";
 import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -213,11 +214,14 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
     ];
   }
   const issues: Issue[] = [];
-  if (!ctx.catalog.capabilities(handler.kind, handler.flavor).has("stateless-compute")) {
+  const capabilities = ctx.catalog.capabilities(handler.kind, handler.flavor);
+  if (!canHandle(capabilities, operation.trigger.type === "event")) {
     issues.push(
       error(
         "flow-handler-not-compute",
-        `"${handler.label}" cannot handle requests; pick a service.`,
+        capabilities.has("stream-processing")
+          ? `"${handler.label}" processes messages from a queue; ${operation.label} needs a service.`
+          : `"${handler.label}" cannot handle requests; pick a service.`,
         location,
       ),
     );
@@ -416,8 +420,39 @@ function validateCallStep(
       ),
     );
   }
+  for (const [param, what] of NEW_PARAMS) {
+    if (step[param] !== undefined && !actionTakesParam(step.action, param)) {
+      issues.push(
+        error(
+          "step-unexpected-param",
+          `Step ${stepId} (${step.action}) does not take ${what}.`,
+          loc,
+        ),
+      );
+    }
+  }
+  if (step.bufferSize !== undefined && !step.fireAndForget) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} only buffers messages when it publishes fire-and-forget.`,
+        loc,
+      ),
+    );
+  }
   const trigger = ctx.problem.operations.find((o) => o.id === flow.operation)?.trigger;
-  if ((step.batchSize ?? 1) > 1 && action.effect !== "allocate" && trigger?.type === "request") {
+  if (step.aggregateSec !== undefined && trigger?.type === "request") {
+    issues.push(
+      error(
+        "step-aggregate-in-request",
+        `Step ${stepId} would hold the request until its aggregation window closes. Aggregate in a consumer instead.`,
+        loc,
+      ),
+    );
+  }
+  // A fire-and-forget publish fills its batch in the background; the request does not wait for it.
+  const waitsForBatch = action.effect !== "allocate" && !step.fireAndForget;
+  if ((step.batchSize ?? 1) > 1 && waitsForBatch && trigger?.type === "request") {
     issues.push(
       error(
         "step-batch-in-request",
@@ -435,6 +470,14 @@ function validateCallStep(
   }
   return issues;
 }
+
+/** Optional parameters checked the same way, with how messages name them. */
+const NEW_PARAMS = [
+  ["aggregateSec", "an aggregation window"],
+  ["counterShards", "counter shards"],
+  ["fireAndForget", "fire-and-forget"],
+  ["bufferSize", "a buffer size"],
+] as const;
 
 function validateStepEntity(
   stepId: string,

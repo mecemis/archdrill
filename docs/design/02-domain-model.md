@@ -183,7 +183,7 @@ Attempt
 │   └── connections[]  { id, from, to, mode: sync|async, protocol, policy }
 ├── flows[]            one per operation (shared by all scenarios)
 ├── decisions{}        decisionPointId → option (+ optional note)
-├── estimates{}        (phase 2)
+├── estimates{}        estimateId → the candidate's answer, in base units (M11)
 ├── layout{}           componentId → {x, y}   (presentation only; never evaluated)
 └── history            snapshots taken when a scenario first passes
 ```
