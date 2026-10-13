@@ -97,9 +97,10 @@ describe("scheduled jobs", () => {
 
     // Two calls a second, each a little more work than a single delete.
     expect(batched.components.get("db")?.writeLoad).toBeCloseTo(2 * (1 + BATCH_ITEM_COST * 99), 6);
-    // A batch of 100 fills in half a second; an item waits a quarter second on average.
-    expect(purge?.latency.mean).toBeGreaterThan(240);
-    expect(purge?.latency.mean).toBeLessThan(300);
+    // Each of the two workers fills its own batches of 100 in about a second,
+    // so an item waits about half a second on average.
+    expect(purge?.latency.mean).toBeGreaterThan(480);
+    expect(purge?.latency.mean).toBeLessThan(540);
   });
 
   it("fail a whole batch when its call fails", () => {

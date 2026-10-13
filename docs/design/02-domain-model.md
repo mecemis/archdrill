@@ -205,7 +205,7 @@ Attempt
 **As built (M6).** Every operation has a `trigger`:
 
 - `request`: a client request, with a method and a path (the default).
-- `event`: a consumer of an event the problem defines, for example `link-created` about `Link`. The consumer's handler must connect to a queue that some flow publishes the event to with `queue.publish`. Consumers are optional, since a design may do their work another way.
+- `event`: a consumer of an event the problem defines, for example `link-created` about `Link`. The consumer's handler connects to a queue that some reachable `queue.publish` step sends the event to; the connection may be drawn either way (the consumer polls, or the queue delivers). Consumers are optional, since a design may do their work another way; one that receives nothing gets a warning and never runs.
 - `schedule`: a background job that starts in its handler, for example purging expired links.
 
 Two capabilities arrive with them: `async-buffer` (a queue: a managed queue or Kafka) and `external` (a third-party API, here a URL-safety API with a request quota). `external.check` answers `clean`, `malicious` or `error`, and request classes can be `malicious`. A batch size on a step that is not an id allocation collects items: the step waits for the batch, so only consumers and jobs may use one.

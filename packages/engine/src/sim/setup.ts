@@ -153,7 +153,10 @@ export function buildOperations(
   }
   for (const operation of ctx.problem.operations) {
     const analysis = ready(operation.id);
-    if (analysis && operation.trigger.type === "event") models.push(model(analysis, 0, []));
+    // A consumer without a route to a queue that receives its event never runs.
+    if (analysis?.ingress && operation.trigger.type === "event") {
+      models.push(model(analysis, 0, []));
+    }
   }
   return publishersFirst(models);
 }

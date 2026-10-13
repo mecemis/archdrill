@@ -74,6 +74,17 @@ describe("findOperationRoute", () => {
     });
   });
 
+  it("accepts a consumer connection drawn from the queue to the consumer", () => {
+    const attempt = applyCommand(asyncAttempt(), "reverseConnection", {
+      id: "worker--queue",
+    }).attempt;
+
+    expect(routeOf(attempt, "scan-link", "worker")).toEqual({
+      components: ["queue", "worker"],
+      connections: ["queue--worker"],
+    });
+  });
+
   it("starts a scheduled job in its own handler", () => {
     expect(routeOf(asyncAttempt(), "purge-expired", "worker")).toEqual({
       components: ["worker"],
@@ -89,6 +100,23 @@ describe("findOperationRoute", () => {
     }).attempt;
 
     expect(routeOf(attempt, "scan-link", "worker")).toBeNull();
+  });
+
+  it("ignores a publish step that no request reaches", () => {
+    const attempt = applyCommand(asyncAttempt(), "linkOutcome", {
+      operation: "create-link",
+      stepId: "insert",
+      outcome: "ok",
+      target: "r201",
+    }).attempt;
+    const unreachable = applyCommand(attempt, "linkOutcome", {
+      operation: "create-link",
+      stepId: "insert-alias",
+      outcome: "ok",
+      target: "r201",
+    }).attempt;
+
+    expect(routeOf(unreachable, "scan-link", "worker")).toBeNull();
   });
 
   it("routes requests from a client as before", () => {

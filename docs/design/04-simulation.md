@@ -122,7 +122,7 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
 - *Deliveries.* The queue delivers each message at least once. A message whose processing ends without a success status is delivered again, up to five times, then dead-lettered. Failures are taken as correlated (a fault, an overloaded dependency), so a failing message fails on every delivery; its path carries five times the load.
 - *Jobs.* A scheduled job's rate is its items per second (expired links to purge), and its work starts in its handler.
 - *Backlog.* Consumers and jobs do not reject work when their handler or queue is saturated; they fall behind. The share a request would have lost to overload becomes backlog growth, reported per operation.
-- *Lag.* For consumers and jobs, latency is the lag from when the item is ready until it is done. It includes the queue's delivery and the wait for a batch: uniform between zero and the time the batch takes to fill, at most five seconds.
+- *Lag.* For consumers and jobs, latency is the lag from when the item is ready until it is done. It includes the queue's delivery and the wait for a batch: uniform between zero and the time the batch takes to fill, at most five seconds. Every instance of the handler fills its own batches, so more instances mean slower batches.
 - *Batches that collect items.* A batched delete or URL check is one call per batch, fails for the whole batch, and costs `1 + 0.05·(size − 1)` single-item calls on its target: the per-call overhead dominates. Batched id allocation keeps its M3 semantics (fetched ahead, one request pays).
 
 ### 5. Path latency and percentiles

@@ -321,8 +321,9 @@ describe("validateAttempt for asynchronous work", () => {
   it("asks a consumer to connect to a queue that receives its event", () => {
     const attempt = mutate("removeConnection", { id: "worker--queue" }, asyncAttempt());
 
-    const issue = errors(attempt).find((i) => i.code === "flow-handler-unreachable");
-    expect(issue?.message).toMatch(/does not consume link-created/);
+    const issue = validateAttempt(attempt, ctx).find((i) => i.code === "flow-consumer-idle");
+    expect(issue?.severity).toBe("warning");
+    expect(issue?.message).toMatch(/receives no link-created messages/);
   });
 
   it("does not let a consumer receive an event that nobody publishes", () => {
@@ -332,7 +333,7 @@ describe("validateAttempt for asynchronous work", () => {
       asyncAttempt(),
     );
 
-    expect(codes(attempt)).toContain("flow-handler-unreachable");
+    expect(codes(attempt)).toContain("flow-consumer-idle");
   });
 
   it("rejects publishing an event the problem does not define", () => {

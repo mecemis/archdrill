@@ -566,12 +566,13 @@ mutants:
 
   - id: consumer-not-subscribed
     base: postgres-redis-cache-aside
-    description: The worker is not connected to the queue it is supposed to consume.
+    description: The worker is not connected to the queue it is supposed to consume, so new links pile up unscanned.
     apply:
       - removeConnection: { id: worker--link-events }
     expect:
       scenario: s7-edge-cases
-      invalid: [flow-handler-unreachable]
+      fails: [unsafe-urls-stopped]
+      band: not-passing
 
   - id: delete-on-read
     base: postgres-redis-cache-aside

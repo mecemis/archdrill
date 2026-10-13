@@ -36,7 +36,8 @@ function scannedEvents(ctx: CheckContext, entity: string): Map<string, string> {
   const scanned = new Map<string, string>();
   for (const analysis of ctx.analysis.operations.values()) {
     const trigger = analysis.operation.trigger;
-    if (trigger.type !== "event" || analysis.status !== "ready") continue;
+    // Only a consumer that receives the event's messages scans anything.
+    if (trigger.type !== "event" || analysis.status !== "ready" || !analysis.ingress) continue;
     const disables = analysis.paths.some(
       (path) =>
         isSuccessPath(path, analysis.operation) &&

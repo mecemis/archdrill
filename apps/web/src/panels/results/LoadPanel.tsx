@@ -102,11 +102,17 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
                   )}
                 </td>
                 <td>{compact(op.rate)}/s</td>
-                <td className={op.successRate < 0.9999 ? "font-semibold text-rose-700" : ""}>
-                  {percent(op.successRate, 2)}
-                </td>
+                {op.rate > 0 ? (
+                  <td className={op.successRate < 0.9999 ? "font-semibold text-rose-700" : ""}>
+                    {percent(op.successRate, 2)}
+                  </td>
+                ) : (
+                  <td className="text-zinc-500">nothing arrives</td>
+                )}
                 {(["p50", "p95", "p99"] as const).map((p) => (
-                  <td key={p}>{op.successRate > 0 ? milliseconds(op.latency[p]) : "—"}</td>
+                  <td key={p}>
+                    {op.rate > 0 && op.successRate > 0 ? milliseconds(op.latency[p]) : "—"}
+                  </td>
                 ))}
               </tr>
             );

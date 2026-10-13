@@ -254,8 +254,9 @@ export function propagate(
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          add(loads, step.target, attempts * reach * callCost(step), write);
-          if (cls.hotKey) add(hotLoads, step.target, attempts * reach, write);
+          const work = attempts * reach * callCost(step);
+          add(loads, step.target, work, write);
+          if (cls.hotKey) add(hotLoads, step.target, work, write);
           retries.set(
             step.target,
             (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * reach,
@@ -291,6 +292,7 @@ export function propagate(
     // Redelivered messages pass the queue and the handler again.
     if (redelivered > 0) {
       for (const id of op.ingress) add(loads, id, redelivered, ingress.writes(op, id));
+      for (const connectionId of route?.connections ?? []) addTraffic(connectionId, redelivered);
     }
     resolved.set(op.operation.id, { rate, classes, redeliveries: redelivered });
   }

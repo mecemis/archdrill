@@ -267,9 +267,16 @@ export const BATCH_WINDOW_MS = 5000;
 /**
  * Time an item waits for its batch to fill: uniform between zero and the
  * time the batch takes to fill (or the batch window, if that is shorter).
+ * Every instance of the handler fills its own batches.
  */
-function batchWait(step: CallPathStep, path: Path, inputs: LatencyInputs): Moments {
-  const arrivals = inputs.batchArrivals.get(batchKey(path.operation, step.stepId)) ?? 0;
+function batchWait(
+  step: CallPathStep,
+  path: Path,
+  inputs: LatencyInputs,
+  batchers: number,
+): Moments {
+  const total = inputs.batchArrivals.get(batchKey(path.operation, step.stepId)) ?? 0;
+  const arrivals = total / Math.max(1, batchers);
   const size = step.batchSize ?? 1;
   if (arrivals <= 0 || size <= 1) return { mean: 0, variance: 0 };
   const fill = Math.min(BATCH_WINDOW_MS, ((size - 1) / arrivals) * 1000);
@@ -302,6 +309,7 @@ function pathLatency(
   ingressLatency: Moments,
   inputs: LatencyInputs,
   hotKey: boolean,
+  batchers: number,
 ): Moments {
   let total = ingressLatency;
   for (const step of path.steps) {
@@ -309,7 +317,7 @@ function pathLatency(
     const latency = callLatency(step, inputs, hotKey);
     if (collectsBatch(step)) {
       // Every item waits for its batch, then for the call that carries it.
-      total = addMoments(total, addMoments(batchWait(step, path, inputs), latency));
+      total = addMoments(total, addMoments(batchWait(step, path, inputs, batchers), latency));
     } else {
       // Batched allocation: only one request in a batch pays for the call.
       total = addMoments(total, mixMoments(latency, callShare(step)));
@@ -356,6 +364,7 @@ export function summarizeOperations(
       redeliveries: 0,
     };
     const trigger = op.operation.trigger.type;
+    const batchers = inputs.components.get(op.analysis.flow?.handler ?? "")?.instances ?? 1;
     const hops = op.analysis.ingress?.connections.length ?? 0;
     let ingressLatency: Moments = {
       mean: hops * NETWORK_HOP.mean,
@@ -378,7 +387,7 @@ export function summarizeOperations(
       }));
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
-      const moments = pathLatency(path, ingressLatency, inputs, false);
+      const moments = pathLatency(path, ingressLatency, inputs, false, batchers);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
@@ -389,7 +398,7 @@ export function summarizeOperations(
       if (succeeded) {
         mixture.push({ weight: pass * (probability - hotProbability), ...moments });
         if (hotProbability > 0) {
-          const hot = pathLatency(path, ingressLatency, inputs, true);
+          const hot = pathLatency(path, ingressLatency, inputs, true, batchers);
           mixture.push({ weight: pass * hotProbability, ...hot });
         }
       }

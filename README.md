@@ -48,6 +48,8 @@ Most system design practice tools reward placing familiar components (a cache, a
 
 ![Hot key: without a near cache, a viral link's lookups saturate one Redis shard (104%) while the tier averages 68%, and the finding names the hottest shard](docs/media/m5-hot-key.png)
 
+![Edge cases: a create flow checks URLs with a third-party API but lets the link through unchecked when the API errors; the gate finding names the three paths that store a link nobody checked](docs/media/m6-unchecked-path.png)
+
 ![Cache outage: Redis hangs, the redirect service sheds load at its 60,000 calls/s bulkhead, so redirects degrade to 20% while link creation on the same database stays at 100%](docs/media/m4-cache-outage.png)
 
 ![Write path: with 7-character random codes and a single retry, 0.2% of creates collide twice at 5-year occupancy; the finding names the conflict step, and the Decisions panel shows the recognised approach](docs/media/m3-write-path.png)

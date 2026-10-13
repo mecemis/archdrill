@@ -224,14 +224,19 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
   }
   if (!findOperationRoute(operation, attempt, ctx.catalog, handler.id)) {
     const trigger = operation.trigger;
+    // A consumer that receives nothing never runs; the design can still be judged without it.
     issues.push(
-      error(
-        "flow-handler-unreachable",
-        trigger.type === "event"
-          ? `"${handler.label}" does not consume ${trigger.event}. Connect it to a queue that a flow publishes ${trigger.event} to.`
-          : `No client can reach "${handler.label}". Connect a client to it, directly or through a load balancer.`,
-        location,
-      ),
+      trigger.type === "event"
+        ? warning(
+            "flow-consumer-idle",
+            `"${handler.label}" receives no ${trigger.event} messages, so this consumer never runs. Publish ${trigger.event} to a queue in another flow and connect "${handler.label}" to that queue.`,
+            location,
+          )
+        : error(
+            "flow-handler-unreachable",
+            `No client can reach "${handler.label}". Connect a client to it, directly or through a load balancer.`,
+            location,
+          ),
     );
   }
   issues.push(...validateFlowGraph(flow, attempt));
