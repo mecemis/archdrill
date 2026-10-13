@@ -20,7 +20,7 @@ export default defineConfig({
       use: { baseURL: `http://localhost:${DEV_PORT}` },
     },
     {
-      // The production build, with the headers Cloudflare Pages will send.
+      // The production build, served the way `pnpm serve` serves it.
       name: "production",
       testMatch: /production\.spec\.ts/,
       use: { baseURL: `http://localhost:${PRODUCTION_PORT}` },
@@ -33,7 +33,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: `pnpm --filter @archdrill/web exec vite build --outDir dist-e2e --emptyOutDir && pnpm --filter @archdrill/web exec vite preview --outDir dist-e2e --port ${PRODUCTION_PORT} --strictPort`,
+      command: `pnpm --filter @archdrill/web exec vite build --outDir dist-e2e --emptyOutDir && pnpm --filter @archdrill/web exec vite preview --outDir dist-e2e --port ${PRODUCTION_PORT}`,
       url: `http://localhost:${PRODUCTION_PORT}`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
