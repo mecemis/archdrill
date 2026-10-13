@@ -21,7 +21,7 @@ export function Header() {
 
   return (
     <header className="flex h-12 items-center gap-4 border-b border-zinc-200 bg-white px-4">
-      <h1 className="text-sm font-semibold tracking-tight text-zinc-900">
+      <h1 className="shrink-0 whitespace-nowrap text-sm font-semibold tracking-tight text-zinc-900">
         ArchDrill <span className="font-normal text-zinc-500">· {activePack.problem.title}</span>
       </h1>
       <nav aria-label="Scenarios" className="flex min-w-0 gap-1 overflow-x-auto">
@@ -47,7 +47,10 @@ export function Header() {
                 aria-hidden="true"
               />
               <span className="sr-only">{passing ? "(passing)" : "(not passing yet)"}</span>S
-              {scenario.order} {scenario.title}
+              {scenario.order}{" "}
+              <span className={scenario.id === scenarioId ? "" : "max-w-[8rem] truncate"}>
+                {scenario.title}
+              </span>
               {regression && (
                 <span className="rounded bg-rose-100 px-1 text-xs font-semibold text-rose-700">
                   ↓{regression.from - regression.to}

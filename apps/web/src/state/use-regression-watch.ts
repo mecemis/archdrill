@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useEvaluation } from "./evaluation";
-import { describeRegression, useRegressions } from "./regressions";
+import { describeRegression, describeRegressions, useRegressions } from "./regressions";
 import { useAttemptStore } from "./store";
 import { useToasts } from "./toasts";
 import { useUi } from "./ui-store";
@@ -17,8 +17,11 @@ export function useRegressionWatch(): void {
     const added = useRegressions
       .getState()
       .observe(evaluation, generation, useUi.getState().scenarioId);
-    for (const [id, regression] of added) {
-      useToasts.getState().notify(describeRegression(id, regression));
+    const [first] = added;
+    if (added.length === 1 && first) {
+      useToasts.getState().notify(describeRegression(...first));
+    } else if (added.length > 1) {
+      useToasts.getState().notify(describeRegressions(added));
     }
   }, [evaluation, generation]);
   useEffect(() => {

@@ -92,3 +92,12 @@ export function describeRegression(scenarioId: string, regression: Regression): 
   const why = regression.reason ? `: ${regression.reason}` : "";
   return `${name} dropped from ${regression.from} to ${regression.to}${why}.`;
 }
+
+/** One line for several scenarios at once: "This change lowered 3 scenarios: S2 100→40, …". */
+export function describeRegressions(regressions: readonly [string, Regression][]): string {
+  const parts = regressions.map(([id, r]) => {
+    const order = activePack.scenarios.find((s) => s.id === id)?.order;
+    return `${order === undefined ? id : `S${order}`} ${r.from}→${r.to}`;
+  });
+  return `This change lowered ${regressions.length} scenarios: ${parts.join(", ")}.`;
+}

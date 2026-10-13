@@ -30,8 +30,14 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
         <span className="truncate text-sm font-semibold text-zinc-900">{data.label}</span>
         {(data.replicable || (data.shards ?? 1) > 1) && (
           <span
-            className="ml-auto rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700 tabular-nums"
-            title={data.shards !== null ? "shards × replicas" : "replicas"}
+            className="ml-auto shrink-0 whitespace-nowrap rounded bg-zinc-100 px-1.5 text-xs font-medium text-zinc-700 tabular-nums"
+            title={
+              data.autoscaleMax !== null
+                ? "replicas, autoscaling up to the maximum"
+                : data.shards !== null
+                  ? "shards × replicas"
+                  : "replicas"
+            }
           >
             {data.shards !== null && data.shards > 1
               ? `${data.shards}×${data.replicas}`

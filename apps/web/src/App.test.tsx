@@ -348,6 +348,13 @@ describe("App", () => {
 
     expect(api()?.autoscale?.max).toBe(40);
     expect(screen.getByText("Replicas (minimum) (3)")).toBeDefined();
+
+    // Undo works with the checkbox still focused.
+    const toggle = screen.getByRole("checkbox", { name: "Autoscale with load" });
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: "z", metaKey: true });
+    fireEvent.keyDown(toggle, { key: "z", metaKey: true });
+    expect(api()?.autoscale).toBeUndefined();
   });
 
   it("records interview decisions and shows the approach the flow implements", () => {

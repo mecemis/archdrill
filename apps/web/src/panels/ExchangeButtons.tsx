@@ -40,17 +40,21 @@ export function ExchangeButtons() {
 
   return (
     <>
-      <Button variant="ghost" onClick={download} title="Save the design to a file">
+      <Button
+        variant="ghost"
+        onClick={download}
+        title="Export: save the design to a file"
+        aria-label="Export design"
+      >
         <Download className="h-4 w-4" />
-        Export
       </Button>
       <Button
         variant="ghost"
         onClick={() => input.current?.click()}
-        title="Load a design from a file"
+        title="Import: load a design from a file"
+        aria-label="Import design"
       >
         <Upload className="h-4 w-4" />
-        Import
       </Button>
       <input
         ref={input}

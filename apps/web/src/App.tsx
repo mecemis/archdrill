@@ -12,7 +12,8 @@ export function App() {
   useRegressionWatch();
   return (
     <ReactFlowProvider>
-      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_17rem] bg-zinc-50 text-zinc-900">
+      {/* One explicit column, so a crowded header scrolls instead of widening the page. */}
+      <div className="grid h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_17rem] bg-zinc-50 text-zinc-900">
         <Header />
         <div className="grid min-h-0 grid-cols-[18rem_minmax(0,1fr)_22rem]">
           <LeftPanel />
