@@ -4,8 +4,9 @@ title: URL Shortener
 levels: [senior, staff]
 brief: |
   Users submit long URLs and get short codes back. Anyone who opens a short
-  link is redirected to the long URL. Links can expire, and trust & safety can
-  disable abusive links. Traffic is heavily read-biased and link popularity is
+  link is redirected to the long URL. Links can expire, trust & safety can
+  disable abusive links, and links to phishing or malware sites must be
+  stopped. Traffic is heavily read-biased and link popularity is
   very skewed: a few links get most of the clicks.
 scale:
   - { label: Creates, value: "1,000 /s avg, ×3 peak", note: "158 B links over 5 years" }
@@ -17,6 +18,7 @@ requirements:
   - { id: FR-2, kind: functional, text: "Redirect a short code to its long URL." }
   - { id: FR-3, kind: functional, text: "Links may expire; an expired link no longer redirects." }
   - { id: FR-4, kind: functional, text: "A disabled (abusive) link stops redirecting within 60 seconds." }
+  - { id: FR-5, kind: functional, text: "A link to a known phishing or malware site is rejected, or stops redirecting within 60 seconds of its creation." }
   - { id: NFR-1, kind: non-functional, text: "Redirect p99 < 50 ms server-side; create p99 < 200 ms." }
   - { id: NFR-2, kind: non-functional, text: "Redirect availability 99.99%; create availability 99.9%." }
   - { id: NFR-3, kind: non-functional, text: "Codes are unique and not enumerable." }
@@ -55,6 +57,26 @@ operations:
     successStatuses: [200, 204, 404]
     requirements: [FR-4]
     introducedIn: s4-cache-outage
+  - id: purge-expired
+    label: Purge expired links
+    trigger:
+      type: schedule
+      description: Runs continuously in the background and deletes links whose expiry has passed.
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-3]
+    introducedIn: s7-edge-cases
+  - id: scan-link
+    label: Scan new link
+    trigger: { type: event, event: link-created }
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-5]
+    introducedIn: s7-edge-cases
+events:
+  - { id: link-created, label: Link created, entity: Link }
 decisionPoints:
   - id: code-strategy
     question: How are short codes generated?
@@ -94,4 +116,12 @@ decisionPoints:
       - { id: "404", label: 404 Not Found }
       - { id: "410", label: 410 Gone }
     requirements: [FR-3]
-scenarios: [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure]
+  - id: code-reuse
+    question: Can the code of an expired link be given to a new link?
+    options:
+      - { id: never, label: Never }
+      - { id: after-grace, label: After a grace period longer than every cache TTL }
+      - { id: immediately, label: As soon as the link expires }
+    requirements: [FR-3, NFR-3]
+scenarios:
+  [s1-create, s2-redirect, s3-cache, s4-cache-outage, s5-hot-keys, s6-dependency-failure, s7-edge-cases]

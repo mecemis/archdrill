@@ -1,4 +1,5 @@
 import type { ComponentMetrics, EnvironmentMetrics } from "@archdrill/engine";
+import { MAX_DELIVERIES } from "@archdrill/engine";
 import { AlertTriangle } from "lucide-react";
 import { activePack } from "../../state/content";
 import { useScenarioLoad } from "../../state/evaluation";
@@ -52,7 +53,26 @@ function LoadDetails({ metrics }: { readonly metrics: EnvironmentMetrics }) {
   );
 }
 
+/** Backlog growth below this share of the arrival rate counts as keeping up. */
+const BACKLOG_TOLERANCE = 1e-3;
+
 function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
+  const operations = [...metrics.operations.values()];
+  const background = operations.filter((op) => op.trigger !== "request");
+  const labelOf = (id: string) =>
+    activePack.problem.operations.find((o) => o.id === id)?.label ?? id;
+  const notes = background.flatMap((op) => {
+    const lines: string[] = [];
+    if (op.backlogGrowth > BACKLOG_TOLERANCE * op.rate)
+      lines.push(
+        `${labelOf(op.operation)} falls behind by ${compact(op.backlogGrowth)}/s: its backlog grows and the lag with it.`,
+      );
+    if (op.redeliveries > 0.5)
+      lines.push(
+        `${labelOf(op.operation)} gets ${compact(op.redeliveries)}/s failed messages again; after ${MAX_DELIVERIES} deliveries they go to a dead-letter queue.`,
+      );
+    return lines;
+  });
   return (
     <section>
       <h4 className="mb-1 text-xs font-semibold text-zinc-600">Operations</h4>
@@ -68,25 +88,48 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
           </tr>
         </thead>
         <tbody>
-          {[...metrics.operations.values()].map((op) => {
-            const label =
-              activePack.problem.operations.find((o) => o.id === op.operation)?.label ??
-              op.operation;
+          {operations.map((op) => {
+            const label = labelOf(op.operation);
             return (
               <tr key={op.operation} className="tabular-nums">
-                <td className="py-0.5">{label}</td>
-                <td>{compact(op.rate)}/s</td>
-                <td className={op.successRate < 0.9999 ? "font-semibold text-rose-700" : ""}>
-                  {percent(op.successRate, 2)}
+                <td className="py-0.5">
+                  {label}
+                  {op.trigger !== "request" && (
+                    <span className="text-xs text-zinc-500">
+                      {" "}
+                      · {op.trigger === "event" ? "consumer" : "job"}
+                    </span>
+                  )}
                 </td>
-                <td>{milliseconds(op.latency.p50)}</td>
-                <td>{milliseconds(op.latency.p95)}</td>
-                <td>{milliseconds(op.latency.p99)}</td>
+                <td>{compact(op.rate)}/s</td>
+                {op.rate > 0 ? (
+                  <td className={op.successRate < 0.9999 ? "font-semibold text-rose-700" : ""}>
+                    {percent(op.successRate, 2)}
+                  </td>
+                ) : (
+                  <td className="text-zinc-500">nothing arrives</td>
+                )}
+                {(["p50", "p95", "p99"] as const).map((p) => (
+                  <td key={p}>
+                    {op.rate > 0 && op.successRate > 0 ? milliseconds(op.latency[p]) : "—"}
+                  </td>
+                ))}
               </tr>
             );
           })}
         </tbody>
       </table>
+      {background.length > 0 && (
+        <p className="mt-1 text-xs text-zinc-500">
+          For consumers and jobs, latency is the lag from when the item is ready until it is done,
+          waiting for batches included.
+        </p>
+      )}
+      {notes.map((note) => (
+        <p key={note} className="mt-1 text-xs font-medium text-rose-700">
+          {note}
+        </p>
+      ))}
     </section>
   );
 }

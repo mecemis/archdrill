@@ -1,6 +1,8 @@
-import type { Architecture } from "../attempt/schema";
+import type { Architecture, Attempt } from "../attempt/schema";
+import { liveStepIds } from "../attempt/steps";
 import { INGRESS_CAPABILITIES } from "../catalog/capabilities";
 import type { CatalogIndex } from "../catalog/schema";
+import type { Operation } from "../problem/schema";
 
 export interface IngressRoute {
   /** Component ids from a client to the handler, inclusive. */
@@ -75,4 +77,50 @@ function buildRoute(
     link = previous.get(link.from);
   }
   return { components, connections };
+}
+
+/**
+ * Queues that carry messages about an event: the targets of the publish
+ * steps for it that a request can reach, in any flow.
+ */
+export function queuesFor(event: string, attempt: Attempt): Set<string> {
+  const queues = new Set<string>();
+  for (const flow of attempt.flows) {
+    for (const id of liveStepIds(flow, attempt)) {
+      const step = flow.steps[id];
+      if (step?.type === "call" && step.action === "queue.publish" && step.event === event) {
+        queues.add(step.target);
+      }
+    }
+  }
+  return queues;
+}
+
+/**
+ * How work reaches an operation's handler. Requests come from a client over
+ * the ingress route; messages come from a queue that the handler consumes
+ * (connected to a queue some flow publishes the event to, drawn either way:
+ * the consumer polls it, or the queue delivers to it); scheduled jobs start
+ * in the handler itself.
+ */
+export function findOperationRoute(
+  operation: Operation,
+  attempt: Attempt,
+  catalog: CatalogIndex,
+  handlerId: string,
+): IngressRoute | null {
+  const trigger = operation.trigger;
+  if (trigger.type === "request") return findIngressRoute(attempt.architecture, catalog, handlerId);
+  if (trigger.type === "schedule") return { components: [handlerId], connections: [] };
+  const queues = queuesFor(trigger.event, attempt);
+  const connection = [...attempt.architecture.connections]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .find(
+      (c) =>
+        c.mode === "sync" &&
+        ((c.from === handlerId && queues.has(c.to)) || (c.to === handlerId && queues.has(c.from))),
+    );
+  if (!connection) return null;
+  const queue = connection.from === handlerId ? connection.to : connection.from;
+  return { components: [queue, handlerId], connections: [connection.id] };
 }

@@ -21,6 +21,7 @@ const EFFECTS = [
   "populate",
   "populate-negative",
   "invalidate",
+  "publish",
 ] as const satisfies readonly ActionEffect[];
 
 /** Matches one step of a path. Every given field must match; omitted fields match anything. */
@@ -35,6 +36,8 @@ export const StepMatcherSchema = z.strictObject({
   batched: z.boolean().optional(),
   /** Matches calls to components of these kinds, e.g. an in-process `near-cache`. */
   targetKind: oneOrMany(z.string().min(1)).optional(),
+  /** Matches publish steps for these events. */
+  event: oneOrMany(z.string().min(1)).optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -73,6 +76,7 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
       matcher.effect ||
       matcher.entity ||
       matcher.targetKind ||
+      matcher.event ||
       matcher.batched !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
@@ -84,6 +88,9 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   if (matcher.entity && matcher.entity !== step.entity) return false;
   if (matcher.batched !== undefined && matcher.batched !== (step.batchSize ?? 1) > 1) return false;
   if (matcher.targetKind && !matcher.targetKind.includes(step.targetKind)) return false;
+  if (matcher.event && (step.event === undefined || !matcher.event.includes(step.event))) {
+    return false;
+  }
   return true;
 }
 

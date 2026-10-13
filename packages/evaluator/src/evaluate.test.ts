@@ -1,5 +1,11 @@
 import { type Attempt, ScenarioSchema } from "@archdrill/model";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
+import {
+  asyncAttempt,
+  cacheAsideAttempt,
+  createLinkAttempt,
+  testCatalogIndex,
+  testProblem,
+} from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { evaluateAttempt, type ScenarioResult } from "./evaluate";
 import { GATE_SCORE_CAP, SEVERITY_SCORE_CAPS } from "./score";
@@ -194,5 +200,49 @@ describe("evaluateAttempt", () => {
     const second = evaluateAttempt(cacheAsideAttempt(), input).scenarios;
 
     expect(second).toEqual(first);
+  });
+});
+
+describe("evaluateAttempt with optional consumers", () => {
+  const scenario = ScenarioSchema.parse({
+    id: "s7-edge-cases",
+    problemId: "url-shortener",
+    title: "Edge cases",
+    order: 7,
+    story: "Scan new links.",
+    focusOperations: ["create-link", "scan-link"],
+    dimensions: { security: 1 },
+    checks: [
+      {
+        id: "scan-retried",
+        use: "status-for-condition",
+        title: "Failed scans are retried",
+        dimension: "security",
+        why: "An acknowledged failure drops the message.",
+        fix: "Answer 503 on errors.",
+        params: {
+          operation: "scan-link",
+          when: { hasStep: { outcome: "error" } },
+          statuses: [503],
+        },
+      },
+    ],
+  });
+  const evaluateWith = (attempt: Attempt) =>
+    evaluateAttempt(attempt, { ...input, scenarios: [scenario] }).scenarios[0];
+
+  it("evaluates a design that handles the work without a consumer, skipping its checks", () => {
+    const result = evaluateWith(createLinkAttempt("kgs"));
+
+    expect(result?.status).toBe("evaluated");
+    if (result?.status !== "evaluated") return;
+    expect(result.checks[0]?.status).toBe("n/a");
+    expect(result.checks[0]?.message).toBe('This design does not use a "Scan new link" consumer.');
+  });
+
+  it("judges the consumer once the design has one", () => {
+    const result = evaluateWith(asyncAttempt());
+
+    expect(result?.status === "evaluated" && result.checks[0]?.status).toBe("pass");
   });
 });

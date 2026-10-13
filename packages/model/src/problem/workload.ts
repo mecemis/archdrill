@@ -32,6 +32,8 @@ export const RequestClassSchema = z
     aliasTaken: z.boolean().default(false),
     /** Every request of this class asks for the same key, such as a link that went viral. */
     hotKey: z.boolean().default(false),
+    /** The request carries a malicious URL (phishing, malware) that a safety check flags. */
+    malicious: z.boolean().default(false),
   })
   .refine((cls) => cls.customAlias || !cls.aliasTaken, {
     message: "aliasTaken only applies to requests with customAlias",

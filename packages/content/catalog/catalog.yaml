@@ -303,3 +303,55 @@ kinds:
             costPerHour: 0.17
         defaultSize: m
         notes: Writes go through the leader and a quorum. Keep it off the per-request path.
+
+  - id: queue
+    label: Message queue
+    description: Holds messages between the service that publishes them and the workers that consume them. Delivers every message at least once, so a consumer can see one twice.
+    capabilities: [async-buffer]
+    replicable: true
+    holdsData: false
+    flavors:
+      - id: managed-queue
+        label: Managed queue
+        description: Cloud-managed queue (for example Amazon SQS or Azure Service Bus), redundant across zones and scaling with demand.
+        managedRedundancy: true
+        requestCost: { readPerMillion: 0.4, writePerMillion: 0.4 }
+        sizes:
+          on-demand:
+            label: on-demand
+            capacityPerSec: { read: 1000000, write: 1000000 }
+            latencyMs: { base: 8, cv: 0.5 }
+            costPerHour: 0
+        defaultSize: on-demand
+        notes: You pay per request. Messages wait for days if consumers fall behind; a message that keeps failing is delivered a few times, then moved to a dead-letter queue.
+      - id: kafka
+        label: Kafka
+        description: Partitioned, replicated log on brokers you run (or a managed cluster). Run at least three brokers.
+        sizes:
+          m:
+            label: 4 vCPU broker
+            capacityPerSec: { read: 200000, write: 100000 }
+            latencyMs: { base: 3, cv: 0.5 }
+            costPerHour: 0.4
+        defaultSize: m
+        notes: Throughput per broker for small messages with replication factor 3. Consumers track their own offsets; at-least-once delivery is the default.
+
+  - id: external-api
+    label: External API
+    description: A third-party service you call over the internet. You do not control its capacity, latency or uptime.
+    capabilities: [external]
+    replicable: false
+    holdsData: false
+    flavors:
+      - id: url-safety
+        label: URL-safety API
+        description: Checks URLs against lists of phishing and malware sites (for example Google Safe Browsing or Web Risk).
+        managedRedundancy: true
+        sizes:
+          quota:
+            label: 5,000 requests/s quota
+            capacityPerSec: { read: 5000 }
+            latencyMs: { base: 50, cv: 0.6 }
+            costPerHour: 0
+        defaultSize: quota
+        notes: The quota is fixed per project; calls above it are rejected (HTTP 429). Each answer takes tens of milliseconds over the internet.

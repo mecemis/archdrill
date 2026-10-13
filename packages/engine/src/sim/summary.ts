@@ -1,4 +1,4 @@
-import { ACTIONS } from "@archdrill/model";
+import { ACTIONS, type RequestClass } from "@archdrill/model";
 import type { CallPathStep, Path } from "../paths/types";
 import type { CallModel } from "./calls";
 import { NETWORK_RTT_MS } from "./calls";
@@ -12,7 +12,7 @@ import {
   type WeightedMoments,
 } from "./math/gamma";
 import { queueWait } from "./math/queueing";
-import { callShare, type OutcomeState, outcomeProbability } from "./outcomes";
+import { callShare, collectsBatch, type OutcomeState, outcomeProbability } from "./outcomes";
 import type { CacheSpec, OperationModel } from "./setup";
 import { cacheKey } from "./setup";
 import type {
@@ -48,6 +48,20 @@ export interface Propagation {
   readonly traffic: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: calls, attempts and failures per second. */
   readonly calls: ReadonlyMap<string, CallTally>;
+  /** Per operation: its rate and classes (derived for consumers) and redeliveries per second. */
+  readonly operations: ReadonlyMap<string, ResolvedOperation>;
+  /** Items per second reaching each step that collects a batch, keyed by `batchKey`. */
+  readonly batchArrivals: ReadonlyMap<string, number>;
+}
+
+export interface ResolvedOperation {
+  readonly rate: number;
+  readonly classes: readonly RequestClass[];
+  readonly redeliveries: number;
+}
+
+export function batchKey(operation: string, stepId: string): string {
+  return `${operation}|${stepId}`;
 }
 
 export interface CallTally {
@@ -243,6 +257,30 @@ export interface LatencyInputs {
   readonly replicaAck: ReadonlyMap<string, number>;
   /** The caller's timeout for a call, if it set one. */
   readonly timeoutOf: (step: CallPathStep) => number | undefined;
+  /** Items per second reaching each step that collects a batch, keyed by `batchKey`. */
+  readonly batchArrivals: ReadonlyMap<string, number>;
+}
+
+/** A batch that is not full is sent anyway after this long. */
+export const BATCH_WINDOW_MS = 5000;
+
+/**
+ * Time an item waits for its batch to fill: uniform between zero and the
+ * time the batch takes to fill (or the batch window, if that is shorter).
+ * Every instance of the handler fills its own batches.
+ */
+function batchWait(
+  step: CallPathStep,
+  path: Path,
+  inputs: LatencyInputs,
+  batchers: number,
+): Moments {
+  const total = inputs.batchArrivals.get(batchKey(path.operation, step.stepId)) ?? 0;
+  const arrivals = total / Math.max(1, batchers);
+  const size = step.batchSize ?? 1;
+  if (arrivals <= 0 || size <= 1) return { mean: 0, variance: 0 };
+  const fill = Math.min(BATCH_WINDOW_MS, ((size - 1) / arrivals) * 1000);
+  return { mean: fill / 2, variance: fill ** 2 / 12 };
 }
 
 function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean): Moments {
@@ -271,12 +309,19 @@ function pathLatency(
   ingressLatency: Moments,
   inputs: LatencyInputs,
   hotKey: boolean,
+  batchers: number,
 ): Moments {
   let total = ingressLatency;
   for (const step of path.steps) {
     if (step.kind !== "call") continue;
-    // Batched allocation: only one request in a batch pays for the call.
-    total = addMoments(total, mixMoments(callLatency(step, inputs, hotKey), callShare(step)));
+    const latency = callLatency(step, inputs, hotKey);
+    if (collectsBatch(step)) {
+      // Every item waits for its batch, then for the call that carries it.
+      total = addMoments(total, addMoments(batchWait(step, path, inputs, batchers), latency));
+    } else {
+      // Batched allocation: only one request in a batch pays for the call.
+      total = addMoments(total, mixMoments(latency, callShare(step)));
+    }
   }
   return total;
 }
@@ -306,12 +351,20 @@ export function pathProbability(
 
 export function summarizeOperations(
   operations: readonly OperationModel[],
+  resolved: ReadonlyMap<string, ResolvedOperation>,
   state: OutcomeState,
   ingressPass: (op: OperationModel) => number,
   inputs: LatencyInputs,
 ): Map<string, OperationMetrics> {
   const result = new Map<string, OperationMetrics>();
   for (const op of operations) {
+    const { rate, classes, redeliveries } = resolved.get(op.operation.id) ?? {
+      rate: op.rate,
+      classes: op.classes,
+      redeliveries: 0,
+    };
+    const trigger = op.operation.trigger.type;
+    const batchers = inputs.components.get(op.analysis.flow?.handler ?? "")?.instances ?? 1;
     const hops = op.analysis.ingress?.connections.length ?? 0;
     let ingressLatency: Moments = {
       mean: hops * NETWORK_HOP.mean,
@@ -328,13 +381,13 @@ export function summarizeOperations(
     let unhandled = 0;
     let errorStatus = 0;
     for (const path of op.analysis.paths) {
-      const byClass = op.classes.map((cls) => ({
+      const byClass = classes.map((cls) => ({
         hot: cls.hotKey,
         p: cls.share * pathProbability(path, cls, state),
       }));
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
-      const moments = pathLatency(path, ingressLatency, inputs, false);
+      const moments = pathLatency(path, ingressLatency, inputs, false, batchers);
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
@@ -345,14 +398,18 @@ export function summarizeOperations(
       if (succeeded) {
         mixture.push({ weight: pass * (probability - hotProbability), ...moments });
         if (hotProbability > 0) {
-          const hot = pathLatency(path, ingressLatency, inputs, true);
+          const hot = pathLatency(path, ingressLatency, inputs, true, batchers);
           mixture.push({ weight: pass * hotProbability, ...hot });
         }
       }
     }
     result.set(op.operation.id, {
       operation: op.operation.id,
-      rate: op.rate,
+      trigger,
+      rate,
+      // Work that waits in a queue or a job's backlog is late, not lost.
+      backlogGrowth: trigger === "request" ? 0 : rate * (1 - pass),
+      redeliveries,
       successRate: pass * success,
       ingressRejectRate: 1 - pass,
       failures: {

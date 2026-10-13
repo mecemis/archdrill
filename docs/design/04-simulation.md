@@ -116,6 +116,15 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
 - *Hot-key latency.* Requests for the hot key queue at its shard, so their paths use that shard's latency in the latency mixture.
 - *Autoscaling.* An autoscaled service adds instances in the fixed point until utilisation is back at its target, between its minimum and maximum, and is billed and reported as whole instances. Scaling lag is not modelled (steady state); the discrete-event engine will show it.
 
+**Queues, consumers and jobs (as built, M6).**
+
+- *Consumer rate.* A consumer receives the messages its event's publishers publish (successful `queue.publish` steps), with the publishers' request classes, so a malicious create becomes a malicious message. Operations are ordered so publishers come first and one propagation pass knows every consumer's rate.
+- *Deliveries.* The queue delivers each message at least once. A message whose processing ends without a success status is delivered again, up to five times, then dead-lettered. Failures are taken as correlated (a fault, an overloaded dependency), so a failing message fails on every delivery; its path carries five times the load.
+- *Jobs.* A scheduled job's rate is its items per second (expired links to purge), and its work starts in its handler.
+- *Backlog.* Consumers and jobs do not reject work when their handler or queue is saturated; they fall behind. The share a request would have lost to overload becomes backlog growth, reported per operation.
+- *Lag.* For consumers and jobs, latency is the lag from when the item is ready until it is done. It includes the queue's delivery and the wait for a batch: uniform between zero and the time the batch takes to fill, at most five seconds. Every instance of the handler fills its own batches, so more instances mean slower batches.
+- *Batches that collect items.* A batched delete or URL check is one call per batch, fails for the whole batch, and costs `1 + 0.05·(size − 1)` single-item calls on its target: the per-call overhead dominates. Batched id allocation keeps its M3 semantics (fetched ahead, one request pays).
+
 ### 5. Path latency and percentiles
 
 - **Per path.** Path latency is the sum of its hop and node latencies. Means and variances add, and the path is moment-matched to a **Gamma** distribution. A rejected call fails fast: it costs the round trip, not the service time.

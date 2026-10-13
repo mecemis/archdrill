@@ -9,7 +9,9 @@ description: >-
   service absorbs viral links, both services autoscale between an
   average-day minimum and a spike maximum, and a gateway rate-limits
   creation. Cache calls time out after 20 ms behind a
-  circuit breaker; a KGS hands out keys in batches.
+  circuit breaker; a KGS hands out keys in batches. New links are published
+  to a managed queue; a worker scans them with the URL-safety API, disables
+  and evicts malicious ones, and purges expired links in batches.
 expect:
   s5-hot-keys: { minScore: 90 }
   s1-create: { minScore: 90 }
@@ -17,6 +19,7 @@ expect:
   s3-cache: { minScore: 90 }
   s4-cache-outage: { minScore: 90 }
   s6-dependency-failure: { minScore: 90 }
+  s7-edge-cases: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -51,6 +54,15 @@ attempt:
         replicas: 2
         data: [{ entity: Link }]
       - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2 }
+      - { id: link-events, kind: queue, flavor: managed-queue, label: Link events, size: on-demand }
+      - id: worker
+        kind: service
+        flavor: generic
+        label: Worker
+        size: s
+        replicas: 2
+        autoscale: { max: 8, targetUtilization: 0.7 }
+      - { id: safety, kind: external-api, flavor: url-safety, label: URL safety, size: quota }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--redirect-api, from: lb, to: redirect-api }
@@ -77,6 +89,23 @@ attempt:
         from: link-api
         to: kgs
         policy: { timeoutMs: 100, retries: 1 }
+      - id: link-api--link-events
+        from: link-api
+        to: link-events
+        policy: { timeoutMs: 100, retries: 1 }
+      - { id: worker--link-events, from: worker, to: link-events }
+      - id: worker--safety
+        from: worker
+        to: safety
+        policy: { timeoutMs: 500 }
+      - id: worker--links-db
+        from: worker
+        to: links-db
+        policy: { timeoutMs: 500 }
+      - id: worker--redis
+        from: worker
+        to: redis
+        policy: { timeoutMs: 20, circuitBreaker: true }
   flows:
     - operation: redirect
       handler: redirect-api
@@ -158,7 +187,7 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c409, error: c503 }
+          next: { ok: publish, conflict: c409, error: c503 }
         allocate:
           type: call
           target: kgs
@@ -170,7 +199,7 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: allocate-retry, error: c503 }
+          next: { ok: publish, conflict: allocate-retry, error: c503 }
         allocate-retry:
           type: call
           target: kgs
@@ -182,7 +211,13 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c503, error: c503 }
+          next: { ok: publish, conflict: c503, error: c503 }
+        publish:
+          type: call
+          target: link-events
+          action: queue.publish
+          event: link-created
+          next: { ok: c201, error: c503 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
@@ -206,7 +241,48 @@ attempt:
         d204: { type: respond, status: 204 }
         d404: { type: respond, status: 404 }
         d503: { type: respond, status: 503 }
-  decisions: { code-strategy: kgs, redirect-status: "302", replication-mode: semi-sync }
+    - operation: scan-link
+      handler: worker
+      root: check
+      steps:
+        check:
+          type: call
+          target: safety
+          action: external.check
+          next: { clean: s200, malicious: disable, error: s503 }
+        disable:
+          type: call
+          target: links-db
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: s200, error: s503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: s200, error: s503 }
+        s200: { type: respond, status: 200 }
+        s503: { type: respond, status: 503 }
+    - operation: purge-expired
+      handler: worker
+      root: delete
+      steps:
+        delete:
+          type: call
+          target: links-db
+          action: store.delete
+          entity: Link
+          batchSize: 500
+          next: { ok: p200, error: p503 }
+        p200: { type: respond, status: 200 }
+        p503: { type: respond, status: 503 }
+  decisions:
+    code-strategy: kgs
+    redirect-status: "302"
+    replication-mode: semi-sync
+    expired-status: "410"
+    code-reuse: never
   layout:
     visitors: { x: 0, y: 160 }
     lb: { x: 220, y: 160 }
@@ -217,3 +293,6 @@ attempt:
     redis: { x: 700, y: 0 }
     links-db: { x: 700, y: 180 }
     kgs: { x: 940, y: 460 }
+    link-events: { x: 940, y: 320 }
+    worker: { x: 1160, y: 320 }
+    safety: { x: 1380, y: 320 }

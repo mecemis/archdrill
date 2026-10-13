@@ -159,6 +159,49 @@ export const testCatalog: Catalog = CatalogSchema.parse({
         { id: "dynamodb", label: "DynamoDB", description: "DynamoDB.", managedRedundancy: true },
       ],
     },
+    {
+      id: "queue",
+      label: "Message queue",
+      description: "Holds messages for consumers.",
+      capabilities: ["async-buffer"],
+      replicable: true,
+      holdsData: false,
+      flavors: [
+        {
+          id: "managed-queue",
+          label: "Managed queue",
+          description: "Managed queue.",
+          managedRedundancy: true,
+          sizes: { m: size(100000, 100000, 5, 0) },
+          defaultSize: "m",
+        },
+      ],
+    },
+    {
+      id: "external-api",
+      label: "External API",
+      description: "A third-party service.",
+      capabilities: ["external"],
+      replicable: false,
+      holdsData: false,
+      flavors: [
+        {
+          id: "url-safety",
+          label: "URL-safety API",
+          description: "Flags malicious URLs.",
+          managedRedundancy: true,
+          sizes: {
+            quota: {
+              label: "quota",
+              capacityPerSec: { read: 2000 },
+              latencyMs: { base: 50, cv: 0.5 },
+              costPerHour: 0,
+            },
+          },
+          defaultSize: "quota",
+        },
+      ],
+    },
   ],
 });
 
@@ -209,7 +252,26 @@ export const testProblem: Problem = ProblemSchema.parse({
       successStatuses: [200, 204, 404],
       requirements: ["FR-3"],
     },
+    {
+      id: "scan-link",
+      label: "Scan new link",
+      trigger: { type: "event", event: "link-created" },
+      class: "write",
+      idempotent: true,
+      successStatuses: [200],
+      requirements: ["FR-1"],
+    },
+    {
+      id: "purge-expired",
+      label: "Purge expired links",
+      trigger: { type: "schedule", description: "Deletes expired links." },
+      class: "write",
+      idempotent: true,
+      successStatuses: [200],
+      requirements: ["FR-3"],
+    },
   ],
+  events: [{ id: "link-created", label: "Link created", entity: "Link" }],
   decisionPoints: [
     {
       id: "redirect-status",
@@ -228,6 +290,22 @@ export const testProblem: Problem = ProblemSchema.parse({
         { id: "8", label: "8 characters" },
       ],
       default: "7",
+    },
+    {
+      id: "expired-status",
+      question: "What does an expired link return?",
+      options: [
+        { id: "404", label: "404 Not Found" },
+        { id: "410", label: "410 Gone" },
+      ],
+    },
+    {
+      id: "code-reuse",
+      question: "Can an expired code be reused?",
+      options: [
+        { id: "never", label: "Never" },
+        { id: "after-grace", label: "After a grace period" },
+      ],
     },
     {
       id: "replication-mode",

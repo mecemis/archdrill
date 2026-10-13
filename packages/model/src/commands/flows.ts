@@ -2,7 +2,7 @@ import type { Draft } from "immer";
 import { z } from "zod";
 import { type Flow, isBranchingStep, type Step } from "../attempt/schema";
 import { reachableStepIds, stepOutcomes } from "../attempt/steps";
-import { ACTIONS, ActionIdSchema, actionTakesParam } from "../catalog/actions";
+import { ActionIdSchema, actionTakesEntity, actionTakesParam } from "../catalog/actions";
 import { LogicIdSchema } from "../catalog/logic";
 import { IdSchema } from "../catalog/schema";
 import { HttpStatusSchema } from "../problem/schema";
@@ -22,6 +22,7 @@ export const StepInputSchema = z.discriminatedUnion("type", [
     entity: z.string().min(1).optional(),
     ttlSec: z.number().int().positive().optional(),
     batchSize: z.number().int().min(1).max(1_000_000).optional(),
+    event: IdSchema.optional(),
   }),
   z.object({ type: z.literal("logic"), logic: LogicIdSchema }),
   z.object({ type: z.literal("respond"), status: HttpStatusSchema }),
@@ -112,6 +113,7 @@ export const updateStep = defineCommand(
     entity: z.string().min(1).optional(),
     ttlSec: z.number().int().positive().nullable().optional(),
     batchSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
+    event: IdSchema.optional(),
     status: HttpStatusSchema.optional(),
   }),
   (draft, args) => {
@@ -120,10 +122,12 @@ export const updateStep = defineCommand(
       if (args.action !== undefined && args.action !== step.action) {
         step.action = args.action;
         dropUnknownLinks(step);
-        if (ACTIONS[args.action].effect === "allocate") delete step.entity;
+        if (!actionTakesEntity(args.action)) delete step.entity;
         if (!actionTakesParam(args.action, "ttlSec")) delete step.ttlSec;
         if (!actionTakesParam(args.action, "batchSize")) delete step.batchSize;
+        if (!actionTakesParam(args.action, "event")) delete step.event;
       }
+      if (args.event !== undefined) step.event = args.event;
       if (args.entity !== undefined) step.entity = args.entity;
       if (args.ttlSec === null) delete step.ttlSec;
       else if (args.ttlSec !== undefined) step.ttlSec = args.ttlSec;
@@ -236,7 +240,7 @@ function repointReferences(flow: Draft<Flow>, from: string, to: string | undefin
 function toStep(input: StepInput): Step {
   switch (input.type) {
     case "call": {
-      const { type, target, action, entity, ttlSec, batchSize } = input;
+      const { type, target, action, entity, ttlSec, batchSize, event } = input;
       return {
         type,
         target,
@@ -244,6 +248,7 @@ function toStep(input: StepInput): Step {
         ...(entity === undefined ? {} : { entity }),
         ...(ttlSec === undefined ? {} : { ttlSec }),
         ...(batchSize === undefined ? {} : { batchSize }),
+        ...(event === undefined ? {} : { event }),
         next: {},
       };
     }

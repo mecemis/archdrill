@@ -5,7 +5,12 @@ import {
   type CommandName,
   exportAttempt,
 } from "@archdrill/model";
-import { cacheAsideAttempt, createLinkAttempt, disableLinkAttempt } from "@archdrill/model/testing";
+import {
+  asyncAttempt,
+  cacheAsideAttempt,
+  createLinkAttempt,
+  disableLinkAttempt,
+} from "@archdrill/model/testing";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -391,5 +396,86 @@ describe("App", () => {
 
     expect(useAttemptStore.getState().attempt.decisions["code-length"]).toBe("8");
     expect(screen.getAllByText("Key generation service").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("App with background work", () => {
+  /** The async test design, with the queue size the real catalog offers. */
+  function backgroundDesign() {
+    return applyCommand(asyncAttempt(), "updateComponent", { id: "queue", size: "on-demand" })
+      .attempt;
+  }
+
+  const chooseOperation = (id: string) => {
+    fireEvent.click(screen.getByRole("tab", { name: "Flow" }));
+    fireEvent.change(screen.getByLabelText("Operation"), { target: { value: id } });
+  };
+
+  beforeEach(() => {
+    useAttemptStore.getState().replace(backgroundDesign());
+    useUi.getState().setScenario("s7-edge-cases");
+  });
+
+  it("shows a consumer as optional, where its messages come from, and what its statuses mean", () => {
+    renderApp();
+    chooseOperation("scan-link");
+
+    expect(
+      screen.getByRole("option", { name: "on Link created · Scan new link (in focus)" }),
+    ).toBeDefined();
+    expect(screen.getByText(/^Optional: a consumer of Link created/)).toBeDefined();
+    expect(screen.getByText("Takes Link created messages from Link events.")).toBeDefined();
+    expect(screen.getAllByText(/finish: 200 done$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/finish: 503 try again later$/).length).toBeGreaterThan(0);
+  });
+
+  it("asks a consumer's service to connect to the queue when it receives nothing", () => {
+    useAttemptStore.getState().dispatch("removeConnection", { id: "worker--queue" });
+    renderApp();
+    chooseOperation("scan-link");
+
+    expect(screen.getByText(/Worker receives no Link created messages/)).toBeDefined();
+  });
+
+  it("publishes an event chosen from the problem's events", () => {
+    useAttemptStore.getState().dispatch("removeFlow", { operation: "disable-link" });
+    useAttemptStore
+      .getState()
+      .dispatch("createFlow", { operation: "disable-link", handler: "api" });
+    renderApp();
+    chooseOperation("disable-link");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
+    fireEvent.change(form().getByLabelText("Component"), { target: { value: "queue" } });
+    expect(form().getByLabelText("Event")).toBeDefined();
+    fireEvent.click(form().getByRole("button", { name: "Add step" }));
+
+    expect(screen.getByText("Link events · publish Link created")).toBeDefined();
+  });
+
+  it("offers batches that collect items to jobs, not to requests", () => {
+    useAttemptStore.getState().dispatch("removeFlow", { operation: "purge-expired" });
+    useAttemptStore.getState().dispatch("createFlow", {
+      operation: "purge-expired",
+      handler: "worker",
+    });
+    renderApp();
+    chooseOperation("purge-expired");
+    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
+    fireEvent.change(form().getByLabelText("Component"), { target: { value: "db" } });
+    fireEvent.change(form().getByLabelText("Action"), { target: { value: "store.delete" } });
+
+    expect(form().getByLabelText(/items wait for the batch to fill/)).toBeDefined();
+
+    fireEvent.click(form().getByRole("button", { name: "Cancel" }));
+    useAttemptStore
+      .getState()
+      .dispatch("createFlow", { operation: "disable-link", handler: "api" });
+    chooseOperation("disable-link");
+    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
+    fireEvent.change(form().getByLabelText("Component"), { target: { value: "db" } });
+    fireEvent.change(form().getByLabelText("Action"), { target: { value: "store.delete" } });
+
+    expect(form().queryByLabelText(/Batch size/)).toBeNull();
   });
 });

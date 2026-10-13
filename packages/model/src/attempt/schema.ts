@@ -84,6 +84,8 @@ export const CallStepSchema = z.object({
   ttlSec: z.number().int().positive().optional(),
   /** For allocation actions: how many ids one call yields, so only one request in a batch pays for the call. */
   batchSize: z.number().int().min(1).max(1_000_000).optional(),
+  /** For publish steps: the event the message is about. */
+  event: IdSchema.optional(),
   next: NextSchema,
 });
 export type CallStep = z.infer<typeof CallStepSchema>;

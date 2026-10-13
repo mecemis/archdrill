@@ -2,6 +2,7 @@ import type { Analysis, Path, PathStep } from "@archdrill/engine";
 import { ACTIONS, LOGIC } from "@archdrill/model";
 import { highlightFromPath, useScenarioLoad } from "../../state/evaluation";
 import { useAttemptStore } from "../../state/store";
+import { triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
 import { milliseconds, percent } from "../../ui/format";
 import { OutcomeChip, StatusBadge } from "../../ui/outcome";
@@ -22,7 +23,7 @@ export function PathExplorer({
         return (
           <section key={operationId} className="flex flex-col gap-1">
             <h4 className="text-xs font-semibold text-zinc-600">
-              {op.operation.method} {op.operation.path} · {op.paths.length} path
+              {triggerSummary(op.operation)} · {op.paths.length} path
               {op.paths.length === 1 ? "" : "s"}
               {op.truncated && " (truncated)"}
             </h4>

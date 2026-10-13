@@ -1,7 +1,7 @@
 import {
   type Attempt,
   type Flow,
-  findIngressRoute,
+  findOperationRoute,
   hasErrors,
   type IngressRoute,
   type Issue,
@@ -75,7 +75,7 @@ function analyzeOperation(
       issue.location.operation === operation.id,
   );
   if (broken) return { ...base, status: "broken" };
-  const ingress = findIngressRoute(attempt.architecture, ctx.catalog, flow.handler);
+  const ingress = findOperationRoute(operation, attempt, ctx.catalog, flow.handler);
   if (flow.root === null) return { ...base, ingress, status: "empty" };
   const { paths, truncated } = enumeratePaths(flow, attempt, ingress);
   return { operation, flow, ingress, paths, truncated, status: "ready" };

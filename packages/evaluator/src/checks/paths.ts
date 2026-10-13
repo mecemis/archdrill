@@ -67,6 +67,7 @@ export const outcomeHandled = defineCheck({
               entity: step.entity,
               ttlSec: step.ttlSec,
               batchSize: step.batchSize,
+              event: step.event,
               outcome: params.outcome,
             }
           : { kind: "logic" as const, stepId, logic: step.logic, outcome: params.outcome };
@@ -135,7 +136,11 @@ export const allSuccessPathsContain = defineCheck({
       return notApplicable("No path ends with one of the statuses in scope.");
     const missing = inScope.filter((p) => !p.steps.some((s) => matchStep(s, params.step)));
     if (missing.length === 0)
-      return passed(`All ${countPaths(inScope.length)} in scope contain the step.`);
+      return passed(
+        inScope.length === 1
+          ? "The one path in scope contains the step."
+          : `All ${inScope.length} paths in scope contain the step.`,
+      );
     const { evidence, details } = pathEvidence(missing);
     return failed(
       `${countPaths(missing.length)} of ${inScope.length} lack the step.`,
@@ -148,21 +153,50 @@ export const allSuccessPathsContain = defineCheck({
 /** Every path that satisfies `when` ends with one of the given statuses. */
 export const statusForCondition = defineCheck({
   id: "status-for-condition",
-  description: "Paths that satisfy a condition end with one of the expected statuses.",
-  params: z.strictObject({
-    operation: OperationParam,
-    when: PathPredicateSchema,
-    statuses: z.array(z.number().int()).min(1),
-  }),
+  description:
+    "Paths that satisfy a condition end with one of the expected statuses, or with the status a decision chose.",
+  params: z
+    .strictObject({
+      operation: OperationParam,
+      when: PathPredicateSchema,
+      statuses: z.array(z.number().int()).min(1).optional(),
+      /** A decision whose options are statuses (for example 404 or 410 for expired links). */
+      decision: z.string().min(1).optional(),
+    })
+    .refine((p) => (p.statuses === undefined) !== (p.decision === undefined), {
+      message: "give either statuses or a decision",
+    }),
   run(params, ctx) {
     const op = requireOperation(ctx, params.operation);
     const inScope = op.paths.filter((p) => evalPredicate(p, params.when, op.operation));
     if (inScope.length === 0) return notApplicable("No path reaches this condition.");
+    let statuses = params.statuses ?? [];
+    if (params.decision !== undefined) {
+      const chosen = ctx.attempt.decisions[params.decision];
+      const point = ctx.problem.decisionPoints.find((d) => d.id === params.decision);
+      if (chosen === undefined) {
+        return {
+          ...failed(
+            `Not decided yet: ${point?.question ?? params.decision} Record it under Decisions.`,
+            [],
+          ),
+          status: "partial",
+          fraction: 0.5,
+        };
+      }
+      statuses = [Number.parseInt(chosen, 10)];
+    }
     const wrong = inScope.filter(
-      (p) => p.terminal.kind !== "respond" || !params.statuses.includes(p.terminal.status),
+      (p) => p.terminal.kind !== "respond" || !statuses.includes(p.terminal.status),
     );
-    const expected = params.statuses.join(" or ");
-    if (wrong.length === 0) return passed(`All ${countPaths(inScope.length)} answer ${expected}.`);
+    const expected = statuses.join(" or ");
+    if (wrong.length === 0) {
+      return passed(
+        inScope.length === 1
+          ? `The one path in scope answers ${expected}.`
+          : `All ${inScope.length} paths answer ${expected}.`,
+      );
+    }
     const { evidence, details } = pathEvidence(wrong);
     return failed(
       `${countPaths(wrong.length)} of ${inScope.length} do not answer ${expected}.`,

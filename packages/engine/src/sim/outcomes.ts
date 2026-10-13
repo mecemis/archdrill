@@ -1,4 +1,4 @@
-import type { RequestClass } from "@archdrill/model";
+import { ACTIONS, type RequestClass } from "@archdrill/model";
 import type { CallPathStep, PathStep } from "../paths/types";
 
 /** Model state the outcome probabilities depend on. */
@@ -17,18 +17,46 @@ export interface OutcomeState {
   aliasOccupancy(entity: string | undefined): number;
 }
 
-/** Share of requests that make a batched allocation call: one per batch. */
+/**
+ * Work one batched call does, relative to a call for one item: the per-call
+ * overhead (round trip, transaction, commit) dominates, and each extra item
+ * adds a little.
+ */
+export const BATCH_ITEM_COST = 0.05;
+
+/** Share of requests that make a batched call: one per batch. */
 export function batchShare(step: PathStep): number {
   return step.kind === "call" && step.batchSize ? 1 / step.batchSize : 1;
 }
 
 /**
- * Calls a path step makes per request on its path. A batched call that failed
- * was certainly made; otherwise about one request in a batch makes it (exact
- * when the target does not drop calls).
+ * Batched allocation fetches ids ahead of the requests that use them, so a
+ * failed call fails only the request that made it. Other batched calls (a
+ * job's batched deletes) collect items first and succeed or fail together.
+ */
+export function prefetches(step: PathStep): boolean {
+  return step.kind === "call" && ACTIONS[step.action].effect === "allocate";
+}
+
+/** Whether items wait for a batch to fill before the call is made. */
+export function collectsBatch(step: PathStep): step is CallPathStep {
+  return step.kind === "call" && (step.batchSize ?? 1) > 1 && !prefetches(step);
+}
+
+/**
+ * Calls a path step makes per request on its path. A failed allocation call
+ * was certainly made by the request that failed; otherwise about one request
+ * in a batch makes the call (exact when the target does not drop calls).
  */
 export function callShare(step: PathStep): number {
-  return step.kind === "call" && step.outcome === "error" ? 1 : batchShare(step);
+  return step.kind === "call" && step.outcome === "error" && prefetches(step)
+    ? 1
+    : batchShare(step);
+}
+
+/** Load one call puts on its target, in single-item calls. */
+export function callCost(step: PathStep): number {
+  return collectsBatch(step) ? 1 + BATCH_ITEM_COST * ((step.batchSize ?? 1) - 1) : 1;
 }
 
 /** Where the code a conditional insert writes came from, judging by the steps before it. */
@@ -109,8 +137,8 @@ export function outcomeProbability(
   prior: readonly PathStep[] = [],
 ): number {
   if (step.kind === "logic") return logicProbability(step.logic, step.outcome, cls);
-  // A batched call is only made once per batch, so only then can it fail.
-  const failure = state.callFailure(step, cls.hotKey) * batchShare(step);
+  // A batched allocation is only made once per batch, so only then can it fail.
+  const failure = state.callFailure(step, cls.hotKey) * (prefetches(step) ? batchShare(step) : 1);
   if (step.outcome === "error") return failure;
   const served = 1 - failure;
   switch (step.action) {
@@ -133,6 +161,10 @@ export function outcomeProbability(
     case "store.update":
       if (step.outcome === "ok") return cls.exists ? served : 0;
       if (step.outcome === "notFound") return cls.exists ? 0 : served;
+      return 0;
+    case "external.check":
+      if (step.outcome === "malicious") return cls.malicious ? served : 0;
+      if (step.outcome === "clean") return cls.malicious ? 0 : served;
       return 0;
     case "store.insertIfAbsent": {
       const conflict = conflictProbability(prior, cls, state, step.entity);

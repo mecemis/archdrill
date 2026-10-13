@@ -37,7 +37,29 @@ function label(ctx: CheckContext, componentId: string): string {
 }
 
 const percent = (value: number) => `${(value * 100).toFixed(value > 0.999 && value < 1 ? 2 : 1)}%`;
-const ms = (value: number) => `${value < 10 ? value.toFixed(1) : Math.round(value)} ms`;
+const ms = (value: number) => {
+  if (value >= 1000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} s`;
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ms`;
+};
+const perSecond = (value: number) =>
+  `${value < 10 ? value.toFixed(1) : Math.round(value).toLocaleString("en-US")}/s`;
+/** Backlog growth below this share of the arrival rate counts as keeping up. */
+const BACKLOG_TOLERANCE = 1e-3;
+
+function fallsBehind(op: OperationMetrics): boolean {
+  return op.trigger !== "request" && op.backlogGrowth > BACKLOG_TOLERANCE * op.rate;
+}
+
+function operationLabel(ctx: CheckContext, id: string): string {
+  return ctx.problem.operations.find((o) => o.id === id)?.label ?? id;
+}
+
+/** A consumer whose event is never published in this environment has nothing to be judged on. */
+function idle(ctx: CheckContext, op: OperationMetrics, env: EnvironmentMetrics): CheckOutcome {
+  return notApplicable(
+    `Nothing reaches ${operationLabel(ctx, op.operation)} at ${env.environment.label}.`,
+  );
+}
 export const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
 
 /** Credit for a "lower is better" metric: full at or below the target, partial up to PARTIAL_LIMIT× over it. */
@@ -74,6 +96,13 @@ export const latencyBelow = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const op = env?.operations.get(params.operation);
     if (!env || !op) return notApplicable("This scenario does not simulate that operation.");
+    if (op.rate <= 0) return idle(ctx, op, env);
+    if (fallsBehind(op)) {
+      return failed(
+        `${operationLabel(ctx, op.operation)} falls behind by ${perSecond(op.backlogGrowth)} at ${env.environment.label}, so its lag grows without bound.${approximateNote(env)}`,
+        hotComponents(env, 0.95),
+      );
+    }
     if (op.successRate < MEANINGFUL_SUCCESS) {
       return failed(
         `Only ${percent(op.successRate)} of requests succeed at ${env.environment.label}, so latency cannot meet the target.${approximateNote(env)}`,
@@ -84,7 +113,8 @@ export const latencyBelow = defineCheck({
     const slow = op.paths
       .filter((p) => p.probability > 0.001 && p.latency.p99 > params.ms)
       .map((p): Evidence => ({ type: "path", operation: params.operation, pathId: p.pathId }));
-    const message = `${params.percentile} is ${ms(actual)} at ${env.environment.label}; the target is under ${ms(params.ms)}.${approximateNote(env)}`;
+    const measure = op.trigger === "request" ? params.percentile : `${params.percentile} lag`;
+    const message = `${measure} is ${ms(actual)} at ${env.environment.label}; the target is under ${ms(params.ms)}.${approximateNote(env)}`;
     return gradeAtMost(actual, params.ms, message, [...slow, ...hotComponents(env, 0.8)]);
   },
 });
@@ -189,6 +219,7 @@ export const successRateAbove = defineCheck({
     const env = environmentOf(ctx, params.environment);
     const op = env?.operations.get(params.operation);
     if (!env || !op) return notApplicable("This scenario does not simulate that operation.");
+    if (op.rate <= 0) return idle(ctx, op, env);
     const base = `${percent(op.successRate)} of requests succeed at ${env.environment.label}; the target is ${percent(params.min)}.`;
     if (op.successRate >= params.min - EPSILON) return passed(base);
     const { rejected, unhandled, errorStatus } = op.failures;
@@ -269,5 +300,37 @@ export const costWithinBudget = defineCheck({
     const message = `The design costs about ${usd(env.monthlyCost)}/month if ${env.environment.label.toLowerCase()} traffic is sustained; the budget is ${usd(params.monthlyUsd)}.`;
     const outcome = gradeAtMost(env.monthlyCost, params.monthlyUsd, message, evidence);
     return { ...outcome, details };
+  },
+});
+
+/** Consumers and scheduled jobs process work at least as fast as it arrives. */
+export const backlogStable = defineCheck({
+  id: "backlog-stable",
+  description: "Consumers and background jobs keep up with the work they receive.",
+  params: z.strictObject({ environment: EnvironmentParam }),
+  run(params, ctx) {
+    const env = environmentOf(ctx, params.environment);
+    if (!env) return notApplicable("This scenario does not simulate load.");
+    const background = [...env.operations.values()].filter(
+      (op) => op.trigger !== "request" && op.rate > 0,
+    );
+    if (background.length === 0) {
+      return notApplicable("Nothing in this design runs in the background.");
+    }
+    const behind = background.filter(fallsBehind);
+    const names = (ops: readonly OperationMetrics[]) =>
+      ops.map((op) => operationLabel(ctx, op.operation)).join(", ");
+    if (behind.length === 0) {
+      return passed(`${names(background)} keep up at ${env.environment.label}.`);
+    }
+    const details = behind.map(
+      (op) =>
+        `${operationLabel(ctx, op.operation)}: ${perSecond(op.rate)} arrive, ${perSecond(op.backlogGrowth)} more than it processes`,
+    );
+    return failed(
+      `${names(behind)} cannot keep up at ${env.environment.label}: the backlog grows until the lag is hours.${approximateNote(env)}`,
+      hotComponents(env, 0.95),
+      details,
+    );
   },
 });

@@ -24,6 +24,7 @@ const generated: RequestClass = {
   customAlias: false,
   aliasTaken: false,
   hotKey: false,
+  malicious: false,
 };
 
 const logic = (name: LogicPathStep["logic"], outcome = "ok"): LogicPathStep => ({
@@ -47,6 +48,7 @@ const call = (
   entity: action === "store.insertIfAbsent" ? "Link" : undefined,
   ttlSec: undefined,
   batchSize,
+  event: undefined,
   outcome,
 });
 
@@ -102,5 +104,36 @@ describe("batched allocation", () => {
   it("counts a failed batched call as made", () => {
     expect(callShare(call("ids.allocate", "ok", 1000))).toBe(1 / 1000);
     expect(callShare(call("ids.allocate", "error", 1000))).toBe(1);
+  });
+});
+
+describe("URL-safety checks", () => {
+  const healthy: OutcomeState = { ...state, callFailure: () => 0 };
+  const malicious: RequestClass = { ...generated, id: "malicious", malicious: true };
+
+  it("flag exactly the malicious requests", () => {
+    const check = (outcome: string) => call("external.check", outcome);
+
+    expect(outcomeProbability(check("malicious"), malicious, healthy)).toBe(1);
+    expect(outcomeProbability(check("clean"), malicious, healthy)).toBe(0);
+    expect(outcomeProbability(check("clean"), generated, healthy)).toBe(1);
+    expect(outcomeProbability(check("malicious"), generated, healthy)).toBe(0);
+  });
+});
+
+describe("batches that collect items", () => {
+  it("fail together, unlike prefetched ids that fail only the request that fetched them", () => {
+    const failing: OutcomeState = { ...state, callFailure: () => 0.1 };
+
+    expect(outcomeProbability(call("store.delete", "error", 100), generated, failing)).toBe(0.1);
+    expect(outcomeProbability(call("ids.allocate", "error", 100), generated, failing)).toBeCloseTo(
+      0.001,
+      12,
+    );
+  });
+
+  it("make one call per batch, whatever the outcome", () => {
+    expect(callShare(call("store.delete", "error", 100))).toBe(0.01);
+    expect(callShare(call("ids.allocate", "error", 100))).toBe(1);
   });
 });

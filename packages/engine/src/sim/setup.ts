@@ -38,6 +38,7 @@ const DEFAULT_CLASS: RequestClass = {
   customAlias: false,
   aliasTaken: false,
   hotKey: false,
+  malicious: false,
 };
 
 export interface SimulationContext {
@@ -49,11 +50,18 @@ export interface SimulationContext {
 
 export interface OperationModel {
   readonly operation: Operation;
+  /**
+   * Requests (or a job's items) per second. Consumers of an event have no
+   * rate of their own: theirs follows from the messages published to them.
+   */
   readonly rate: number;
   readonly analysis: OperationAnalysis;
+  /** Request classes; a consumer's classes are those of the messages it receives. */
   readonly classes: readonly RequestClass[];
-  /** Ingress components that do work (the client is excluded), in order. */
+  /** Components on the way to the handler that do work (the client is excluded), in order. */
   readonly ingress: readonly string[];
+  /** Events the operation's flow publishes. */
+  readonly publishes: ReadonlySet<string>;
 }
 
 export interface CacheSpec {
@@ -122,23 +130,71 @@ export function buildOperations(
   environment: Environment,
   ctx: SimulationContext,
 ): OperationModel[] {
-  const models: OperationModel[] = [];
-  for (const [operationId, rate] of Object.entries(environment.rates)) {
-    const analysis = ctx.analysis.operations.get(operationId);
-    if (rate <= 0 || !analysis || analysis.status !== "ready") continue;
-    const ingress = (analysis.ingress?.components ?? []).filter((id) => {
+  const ready = (id: string) => {
+    const analysis = ctx.analysis.operations.get(id);
+    return analysis?.status === "ready" ? analysis : undefined;
+  };
+  const model = (analysis: OperationAnalysis, rate: number, classes: RequestClass[]) => ({
+    operation: analysis.operation,
+    rate,
+    analysis,
+    classes,
+    ingress: (analysis.ingress?.components ?? []).filter((id) => {
       const c = ctx.attempt.architecture.components.find((x) => x.id === id);
       return c ? !ctx.catalog.capabilities(c.kind, c.flavor).has("traffic-source") : false;
-    });
-    models.push({
-      operation: analysis.operation,
-      rate,
-      analysis,
-      classes: classesIn(workload, environment, operationId),
-      ingress,
-    });
+    }),
+    publishes: publishedEvents(analysis),
+  });
+  const models: OperationModel[] = [];
+  for (const [operationId, rate] of Object.entries(environment.rates)) {
+    const analysis = ready(operationId);
+    if (rate <= 0 || !analysis || analysis.operation.trigger.type === "event") continue;
+    models.push(model(analysis, rate, classesIn(workload, environment, operationId)));
   }
-  return models;
+  for (const operation of ctx.problem.operations) {
+    const analysis = ready(operation.id);
+    // A consumer without a route to a queue that receives its event never runs.
+    if (analysis?.ingress && operation.trigger.type === "event") {
+      models.push(model(analysis, 0, []));
+    }
+  }
+  return publishersFirst(models);
+}
+
+function publishedEvents(analysis: OperationAnalysis): Set<string> {
+  const events = new Set<string>();
+  for (const path of analysis.paths) {
+    for (const step of path.steps) {
+      if (step.kind === "call" && step.action === "queue.publish" && step.event) {
+        events.add(step.event);
+      }
+    }
+  }
+  return events;
+}
+
+/**
+ * Orders operations so that every consumer comes after the operations that
+ * publish its event, and one propagation pass knows each consumer's rate.
+ * Consumers that publish to each other in a cycle keep their order.
+ */
+function publishersFirst(models: readonly OperationModel[]): OperationModel[] {
+  const ordered: OperationModel[] = [];
+  let pending = [...models];
+  while (pending.length > 0) {
+    const waiting = (m: OperationModel) => {
+      const trigger = m.operation.trigger;
+      return (
+        trigger.type === "event" &&
+        pending.some((other) => other !== m && other.publishes.has(trigger.event))
+      );
+    };
+    const next = pending.filter((m) => !waiting(m));
+    const taken = next.length > 0 ? next : pending.slice(0, 1);
+    ordered.push(...taken);
+    pending = pending.filter((m) => !taken.includes(m));
+  }
+  return ordered;
 }
 
 /** One spec per (cache component, entity) that some live step looks up. */

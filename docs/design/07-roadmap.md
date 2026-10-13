@@ -154,11 +154,25 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 - **Code review caught a hit ratio above 100% in disguise.** Dividing all caches' hits by the busiest cache's lookups is right for a near cache in front of Redis but adds up caches that serve different requests; the engine now counts each request once, as a hit if any tier answered.
 - **An implicit grid column grows with its widest child.** A crowded header widened the whole page until the root grid got an explicit `minmax(0, 1fr)` column.
 
-### M6: Async work and edge cases (M)
+### M6: Async work and edge cases (M) ✅
 - Queues and publish steps, worker and consumer flows, scheduled jobs.
 - External calls (a URL safety scan) and asynchronous moderation feeding disable-link.
 - Backlog and consumer lag in the simulation; at-least-once delivery and idempotent consumers.
 - S7 (edge cases): expiry and purge, invalid input, unknown codes, malicious URLs, code reuse.
+
+**Delivered (2026-10-13):**
+- Model: operations are triggered by a request, an event or a schedule; problems define events; `queue.publish` and `external.check`; malicious request classes; routes by trigger (a consumer connects to a queue its event is published to); batches that collect items only in consumers and jobs.
+- Engine: consumer rates and classes follow from published messages; failed messages are redelivered five times, then dead-lettered; consumers and jobs report backlog growth and lag instead of rejecting work; collected batches fail together, cost a little per extra item and wait to fill.
+- Evaluator: `unsafe-content-stopped`, `backlog-stable`, decision-driven statuses, conditional decision checks, lag in `latency-below`, optional consumers.
+- Content: a queue kind (managed queue, Kafka) and a URL-safety API with a quota; purge-expired and scan-link; FR-5 and a code-reuse decision; S7 with a scanner outage. Two goldens pass S7 differently (a worker that scans every new link, and a check before answering that fails open into a rescan); fifteen new mutants (66 in total).
+- Web: operations show their trigger; consumers are marked optional and say where their messages come from; publish steps pick an event; batch sizes for collected batches appear only in consumers and jobs; final statuses in background flows read as "done" or "try again later"; the load view shows lag, backlog and redeliveries.
+
+**Learned along the way:**
+- **Building the test design through commands found a dropped field.** New steps lost their event until a consumer was built step by step in a test; every step parameter is now carried through.
+- **The new check found a gap in the test design itself.** Only generated codes were published, so links with custom aliases went live unchecked; `unsafe-content-stopped` named exactly those paths.
+- **A consumer that nobody publishes to is a design error.** The first "no scan" mutant came out invalid rather than failing the check; the mutant now drops the consumer too, which is how a design without a scan looks.
+- **Correlated redelivery needs no extra state.** Treating a failing message as failing on every delivery puts five times the load on its path, which is the honest picture during an outage and keeps the fixed point unchanged.
+- **Some valid answers wait for later milestones.** A store's own TTL deletion as the purge, and a transactional outbox instead of publishing after the insert, are listed with v0.3's patterns; S7's debrief asks about both.
 
 ### M7: Hardening and release (M)
 - Mutation report in CI.
@@ -190,6 +204,8 @@ New problems are chosen to cover *different* patterns, not more of the same.
 | News feed | fan-out on write vs read, celebrity accounts, ranking pipeline, pagination |
 | Chat / notifications | websockets, ordering, delivery semantics, presence, offline delivery |
 | Order and payment processing | idempotency, outbox, sagas, exactly-once effects, reconciliation |
+
+Back in the URL shortener, v0.3 also adds a store's own TTL deletion as an alternative to a purge job, a transactional outbox for `link-created`, and a check for idempotent consumers whose writes are not naturally idempotent (S8's counters).
 
 Also in v0.3:
 - A problem authoring guide and a JSON Schema for editors.
