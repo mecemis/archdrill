@@ -1,4 +1,10 @@
-import type { Component, Connection, Environment, Workload } from "@archdrill/model";
+import {
+  type Component,
+  type Connection,
+  type Environment,
+  hasFact,
+  type Workload,
+} from "@archdrill/model";
 import { relaxCaches } from "./cache-loop";
 import type { ComponentProfile } from "./capacity";
 import { type ComponentFault, resolveFaults } from "./faults";
@@ -83,7 +89,14 @@ export function createModel(fixtures: Fixtures, previous?: LoopState): Model {
     for (const c of fixtures.autoscaled) loop.replicas.set(c.id, c.replicas);
   }
   const calls = callModels(fixtures.connections, fixtures.faults, loop);
+  const existsFor = new Map(
+    fixtures.ctx.problem.entities.flatMap((e) => (e.existsFor ? [[e.name, e.existsFor]] : [])),
+  );
   const state: OutcomeState = {
+    exists: (entity, cls) => {
+      const fact = existsFor.get(entity ?? "");
+      return fact === undefined ? cls.exists : hasFact(cls, fact);
+    },
     callFailure: (step, hotKey) => calls.get(step, hotKey).failure,
     occupancy: (entity) => fixtures.occupancy.get(entity ?? "")?.all ?? 0,
     aliasOccupancy: (entity) => fixtures.occupancy.get(entity ?? "")?.aliases ?? 0,

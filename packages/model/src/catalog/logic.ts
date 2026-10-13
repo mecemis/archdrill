@@ -66,6 +66,20 @@ export const LOGIC = {
     outcomes: ["ok"],
     description: "Turn a number into a short base62 string.",
   },
+  checkLimit: {
+    label: "check limit",
+    outcomes: ["under", "over"],
+    description:
+      "Compare the client's count in the current window with its limit. Exact only if the count covers every server.",
+    decidedBy: { fact: "overLimit", outcome: "over" },
+  },
+  checkLocalLimit: {
+    label: "check local limit",
+    outcomes: ["under", "over"],
+    description:
+      "Compare this server's own count with the client's limit divided by the number of servers. It only catches clients far over their limit, and only if their traffic spreads evenly.",
+    decidedBy: { fact: "farOverLimit", outcome: "over" },
+  },
   obfuscateId: {
     label: "obfuscate id",
     outcomes: ["ok"],

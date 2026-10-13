@@ -103,7 +103,7 @@ export function Header() {
             <Button
               variant="danger"
               onClick={() => {
-                replace(starterAttempt(activePack.problem.id, activePack.problem.version), {
+                replace(starterAttempt(activePack.problem), {
                   undoable: true,
                 });
                 useUi.getState().select(null);

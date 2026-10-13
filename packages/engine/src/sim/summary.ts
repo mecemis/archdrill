@@ -51,6 +51,8 @@ export interface Propagation {
   /** Retries per second reaching each component. */
   readonly retries: ReadonlyMap<string, number>;
   readonly lookups: ReadonlyMap<string, { existing: number; absent: number; hot: number }>;
+  /** Per cache and entity: entries written, for ordinary keys that exist and for the hot key. */
+  readonly fills: ReadonlyMap<string, { existing: number; hot: number }>;
   /** Per entity: requests for existing keys that looked it up in any cache, and how many any tier answered. */
   readonly entityLookups: ReadonlyMap<string, { lookups: number; hits: number }>;
   /** Requests per second crossing each connection, retries included. */

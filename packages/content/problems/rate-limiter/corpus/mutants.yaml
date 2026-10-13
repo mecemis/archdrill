@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../../../schema/mutants.schema.json
+# Each mutant breaks a golden design in one specific way; CI asserts that the
+# evaluator catches it.
+mutants:
+  - id: no-limit-check
+    base: redis-sliding-counter
+    description: The count is taken, but the limit is never checked.
+    apply:
+      - removeStep: { operation: api-request, stepId: check, bypass: under }
+    expect:
+      scenario: s1-enforce
+      fails: [allowed-requests-checked]
+      band: not-passing
+
+  - id: over-limit-forwarded
+    base: redis-sliding-counter
+    description: A request over the limit is handed to the backend anyway.
+    apply:
+      - linkOutcome: { operation: api-request, stepId: check, outcome: over, target: forward }
+    expect:
+      scenario: s1-enforce
+      fails: [over-limit-rejected]
+      band: not-passing
+
+  - id: check-without-count
+    base: redis-sliding-counter
+    description: The limit is checked without counting the request.
+    apply:
+      - removeStep: { operation: api-request, stepId: count, bypass: ok }
+    expect:
+      scenario: s1-enforce
+      fails: [limits-global]
+
+  - id: local-counts-only
+    base: redis-sliding-counter
+    description: Every server counts on its own, even while Redis works.
+    apply:
+      - linkOutcome: { operation: api-request, stepId: blocked, outcome: miss, target: local-count }
+      - linkOutcome: { operation: api-request, stepId: blocked, outcome: error, target: local-count }
+    expect:
+      scenario: s1-enforce
+      fails: [limits-global]
+
+  - id: fixed-window
+    base: redis-sliding-counter
+    description: Counts reset at fixed window boundaries.
+    apply:
+      - setDecision: { decision: window-algorithm, option: fixed-window }
+    expect:
+      scenario: s1-enforce
+      fails: [smooth-windows]
+
+  - id: undersized-counters
+    base: redis-sliding-counter
+    description: Four Redis shards for a million increments a second.
+    apply:
+      - updateComponent: { id: redis, shards: 4 }
+    expect:
+      scenario: s1-enforce
+      fails: [headroom-peak]
+
+  - id: retried-increments
+    base: redis-sliding-counter
+    description: Timed-out increments are retried.
+    apply:
+      - setConnectionPolicy: { id: api--redis, retries: 2 }
+    expect:
+      scenario: s1-enforce
+      fails: [retry-safe-counting]
+
+  - id: fail-closed
+    base: redis-sliding-counter
+    description: When Redis fails, every request is rejected.
+    apply:
+      - linkOutcome: { operation: api-request, stepId: count, outcome: error, target: r503 }
+    expect:
+      scenario: s2-limiter-down
+      fails: [api-survives-store-down]
+      band: not-passing
+
+  - id: no-counter-timeout
+    base: redis-sliding-counter
+    description: Counter calls wait as long as Redis takes.
+    apply:
+      - setConnectionPolicy: { id: api--redis, timeoutMs: null, circuitBreaker: false }
+    expect:
+      scenario: s2-limiter-down
+      fails: [api-fast-store-hanging, counter-timeout]
+
+  - id: fail-open-unguarded
+    base: redis-sliding-counter
+    description: When Redis fails, every request goes to the backend unchecked.
+    apply:
+      - linkOutcome: { operation: api-request, stepId: count, outcome: error, target: forward }
+    expect:
+      scenario: s2-limiter-down
+      fails: [backend-protected]
+
+  - id: no-block-marker
+    base: redis-sliding-counter
+    description: Requests from a key over its limit are counted in Redis every time.
+    apply:
+      - removeStep: { operation: api-request, stepId: blocked, bypass: miss }
+    expect:
+      scenario: s3-rogue-client
+      fails: [headroom-runaway]

@@ -9,7 +9,7 @@ const SAVE_DELAY_MS = 300;
 const { problem } = activePack;
 
 export const useAttemptStore = createAttemptStore(
-  loadAttempt(problem.id) ?? starterAttempt(problem.id, problem.version),
+  loadAttempt(problem.id) ?? starterAttempt(problem),
 );
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;

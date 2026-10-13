@@ -152,6 +152,15 @@ export const ACTIONS = {
     unsafeToRetry:
       "A timed-out increment may have been applied. Retrying it, or redelivering its message, counts the same thing twice.",
   },
+  "service.call": {
+    label: "call",
+    capability: "stateless-compute",
+    effect: "read",
+    outcomes: ["ok", "error"],
+    params: [],
+    description:
+      "Call another service's API and wait for its answer, for example to hand an allowed request to the backend that does the work.",
+  },
   "external.check": {
     label: "check URL",
     capability: "external",

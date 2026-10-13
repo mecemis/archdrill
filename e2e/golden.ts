@@ -7,9 +7,9 @@ const require = createRequire(new URL("../packages/content/package.json", import
 const yaml = require("yaml") as { parse(text: string): { attempt: unknown } };
 
 /** A golden design as the export file the app reads. */
-function goldenFile(name: string) {
+function goldenFile(name: string, problem: string) {
   const source = new URL(
-    `../packages/content/problems/url-shortener/corpus/golden/${name}.yaml`,
+    `../packages/content/problems/${problem}/corpus/golden/${name}.yaml`,
     import.meta.url,
   );
   const { attempt } = yaml.parse(readFileSync(source, "utf8"));
@@ -21,8 +21,8 @@ function goldenFile(name: string) {
   return { name: `${name}.json`, mimeType: "application/json", buffer: Buffer.from(text) };
 }
 
-export async function importGolden(page: Page, name: string) {
-  await page.goto("/");
-  await page.getByLabel("Design file").setInputFiles(goldenFile(name));
+export async function importGolden(page: Page, name: string, problem = "url-shortener") {
+  await page.goto(`/?problem=${problem}`);
+  await page.getByLabel("Design file").setInputFiles(goldenFile(name, problem));
   await expect(page.getByText(`Loaded ${name}.json.`)).toBeVisible();
 }

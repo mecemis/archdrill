@@ -16,7 +16,14 @@ function applyMutant(base: Attempt, mutant: Mutant): Attempt {
  * the goldens and the scenario's mutants, every question gets at least two
  * different answers.
  */
-describe.each(corpora.map((c) => [c.problemId, c] as const))(
+// Only packs whose scenarios ask questions before a timeline.
+const asking = corpora.filter((c) =>
+  (getProblemPack(c.problemId)?.scenarios ?? []).some((s) =>
+    (s.workload?.timelines ?? []).some((t) => t.predictions.length > 0),
+  ),
+);
+
+describe.each(asking.map((c) => [c.problemId, c] as const))(
   "predictions for %s",
   (problemId, corpus) => {
     const pack = getProblemPack(problemId);

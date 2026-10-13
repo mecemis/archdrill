@@ -22,6 +22,8 @@ export interface OutcomeState {
   occupancy(entity: string | undefined): number;
   /** Share of the keyspace taken by custom aliases, which generated keys can still meet. */
   aliasOccupancy(entity: string | undefined): number;
+  /** Whether an entry of the entity exists for requests of this class. */
+  exists(entity: string | undefined, cls: RequestClass): boolean;
 }
 
 /**
@@ -162,7 +164,7 @@ export function outcomeProbability(
   const served = 1 - failure;
   switch (step.action) {
     case "cache.get": {
-      if (cls.exists) {
+      if (state.exists(step.entity, cls)) {
         const hit = state.hitRatio(step.target, step.entity, cls.hotKey);
         if (step.outcome === "hit") return served * hit;
         if (step.outcome === "miss") return served * (1 - hit);
@@ -173,14 +175,18 @@ export function outcomeProbability(
       if (step.outcome === "miss") return served * (1 - negative);
       return 0;
     }
-    case "store.read":
-      if (step.outcome === "found") return cls.exists ? served : 0;
-      if (step.outcome === "notFound") return cls.exists ? 0 : served;
+    case "store.read": {
+      const exists = state.exists(step.entity, cls);
+      if (step.outcome === "found") return exists ? served : 0;
+      if (step.outcome === "notFound") return exists ? 0 : served;
       return 0;
-    case "store.update":
-      if (step.outcome === "ok") return cls.exists ? served : 0;
-      if (step.outcome === "notFound") return cls.exists ? 0 : served;
+    }
+    case "store.update": {
+      const exists = state.exists(step.entity, cls);
+      if (step.outcome === "ok") return exists ? served : 0;
+      if (step.outcome === "notFound") return exists ? 0 : served;
       return 0;
+    }
     case "store.insertIfAbsent": {
       const conflict = conflictProbability(prior, cls, state, step.entity);
       if (step.outcome === "conflict") return served * conflict;

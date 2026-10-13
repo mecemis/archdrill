@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: redis-sliding-counter
+description: >-
+  ALB → API servers (8 vCPU, 20 to 120 instances) that look up a block marker
+  in an in-process cache, count the request with an atomic increment in Redis
+  (12 shards × 2 replicas, 5 ms timeout behind a circuit breaker), check the
+  key's limit (sliding window counter), and either call the backend (8 vCPU,
+  20 to 90 instances) or store a one-second block and answer 429. When Redis
+  fails, the server counts on its own against the limit divided by the fleet.
+  The backend scales to 90 instances, enough for peak.
+expect:
+  s1-enforce: { minScore: 90 }
+  s2-limiter-down: { minScore: 90 }
+  s3-rogue-client: { minScore: 90 }
+attempt:
+  schemaVersion: 1
+  problemId: rate-limiter
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: clients, kind: client, flavor: api-client, label: API clients }
+      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - id: api
+        kind: service
+        flavor: generic
+        label: API servers
+        size: l
+        replicas: 20
+        autoscale: { max: 120, targetUtilization: 0.7 }
+      - { id: local, kind: near-cache, flavor: in-process-lru, label: Local state, size: s }
+      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 12, replicas: 2 }
+      - id: backend
+        kind: service
+        flavor: generic
+        label: Backend
+        size: l
+        replicas: 20
+        autoscale: { max: 90, targetUtilization: 0.7 }
+    connections:
+      - { id: clients--lb, from: clients, to: lb }
+      - { id: lb--api, from: lb, to: api }
+      - { id: api--local, from: api, to: local }
+      - id: api--redis
+        from: api
+        to: redis
+        policy: { timeoutMs: 5, circuitBreaker: true }
+      - id: api--backend
+        from: api
+        to: backend
+        policy: { timeoutMs: 500 }
+  flows:
+    - operation: api-request
+      handler: api
+      root: blocked
+      steps:
+        blocked:
+          type: call
+          target: local
+          action: cache.get
+          entity: Block
+          next: { hit: r429, miss: count, error: count }
+        count:
+          type: call
+          target: redis
+          action: counter.increment
+          entity: RateCounter
+          next: { ok: check, error: local-count }
+        check:
+          type: logic
+          logic: checkLimit
+          next: { under: forward, over: block }
+        block:
+          type: call
+          target: local
+          action: cache.set
+          entity: Block
+          ttlSec: 1
+          next: { ok: r429, error: r429 }
+        local-count:
+          type: call
+          target: local
+          action: counter.increment
+          entity: RateCounter
+          next: { ok: local-check, error: r429 }
+        local-check:
+          type: logic
+          logic: checkLocalLimit
+          next: { under: forward, over: r429 }
+        forward:
+          type: call
+          target: backend
+          action: service.call
+          next: { ok: r200, error: r503 }
+        r200: { type: respond, status: 200 }
+        r429: { type: respond, status: 429 }
+        r503: { type: respond, status: 503 }
+  decisions:
+    window-algorithm: sliding-counter
+  layout:
+    clients: { x: 0, y: 120 }
+    lb: { x: 220, y: 120 }
+    api: { x: 440, y: 120 }
+    local: { x: 440, y: -40 }
+    redis: { x: 700, y: 0 }
+    backend: { x: 700, y: 220 }

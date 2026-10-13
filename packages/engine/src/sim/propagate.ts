@@ -213,6 +213,7 @@ export function propagate(
   const batchedItems = new Map<string, Load>();
   const retries = new Map<string, number>();
   const lookups = new Map<string, Lookups>();
+  const fills = new Map<string, { existing: number; hot: number }>();
   const traffic = new Map<string, number>();
   const tallies = new Map<string, CallTally>();
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
@@ -326,14 +327,28 @@ export function propagate(
           if (step.action === "queue.publish" && step.event && !failed) {
             publish(step.event, op.operation.id, cls, weight * (1 - lost));
           }
+          // Entries only exist once a flow writes them: count the writes that land.
+          if (ACTIONS[step.action].effect === "populate" && !failed) {
+            if (state.exists(step.entity, cls)) {
+              const key = cacheKey(step.target, step.entity);
+              const entry = fills.get(key) ?? { existing: 0, hot: 0 };
+              fills.set(
+                key,
+                hot
+                  ? { ...entry, hot: entry.hot + weight }
+                  : { ...entry, existing: entry.existing + weight },
+              );
+            }
+          }
           // A lookup that never reached the cache does not warm or age its entries.
           if (step.action === "cache.get" && !failed) {
             const key = cacheKey(step.target, step.entity);
             const entry = lookups.get(key) ?? { existing: 0, absent: 0, hot: 0 };
+            const exists = state.exists(step.entity, cls);
             lookups.set(key, {
-              existing: entry.existing + (cls.exists && !cls.hotKey ? weight : 0),
-              absent: entry.absent + (cls.exists ? 0 : weight),
-              hot: entry.hot + (cls.exists && cls.hotKey ? weight : 0),
+              existing: entry.existing + (exists && !hot ? weight : 0),
+              absent: entry.absent + (exists ? 0 : weight),
+              hot: entry.hot + (exists && hot ? weight : 0),
             });
           }
         }
@@ -351,6 +366,7 @@ export function propagate(
     hotLoads,
     retries,
     lookups,
+    fills,
     traffic,
     calls: tallies,
     entityLookups,

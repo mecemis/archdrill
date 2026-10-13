@@ -1,14 +1,20 @@
 import { emptyAttempt } from "@archdrill/model";
-import { cacheAsideAttempt } from "@archdrill/model/testing";
+import { cacheAsideAttempt, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { createAttemptStore, starterAttempt } from "./attempt-store";
 import { useToasts } from "./toasts";
 
 describe("attempt store", () => {
-  it("starts new attempts with a client", () => {
-    expect(starterAttempt("url-shortener", 1).architecture.components.map((c) => c.id)).toEqual([
+  it("starts new attempts with the problem's client", () => {
+    expect(starterAttempt(testProblem).architecture.components.map((c) => c.id)).toEqual([
       "visitors",
     ]);
+    const api = { ...testProblem, client: { flavor: "api-client", label: "API clients" } };
+    expect(starterAttempt(api).architecture.components[0]).toMatchObject({
+      id: "clients",
+      flavor: "api-client",
+      label: "API clients",
+    });
   });
 
   it("applies commands and undoes and redoes them", () => {

@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s1-enforce
+problemId: rate-limiter
+title: Enforce limits
+order: 1
+story: |
+  "Every API key gets 100 requests a second, whichever of our servers its
+  requests land on. Over the limit, the client gets a 429 and a Retry-After.
+  At peak that is a million requests a second. Where do you count them, how do
+  you count over time, and what does it add to every request?"
+focusOperations: [api-request]
+workload:
+  operations:
+    api-request:
+      entity: ApiKey
+      classes:
+        - { id: within, share: 0.98 }
+        - { id: over, share: 0.02, facts: [overLimit] }
+  keys:
+    ApiKey:
+      existing: { distribution: zipf, s: 1.1, population: 50000 }
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day.
+      rates: { api-request: 400000 }
+    - id: peak
+      label: Peak
+      description: Peak traffic, a million requests a second.
+      rates: { api-request: 1000000 }
+dimensions:
+  correctness: 0.4
+  latency: 0.25
+  scalability: 0.2
+  cost: 0.15
+checks:
+  - id: allowed-requests-checked
+    use: all-success-paths-contain
+    title: Every allowed request passed a limit check
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-1]
+    params:
+      operation: api-request
+      statuses: [200]
+      step: { logic: [checkLimit, checkLocalLimit], outcome: under }
+    why: >-
+      A path that reaches the backend without a limit check lets any client
+      through at any rate.
+    fix: >-
+      Count the request, check the key's limit, and only then call the backend.
+
+  - id: over-limit-rejected
+    use: status-for-condition
+    title: Requests over the limit get 429
+    dimension: correctness
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-1]
+    params:
+      operation: api-request
+      when: { hasStep: { logic: [checkLimit, checkLocalLimit], outcome: over } }
+      statuses: [429]
+    why: >-
+      Clients back off on 429 and its Retry-After; anything else either hides
+      the limit or looks like an outage.
+    fix: >-
+      Answer 429 when the count is over the limit.
+
+  - id: limits-global
+    use: limits-are-global
+    title: Limits hold across the whole fleet
+    dimension: correctness
+    weight: 3
+    severity: critical
+    requirements: [FR-2]
+    params: { operation: api-request, entity: RateCounter }
+    why: >-
+      Requests for one key land on any server. A count kept on each server
+      lets a client through at its limit on every server: with 400 servers,
+      400 times its limit.
+    fix: >-
+      Count in a store every server shares (for example Redis, with an atomic
+      increment and an expiry per window).
+
+  - id: smooth-windows
+    use: decision-excludes
+    title: Window boundaries do not double the limit
+    dimension: correctness
+    requirements: [NFR-4]
+    params:
+      decision: window-algorithm
+      forbidden:
+        - option: fixed-window
+          reason: A client can send its full limit at the end of one window and again at the start of the next, twice the limit within one second.
+    why: >-
+      Fixed windows are cheap but let bursts through at every boundary.
+    fix: >-
+      Use a sliding window counter (weighting the previous window) or a token
+      bucket. A sliding log is exact but keeps every request.
+
+  - id: limiter-fast
+    use: latency-below
+    title: API p99 stays under 50 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-1]
+    params: { operation: api-request, environment: peak, percentile: p99, ms: 50 }
+    why: >-
+      The limiter sits on every request. A round trip to a busy counter store
+      is paid by every client, including the well-behaved ones.
+    fix: >-
+      Keep the counter store well within capacity and close to the servers;
+      one increment per request, no read-then-write.
+
+  - id: headroom-peak
+    use: utilization-below
+    title: Nothing runs above 85% at peak
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-1, NFR-2]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      A million increments a second need many Redis shards; a shard at its
+      limit slows every request on its keys.
+    fix: >-
+      Shard the counter store for the write rate, and size the API servers and
+      the backend for peak.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $40,000 a month
+    dimension: cost
+    requirements: [NFR-1]
+    params: { environment: avg, monthlyUsd: 40000 }
+    why: >-
+      Rate limiting is overhead on every request; it should cost a fraction of
+      the API it protects.
+    fix: >-
+      Autoscale the API servers and the backend, and keep counters in memory.
+
+  - id: retry-safe-counting
+    use: retry-only-idempotent
+    title: Counter increments are not retried
+    dimension: correctness
+    signal: senior
+    requirements: [FR-1]
+    params: { operation: api-request }
+    why: >-
+      A timed-out increment may have counted. Retrying it counts the request
+      twice and rejects a client before it reaches its limit.
+    fix: >-
+      Do not retry increments; on a timeout, treat the count as unknown and
+      fall back.
+hints:
+  - "A key's requests land on any of hundreds of servers. Where does a count live that every one of them sees?"
+  - "With fixed one-minute windows, how many requests can a client get through in the minute that straddles two windows?"
+  - "Count each request with an atomic increment in a sharded Redis (keys expire with their window), check the limit, answer 429 when over, and pick a sliding window counter or a token bucket."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Enterprise customers want 10,000 requests a second on one key. What happens to the shard that holds it?
+  - How would you rate-limit by user, by IP and by key at the same time?
+  - How do you change a key's limit without restarting anything?
+  - Should a request rejected with 429 count against the limit?

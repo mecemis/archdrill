@@ -47,6 +47,38 @@ function hotHitFor(spec: CacheSpec, rate: number): number {
 }
 
 /**
+ * Hit ratio when only a share `fill` of misses writes the entry back. Each
+ * write is followed by about h/(1 − h) hits before the entry goes; with a
+ * write on only a share of misses, about 1/fill misses come between them.
+ */
+export function withFill(hit: number, fill: number): number {
+  if (fill >= 1) return hit;
+  if (fill <= 0 || hit <= 0) return 0;
+  if (hit >= 1) return 1;
+  return (hit * fill) / (hit * fill + 1 - hit);
+}
+
+/**
+ * Environments judge the first minutes of a fault: an entry written before it
+ * outlives it if its TTL is long against this horizon.
+ */
+export const FAULT_HORIZON_SEC = 300;
+
+/**
+ * Share of the hot key's misses that write it back, from the current miss
+ * rate. Entries with a TTL long against the fault horizon persist from before
+ * a fault even if nothing writes them now; short-lived ones (a one-second
+ * block) need the writes.
+ */
+function hotFillShare(spec: CacheSpec, fills: number, lookups: number, currentHit: number): number {
+  const misses = lookups * (1 - currentHit);
+  const written = misses > 1e-9 ? Math.min(1, fills / misses) : 1;
+  const ttl = spec.ttlSec;
+  const persisting = ttl === null ? 1 : Math.max(0, 1 - FAULT_HORIZON_SEC / (2 * ttl));
+  return Math.max(written, persisting);
+}
+
+/**
  * Relaxes every cache's hit ratios towards what the current lookup rates
  * give. An in-process cache keeps one copy per instance of its caller, so
  * each copy sees that instance's share of the lookups.
@@ -81,10 +113,12 @@ export function relaxCaches(
       hot: total.hot / copies,
     };
     const [positiveItems, negativeItems] = splitCapacity(spec, lookups);
+    const written = flow.fills.get(key)?.hot ?? 0;
+    const hotFill = hotFillShare(spec, written / copies, lookups.hot, loop.hotHit.get(key) ?? 0);
     const targets: [Map<string, number>, number][] = [
       [loop.hit, hitFor(spec, lookups.existing, positiveItems)],
       [loop.negativeHit, negativeHitFor(spec, lookups.absent, negativeItems)],
-      [loop.hotHit, hotHitFor(spec, lookups.hot)],
+      [loop.hotHit, withFill(hotHitFor(spec, lookups.hot), hotFill)],
     ];
     for (const [values, target] of targets) {
       const current = values.get(key) ?? 0;

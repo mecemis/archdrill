@@ -506,7 +506,12 @@ function validateStepEntity(
       error("step-unknown-entity", `Step ${stepId} uses unknown entity "${step.entity}".`, loc),
     ];
   }
-  const durable = ACTIONS[step.action].capability !== "volatile-kv";
+  // Short-lived entities may live in memory-only stores; everything else needs a store that holds it.
+  const entity = ctx.problem.entities.find((e) => e.name === step.entity);
+  const inMemory =
+    entity?.ephemeral === true &&
+    ctx.catalog.capabilities(target.kind, target.flavor).has("volatile-kv");
+  const durable = ACTIONS[step.action].capability !== "volatile-kv" && !inMemory;
   if (durable && !target.data.some((d) => d.entity === step.entity)) {
     return [
       error(
