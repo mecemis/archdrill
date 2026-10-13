@@ -180,7 +180,7 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 - Playwright E2E for the core loop.
 - Performance budgets verified.
 - Docs: "How scoring works", "About the model", authoring guide (draft).
-- Deploy to Cloudflare Pages.
+- Serve the production build (planned as Cloudflare Pages; it now runs on a home machine over Tailscale, and a public host can come later).
 
 **Delivered (2026-10-13):**
 
@@ -218,9 +218,10 @@ M5 was split: worker and consumer flows and S7 moved to M6, so each milestone st
 *Docs.*
 - How scoring works, About the model, and a draft authoring guide.
 
-*Deployment.*
-- `_headers` with a strict content security policy and immutable caching for assets.
-- A Cloudflare Pages workflow that runs once the project's variable and secrets are configured.
+*Serving.*
+- `pnpm serve` builds the app and serves the production build on `127.0.0.1:4173`, with a strict content security policy.
+- A LaunchAgent keeps it running, and `tailscale serve` publishes it to the tailnet over HTTPS.
+- The project is licensed MIT.
 
 **Learned along the way:**
 - **Profiling beat guessing.** Three hot spots that no one would have picked took most of the time: a string key built per call, a path copied per step, and 80-step bisections for every path's percentiles.

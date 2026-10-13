@@ -5,37 +5,16 @@ import { expect, test } from "@playwright/test";
 const require = createRequire(new URL("../packages/content/package.json", import.meta.url));
 const yaml = require("yaml") as { parse(text: string): { attempt: unknown } };
 
-/** Headers `_headers` assigns to a path, in Cloudflare's format. */
-function headersFor(pathname: string): Record<string, string> {
-  const text = readFileSync(new URL("../apps/web/public/_headers", import.meta.url), "utf8");
-  const headers: Record<string, string> = {};
-  let applies = false;
-  for (const line of text.split("\n")) {
-    if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
-    if (!line.startsWith(" ")) {
-      const pattern = line.trim().replace(/\*/g, ".*");
-      applies = new RegExp(`^${pattern}$`).test(pathname);
-      continue;
-    }
-    const separator = line.indexOf(":");
-    if (applies) headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-  return headers;
-}
-
-test("runs under the production headers, worker included", async ({ page }) => {
+test("runs under its security headers, worker included", async ({ page }) => {
   const violations: string[] = [];
   page.on("console", (message) => {
     if (/Content Security Policy|Refused to/.test(message.text())) violations.push(message.text());
   });
   page.on("pageerror", (error) => violations.push(error.message));
-  await page.route("**/*", async (route) => {
-    const response = await route.fetch();
-    const { pathname } = new URL(route.request().url());
-    await route.fulfill({ response, headers: { ...response.headers(), ...headersFor(pathname) } });
-  });
 
-  await page.goto("/");
+  const response = await page.goto("/");
+  expect(response?.headers()["content-security-policy"]).toContain("script-src 'self'");
+
   const golden = yaml.parse(
     readFileSync(
       new URL(

@@ -89,13 +89,21 @@ pnpm e2e         # browser tests (Playwright; uses the installed Chrome locally)
 pnpm report      # corpus report and the evaluation-time budget (Markdown in packages/content/report/out)
 pnpm check       # Biome lint/format check + TypeScript
 pnpm build       # production build
+pnpm serve       # build and serve the production build on 127.0.0.1:4173
 ```
 
-### Deployment
+### Running it at home over Tailscale
 
-The web app is a static site. `.github/workflows/deploy.yml` builds it and deploys `apps/web/dist` to Cloudflare Pages on every push to `main`, with the response headers in `apps/web/public/_headers` (a strict content security policy and long caching for hashed assets). A Playwright test runs the production build under those headers. To enable it:
+`pnpm serve` builds the app and serves the production build on `127.0.0.1:4173`, with a strict content security policy; a Playwright test runs that build under the same headers. To keep it running on a Mac and reach it from your other devices:
 
-1. Create the Pages project once: `pnpm dlx wrangler pages project create <name> --production-branch=main`.
-2. In the repository settings, add the variable `CLOUDFLARE_PAGES_PROJECT` (the project name) and the secrets `CLOUDFLARE_API_TOKEN` (with *Cloudflare Pages: Edit*) and `CLOUDFLARE_ACCOUNT_ID`.
+```bash
+cp deploy/local/com.mecemis.archdrill.web.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mecemis.archdrill.web.plist
+tailscale serve --bg --https=10000 http://127.0.0.1:4173
+```
 
-Until then the workflow is skipped.
+The app is then at `https://<machine>.<tailnet>.ts.net:10000`, for devices on your tailnet only. After pulling new code, `launchctl kickstart -k gui/$(id -u)/com.mecemis.archdrill.web` rebuilds and restarts it; the log is `~/Library/Logs/archdrill-web.log`.
+
+## License
+
+[MIT](LICENSE)

@@ -18,7 +18,7 @@
 | E2E | Playwright | Critical flows: build, record, evaluate, fix |
 | Lint and format | **Biome** | One fast tool instead of ESLint + Prettier |
 | Package manager | **pnpm** workspaces | Strict, fast, good monorepo ergonomics |
-| CI and hosting | GitHub Actions; Cloudflare Pages (static) | Simple and free at this scale |
+| CI and hosting | GitHub Actions; the static production build served from a home machine over Tailscale | Simple and free; a public static host can come later |
 
 Version policy: use current stable majors that have had at least a few months of adoption. At the time of writing that means TypeScript 6.0, Vite 8, Vitest 4, React 19, Zod 4, React Flow 12, and Zustand 5. TypeScript 7 (the native port) and Vitest 5 are tracked and adopted once the ecosystem settles.
 
