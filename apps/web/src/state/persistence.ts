@@ -64,7 +64,7 @@ function save(key: string, attempt: Attempt, storage: Storage | null): boolean {
 }
 
 /** The browser's storage, or null when it is missing or blocked. Pass null explicitly to disable storage. */
-function safeStorage(): Storage | null {
+export function safeStorage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {

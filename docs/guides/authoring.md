@@ -50,6 +50,12 @@ debrief: |                 # follow-up questions, shown once the scenario passes
   - `fault`: a fault from `at` until `until`;
   - `restart`: components that lose what they hold in memory.
 
+  A timeline can also carry `predictions`: questions the candidate answers before the charts are shown. Each has a `question`, a `measure` and `options`:
+  - measures: `peak-utilization` (of a `target` selected like a fault's), `lowest-success` (of an `operation`), and `recovery-seconds` (of an `operation`, back at `threshold` `after` a moment);
+  - options are increasing ranges: every option but the last has a `below` bound, and the answer is the first range the measured value falls in.
+
+  Ask about what the timeline teaches, and set the bounds so that a typical good design and a typical weak one land in different options, away from the bounds. A corpus test checks that every question gets at least two different answers across the goldens and the scenario's mutants.
+
   Checks `timeline-holds` and `timeline-recovers` refer to timelines by id. Keep steps coarse for long timelines (5 s for ten minutes): a step whose state moves costs about a millisecond.
 - `environments`: each with `rates` (requests or job items per second; never for consumers), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
 

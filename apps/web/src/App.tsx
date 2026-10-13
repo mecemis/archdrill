@@ -3,6 +3,7 @@ import { DesignCanvas } from "./canvas/DesignCanvas";
 import { Header } from "./panels/Header";
 import { ResultsDock } from "./panels/results/ResultsDock";
 import { LeftPanel, RightPanel } from "./panels/SidePanels";
+import { useUi } from "./state/ui-store";
 import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
 import { Toasts } from "./ui/Toasts";
@@ -10,10 +11,17 @@ import { Toasts } from "./ui/Toasts";
 export function App() {
   useShortcuts();
   useRegressionWatch();
+  const expanded = useUi((s) => s.dockExpanded);
   return (
     <ReactFlowProvider>
       {/* One explicit column, so a crowded header scrolls instead of widening the page. */}
-      <div className="grid h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_17rem] bg-zinc-50 text-zinc-900">
+      <div
+        className={`grid h-full grid-cols-1 bg-zinc-50 text-zinc-900 ${
+          expanded
+            ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,62vh)]"
+            : "grid-rows-[auto_minmax(0,1fr)_17rem]"
+        }`}
+      >
         <Header />
         <div className="grid min-h-0 grid-cols-[18rem_minmax(0,1fr)_22rem]">
           <LeftPanel />

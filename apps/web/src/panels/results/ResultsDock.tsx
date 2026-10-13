@@ -1,3 +1,4 @@
+import { Maximize2, Minimize2 } from "lucide-react";
 import { activePack } from "../../state/content";
 import { useEvaluation } from "../../state/evaluation";
 import { useUi } from "../../state/ui-store";
@@ -14,6 +15,7 @@ export function ResultsDock() {
   const { analysis, scenarios } = useEvaluation();
   const scenarioId = useUi((s) => s.scenarioId);
   const tab = useUi((s) => s.resultsTab);
+  const expanded = useUi((s) => s.dockExpanded);
   const setTab = useUi((s) => s.setResultsTab);
   const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
   const result = scenarios.find((s) => s.scenarioId === scenarioId);
@@ -36,7 +38,7 @@ export function ResultsDock() {
         <ScoreSummary result={result} />
       </div>
       <div className="flex min-h-0 flex-col">
-        <div className="border-b border-zinc-200 bg-white px-3 py-2">
+        <div className="flex items-center gap-2 border-b border-zinc-200 bg-white px-3 py-2">
           <Tabs
             label="Result views"
             value={tab}
@@ -50,6 +52,16 @@ export function ResultsDock() {
               { id: "compare", label: "Compare" },
             ]}
           />
+          <button
+            type="button"
+            className="ml-auto rounded p-1 text-zinc-500 hover:bg-zinc-100"
+            aria-label={expanded ? "Shrink the results" : "Enlarge the results"}
+            title={expanded ? "Shrink the results" : "Enlarge the results"}
+            aria-pressed={expanded}
+            onClick={() => useUi.getState().setDockExpanded(!expanded)}
+          >
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {tab === "findings" &&

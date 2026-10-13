@@ -67,8 +67,9 @@ workload:
           question: What happens to link creation while the primary fails over?
           measure: { kind: lowest-success, operation: create-link }
           options:
-            - { id: most-fail, label: Most creates fail, below: 0.5 }
-            - { id: some-fail, label: Some creates fail, below: 0.999 }
+            - { id: nearly-all-fail, label: Nearly all creates fail for a while, below: 0.1 }
+            - { id: many-fail, label: A large share of creates fail, below: 0.9 }
+            - { id: few-fail, label: A few creates fail, below: 0.999 }
             - { id: unaffected, label: Creates are unaffected }
         - id: redirects
           question: And to redirects?

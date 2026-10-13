@@ -40,6 +40,10 @@ interface UiState {
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
   readonly rightTab: RightTab;
+  /** The results dock takes most of the screen, for timelines. */
+  readonly dockExpanded: boolean;
+  /** A moment of a timeline the canvas shows instead of the selected environment. */
+  readonly timelineCursor: { readonly timelineId: string; readonly step: number } | null;
   /** Simulated environment shown on the canvas and in the results; null means the scenario's last (heaviest). */
   readonly environmentId: string | null;
   setScenario: (id: string) => void;
@@ -53,6 +57,8 @@ interface UiState {
   clearPin: () => void;
   setResultsTab: (tab: ResultsTab) => void;
   setRightTab: (tab: RightTab) => void;
+  setDockExpanded: (expanded: boolean) => void;
+  setTimelineCursor: (cursor: { timelineId: string; step: number } | null) => void;
 }
 
 const firstScenario = activePack.scenarios[0];
@@ -67,6 +73,8 @@ export const useUi = create<UiState>((set, get) => ({
   pinned: null,
   resultsTab: "findings",
   rightTab: "flow",
+  dockExpanded: false,
+  timelineCursor: null,
   environmentId: null,
   setScenario: (scenarioId) => {
     const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
@@ -75,6 +83,7 @@ export const useUi = create<UiState>((set, get) => ({
       operation: scenario?.focusOperations[0] ?? get().operation,
       slot: null,
       environmentId: null,
+      timelineCursor: null,
     });
   },
   setEnvironment: (environmentId) => set({ environmentId }),
@@ -86,8 +95,12 @@ export const useUi = create<UiState>((set, get) => ({
   togglePin: (key, highlight) =>
     set({ pinned: get().pinned?.key === key ? null : { key, highlight } }),
   clearPin: () => set({ pinned: null }),
-  setResultsTab: (resultsTab) => set({ resultsTab }),
+  setResultsTab: (resultsTab) =>
+    // Timelines need the room; leaving them keeps whatever size the candidate chose.
+    set(resultsTab === "timeline" ? { resultsTab, dockExpanded: true } : { resultsTab }),
   setRightTab: (rightTab) => set({ rightTab }),
+  setDockExpanded: (dockExpanded) => set({ dockExpanded }),
+  setTimelineCursor: (timelineCursor) => set({ timelineCursor }),
 }));
 
 export const EMPTY_HIGHLIGHT: Highlight = {

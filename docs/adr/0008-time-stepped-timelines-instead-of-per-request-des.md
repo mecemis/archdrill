@@ -24,6 +24,7 @@ Timelines use a **time-stepped model** built on the analytic engine.
   - circuit-breaker state;
   - queue backlogs that build and drain.
 - **Traces.** Example requests are sampled with a seeded PRNG from each step's path probabilities and latencies.
+  - *Amended in M10:* each step instead records its path mix, the exact share and mean latency of every path, which expands to per-call timings. It carries the information a sample would, deterministically and without missing rare paths.
 
 ## Consequences
 

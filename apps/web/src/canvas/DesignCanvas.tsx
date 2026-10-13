@@ -6,13 +6,15 @@ import {
   type Edge,
   type Node,
   type NodeChange,
+  Panel,
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react";
 import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { catalogIndex } from "../state/content";
-import { useEvaluation, useScenarioLoad } from "../state/evaluation";
+import { useEvaluation } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
+import { useCanvasLoad } from "../state/timeline-view";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
 import { ComponentNode } from "./ComponentNode";
@@ -60,7 +62,7 @@ function CanvasInner() {
   const hover = useUi((s) => s.hover);
   const pinned = useUi((s) => s.pinned);
   const { screenToFlowPosition } = useReactFlow();
-  const { metrics } = useScenarioLoad();
+  const { load: metrics, moment } = useCanvasLoad();
 
   const operation = analysis.operations.get(operationId);
   const highlight = hover ?? pinned?.highlight ?? null;
@@ -162,6 +164,23 @@ function CanvasInner() {
       <EdgeMarkers />
       <Background gap={20} />
       <Controls showInteractive={false} />
+      {moment && (
+        <Panel position="top-center">
+          <p
+            className="flex items-center gap-2 whitespace-nowrap rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm text-sky-900 shadow-sm"
+            data-testid="canvas-moment"
+          >
+            Showing {moment.label} at {moment.at} s
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 text-xs font-medium underline hover:bg-sky-100"
+              onClick={() => useUi.getState().setTimelineCursor(null)}
+            >
+              Back to the environment
+            </button>
+          </p>
+        </Panel>
+      )}
     </ReactFlow>
   );
 }

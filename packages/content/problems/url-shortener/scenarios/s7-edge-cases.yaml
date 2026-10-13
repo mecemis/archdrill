@@ -86,7 +86,7 @@ workload:
           options:
             - { id: minute, label: Within a minute, below: 60 }
             - { id: minutes, label: Within five minutes, below: 300 }
-            - { id: longer, label: Not before the timeline ends }
+            - { id: longer, label: Longer, or not before the timeline ends }
 dimensions:
   correctness: 0.45
   security: 0.25
