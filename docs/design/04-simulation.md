@@ -270,7 +270,7 @@ Lease waste on crash is not modelled yet.
 - **Cost.**
   - Che's characteristic time does not depend on the rate, so it is computed once per cache.
   - Erlang C is memoised.
-  - Steps after the first solve to 1e-5.
+  - Steps after the first solve to 1e-5, in at most 40 iterations. A step that has not settled by then is approximate either way, and the next step carries on from its state.
   - A dynamic step costs about 0.7 ms; S5's twelve-minute surge in 5 s steps costs about 150 ms.
 
 ## Discrete-event engine (superseded)

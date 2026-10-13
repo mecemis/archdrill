@@ -80,6 +80,11 @@ export interface TimelineMetrics {
 
 /** How tightly steps after the first are solved: shares to within 1e-5. */
 const STEP_TOLERANCE = 1e-5;
+/**
+ * Iterations a step after the first may take. A step that has not settled by
+ * then is approximate either way, and the next step carries on from its state.
+ */
+const STEP_MAX_ITERATIONS = 40;
 
 type LoadEvent = Extract<TimelineEvent, { kind: "load" }>;
 type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
@@ -251,7 +256,10 @@ export function simulateTimeline(
     if (step === 0) warmCaches(model, fixtures);
     // The first step is the steady state, solved as tightly as an environment;
     // later steps only need what a chart at this resolution can show.
-    const solved = solve(model, fixtures, MAX_ITERATIONS, step === 0 ? TOLERANCE : STEP_TOLERANCE);
+    const solved =
+      step === 0
+        ? solve(model, fixtures, MAX_ITERATIONS, TOLERANCE)
+        : solve(model, fixtures, STEP_MAX_ITERATIONS, STEP_TOLERANCE);
     if (!solved.converged) unsettledSteps++;
     const settledAlready = solved.converged && solved.iterations === 1;
     const summary =
