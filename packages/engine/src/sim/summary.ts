@@ -390,7 +390,7 @@ export function pathProbability(
       step.kind === "call" && step.action === "store.insertIfAbsent"
         ? steps.slice(0, index)
         : NO_STEPS;
-    const asked = unkeyed.has(step.stepId) ? cold : cls;
+    const asked = cold !== cls && unkeyed.has(step.stepId) ? cold : cls;
     probability *= outcomeProbability(step, asked, state, prior);
   }
   return probability;

@@ -35,7 +35,12 @@ export function batchShare(step: PathStep): number {
  * job's batched deletes) collect items first and succeed or fail together.
  */
 export function prefetches(step: PathStep): boolean {
-  return step.kind === "call" && ACTIONS[step.action].effect === "allocate";
+  // Only batched calls prefetch; most steps have no batch, so skip the action lookup.
+  return (
+    step.kind === "call" &&
+    step.batchSize !== undefined &&
+    ACTIONS[step.action].effect === "allocate"
+  );
 }
 
 /** Whether items wait for a batch to fill before the call is made. */
