@@ -56,7 +56,7 @@ checks:
     weight: 3
     severity: major
     requirements: [FR-3]
-    params: { operation: place-order, event: order-confirmed }
+    params: { operation: place-order, event: order-confirmed, entity: Order }
     why: >-
       Publishing after the commit loses the event whenever the publish fails;
       publishing before it announces orders that may never commit. Paid orders

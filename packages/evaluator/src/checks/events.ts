@@ -19,21 +19,37 @@ function durable(ctx: CheckContext, componentId: string): boolean {
   return c ? ctx.catalog.capabilities(c.kind, c.flavor).has("durable-store") : false;
 }
 
-/** What is wrong with how a path publishes the event next to its store writes, if anything. */
-function dualWrite(ctx: CheckContext, path: Path, event: string): string | null {
+/** How a path publishes the event next to the writes it reports. */
+function dualWrite(
+  ctx: CheckContext,
+  path: Path,
+  event: string,
+  entity: string | undefined,
+): { readonly writes: boolean; readonly why: string | null } {
   const calls = path.steps.filter((s): s is CallPathStep => s.kind === "call");
-  const at = calls.findIndex((s) => s.action === "queue.publish" && s.event === event);
-  const publish = calls[at];
-  if (!publish || publish.outbox) return null;
   const isWrite = (s: CallPathStep) =>
-    WRITES.has(ACTIONS[s.action].effect) && durable(ctx, s.target) && s.outcome !== "error";
-  if (calls.slice(at + 1).some(isWrite)) {
-    return "publishes the event before the write it reports, which can still fail";
+    WRITES.has(ACTIONS[s.action].effect) &&
+    durable(ctx, s.target) &&
+    s.outcome !== "error" &&
+    (entity === undefined || s.entity === entity);
+  const writes = calls.some(isWrite);
+  // Every publish of the event counts: a second, plain one undoes what an outbox promised.
+  for (const [at, s] of calls.entries()) {
+    if (s.action !== "queue.publish" || s.event !== event || s.outbox) continue;
+    if (calls.slice(at + 1).some(isWrite)) {
+      return {
+        writes,
+        why: "publishes the event before the write it reports, which can still fail",
+      };
+    }
+    if (calls.slice(0, at).some(isWrite)) {
+      return {
+        writes,
+        why: "publishes after the write has committed, so a failed publish loses the event while the write stays",
+      };
+    }
   }
-  if (calls.slice(0, at).some(isWrite)) {
-    return "publishes after the write has committed, so a failed publish loses the event while the write stays";
-  }
-  return null;
+  return { writes, why: null };
 }
 
 /**
@@ -45,7 +61,12 @@ export const noDualWrite = defineCheck({
   id: "no-dual-write",
   description:
     "The event is published if and only if the write it reports commits: through a transactional outbox, not as a second call.",
-  params: z.strictObject({ operation: z.string().min(1), event: z.string().min(1) }),
+  params: z.strictObject({
+    operation: z.string().min(1),
+    event: z.string().min(1),
+    /** The entity whose write the event reports; any durable write when left out. */
+    entity: z.string().min(1).optional(),
+  }),
   run(params, ctx) {
     const op = requireOperation(ctx, params.operation);
     const event = ctx.problem.events.find((e) => e.id === params.event)?.label ?? params.event;
@@ -55,9 +76,14 @@ export const noDualWrite = defineCheck({
       ),
     );
     if (publishing.length === 0) return notApplicable(`No path publishes ${event}.`);
-    const wrong = publishing
-      .map((path) => ({ path, why: dualWrite(ctx, path, params.event) }))
-      .filter((w) => w.why !== null);
+    const judged = publishing.map((path) => ({
+      path,
+      ...dualWrite(ctx, path, params.event, params.entity),
+    }));
+    if (!judged.some((j) => j.writes)) {
+      return notApplicable(`No path that publishes ${event} also writes the data it reports.`);
+    }
+    const wrong = judged.filter((w) => w.why !== null);
     if (wrong.length === 0) {
       return passed(`${event} is published through the transaction that writes the data.`);
     }
