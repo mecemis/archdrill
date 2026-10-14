@@ -32,7 +32,7 @@ An online store's checkout reserves the items, charges the card through a paymen
 - **Calls.**
   - `external.charge` (approved, declined or error) and `external.refund` take an idempotency key, which makes retrying them safe.
   - `payments.lookup` reads the provider's record.
-  - A publish can go through a **transactional outbox**. It is written with the store write before it (validation checks that one exists on every way in) and relayed afterwards. It has no error outcome, adds no latency, and is never lost.
+  - A publish can go through a **transactional outbox**. It is written with the store write before it and relayed afterwards. Validation checks that, on every way in, the last store write before it is transactional and reached through its ok outcome. It has no error outcome, adds no latency, and is never lost.
 - **Check.** `no-dual-write(operation, event)` fails a publish made after the write commits (a failed publish loses the event) or before it (the event can report a write that fails).
 
 ## Scenarios

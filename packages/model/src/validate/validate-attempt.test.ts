@@ -287,6 +287,22 @@ describe("validateAttempt", () => {
     expect(codes(alone)).toContain("step-outbox-without-transaction");
   });
 
+  it("rejects an outbox publish reached from a write that failed", () => {
+    const outbox = applyCommand(asyncAttempt(), "updateStep", {
+      operation: "create-link",
+      stepId: "publish",
+      outbox: true,
+    }).attempt;
+    const afterError = applyCommand(outbox, "linkOutcome", {
+      operation: "create-link",
+      stepId: "insert",
+      outcome: "error",
+      target: "publish",
+    }).attempt;
+
+    expect(codes(afterError)).toContain("step-outbox-without-transaction");
+  });
+
   it("rejects a request waiting for other requests to fill a batch", () => {
     const attempt = mutate("updateStep", { operation: "redirect", stepId: "read", batchSize: 10 });
 
