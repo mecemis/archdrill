@@ -12,7 +12,7 @@ brief: |
   confirmed, and every confirmed order ships exactly once.
 scale:
   - { label: Orders, value: "500 /s avg, 2,000 /s peak", note: "about 1 in 20 cards is declined" }
-  - { label: Payment provider, value: "5,000 requests /s quota", note: "a charge takes about 300 ms" }
+  - { label: Payment provider, value: "5,000 requests /s, raised by contract", note: "the default is 25 per endpoint; a charge takes about 300 ms" }
   - { label: Resent orders, value: "about 1 in 100", note: "mobile clients retry on timeouts" }
 requirements:
   - { id: FR-1, kind: functional, text: "Place an order: reserve the items, charge the card, confirm the order." }

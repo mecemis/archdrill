@@ -9,7 +9,7 @@ An online store's checkout reserves the items, charges the card through a paymen
 | Quantity | Value |
 |---|---|
 | Orders | 500 /s on average, 2,000 /s at peak; 1 card in 20 declined |
-| Payment provider | 5,000 requests /s quota; a charge takes about 300 ms |
+| Payment provider | 5,000 requests /s, raised by contract (Stripe's live-mode default is 25 per endpoint); a charge takes about 300 ms |
 | Resent orders | about 1 in 100 |
 
 ## Requirements
