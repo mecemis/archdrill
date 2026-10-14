@@ -8,8 +8,9 @@ description: >-
   Cassandra with a conditional insert on the client's message id (a resend
   finds it there), and publishes message-sent to Kafka. A delivery service
   looks up recipients' sessions in Redis, pushes through the connection
-  servers in batches, and notifies everyone else through the push provider in
-  batches of 100. Heartbeats write presence to Redis with a 60-second TTL; the
+  servers in batches, and notifies everyone else through the push provider,
+  one message per device: every offline recipient of direct messages and small
+  groups, and in large groups only the members who were mentioned. Heartbeats write presence to Redis with a 60-second TTL; the
   contact list reads 20 contacts' presence in one batched lookup.
 expect:
   s1-deliver: { minScore: 90 }
@@ -131,20 +132,29 @@ attempt:
           entity: Session
           each: onlineRecipients
           batchSize: 50
-          next: { hit: push-online, miss: notify, error: d503 }
+          next: { hit: push-online, miss: size, error: d503 }
         push-online:
           type: call
           target: gateways
           action: connection.push
           each: onlineRecipients
           batchSize: 50
-          next: { ok: notify, error: d503 }
+          next: { ok: size, error: d503 }
+        size:
+          type: logic
+          logic: isLargeGroup
+          next: { small: notify, large: notify-mentioned }
         notify:
           type: call
           target: push
           action: external.notify
           each: offlineRecipients
-          batchSize: 100
+          next: { ok: d200, error: d503 }
+        notify-mentioned:
+          type: call
+          target: push
+          action: external.notify
+          each: mentionedOffline
           next: { ok: d200, error: d503 }
         d200: { type: respond, status: 200 }
         d503: { type: respond, status: 503 }

@@ -188,9 +188,9 @@ export const ACTIONS = {
     effect: "publish",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["each", "batchSize"],
+    optionalParams: ["each"],
     description:
-      "Ask a mobile push service to notify a device that is not connected. With a batch size, one call notifies that many devices.",
+      "Ask a mobile push service to notify a device that is not connected. Every device is one message against the provider's quota: there is no multicast, and SDK helpers that take many devices send one message each.",
   },
   "external.charge": {
     label: "charge",

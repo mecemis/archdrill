@@ -47,7 +47,7 @@ No score in the corpus changed.
 Recorded where a reader sees them (in the model text), and planned next:
 
 - **URL-safety API (closed in M21).** Both Web Risk APIs now carry their published prices and default quotas: the Lookup API at $0.50 per 1,000 calls, and local lists from the Update API with confirmations at $50 per 1,000. S7 was reworked around them.
-- **Push notifications.** FCM's default quota is 600,000 messages a minute per project and counts every device. The catalog assumes a raised quota counted per multicast request.
+- **Push notifications (closed in M21).** FCM's default quota (600,000 messages a minute) is a size of its own; a raised quota of 100,000 a second is labelled an assumption. Every device counts, and notifications have no batch size.
 - **Card payments.** Stripe's live-mode default is 100 requests a second per account. The payments problem assumes a contract quota of 5,000.
 - **Load balancer.** ALB bills capacity units (LCU) by connections and processed bytes. The catalog charges the hourly fee only, until requests have sizes.
 - **Thin assumptions.** Several capacities (service handlers, Kong, the key generation service, Flink, connection servers) are assumptions without a published measurement. They are labelled so.

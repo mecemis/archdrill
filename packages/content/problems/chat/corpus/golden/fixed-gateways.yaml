@@ -2,9 +2,9 @@
 id: fixed-gateways
 title: A fixed fleet of connection servers
 description: >-
-  The same design with a fixed fleet of 115 connection servers and one
-  notification request per device. Valid for one-to-one and small groups;
-  large groups exceed the push provider's quota.
+  The same design with a fixed fleet of 115 connection servers, notifying
+  every offline member of every conversation. Valid for one-to-one and small
+  groups; large groups exceed the push provider's quota.
 expect:
   s1-deliver: { minScore: 90 }
   s3-presence: { minScore: 90 }

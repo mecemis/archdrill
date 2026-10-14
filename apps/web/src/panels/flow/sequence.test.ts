@@ -117,7 +117,10 @@ describe("flow edits in a consumer", () => {
     });
   });
 
-  it("leaves a match open for the next step instead of finishing on it", () => {
+  it.each([
+    ["matchThreatList", "match-threat-list(clean)[match→?] > open(clean)"],
+    ["isLargeGroup", "is-large-group(small)[large→?] > open(small)"],
+  ] as const)("leaves the other way of %s open instead of finishing on it", (logic, expected) => {
     let attempt = apply(asyncAttempt({ localList: true }), [
       { name: "removeFlow", args: { operation: "scan-link" } },
       { name: "createFlow", args: { operation: "scan-link", handler: "worker" } },
@@ -136,13 +139,11 @@ describe("flow edits in a consumer", () => {
           background: true,
         },
         { kind: "root" },
-        { type: "logic", logic: "matchThreatList" },
+        { type: "logic", logic },
       ),
     );
 
-    expect(outline(sequenceOf(scanFlow(), attempt))).toBe(
-      "match-threat-list(clean)[match→?] > open(clean)",
-    );
+    expect(outline(sequenceOf(scanFlow(), attempt))).toBe(expected);
   });
 });
 

@@ -430,10 +430,12 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
 
 **Part 2, the URL-safety API (as built).** Web Risk as Google publishes it: the Lookup API at $0.50 per 1,000 calls and 6,000 calls a minute, and local threat lists from the Update API, where only matches are confirmed, at $50 per 1,000. A new decision matches a URL against the local copy; it needs the lists' provider connected, and a new check asks that matches are confirmed before acting. Batched checks are gone, since Web Risk has none. S7 now teaches why per-URL lookups cannot carry 1,000 links a second, and a new critical check catches a scanner that fails most of its scans. Both goldens still score 100, and all 81 URL-shortener mutants are caught (122 across the corpus).
 
+**Part 3, push notifications (as built).** FCM's default quota (600,000 messages a minute) is published; the raised quota the chat pack uses (100,000 a second) is labelled an assumption. Every device counts against it, since the HTTP v1 API has no multicast, so `external.notify` lost its batch size. Chat S2's lesson changed from batching notifications to notifying a large group's members only when mentioned, with a new decision (`isLargeGroup`) and a critical check that direct messages and small groups still notify everyone. Step matchers can name a fan-out count (`each`).
+
 **Next:**
 - **Calibration.** Reference points the engine must reproduce within a tolerance: pgbench reads per vCPU, etcd writes, Redis commands per node.
 - **Work units and sizes.** Requests carry payload sizes and operations carry work units: a 20 KB DynamoDB read costs five read units; bandwidth, data transfer and ALB capacity units follow.
-- **The remaining gaps ADR 0009 lists:** FCM's per-device quota and Stripe's default rate limit, each with the content changes they bring.
+- **The remaining gap ADR 0009 lists:** Stripe's default rate limit, with the content changes it brings.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

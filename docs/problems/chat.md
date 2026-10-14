@@ -34,9 +34,9 @@ A messaging app with one-to-one and group conversations (up to 500 members). Con
   - `Message` is durable and keyed by the client's message id.
   - `ConversationSeq` is a counter in memory, rebuilt from the latest message after a loss.
   - `Session` (which server holds a user's connection) and `Presence` live in memory.
-- **Counts.** `onlineRecipients`, `offlineRecipients` and `contactsShown` size the fan-outs.
-- **Calls.** `connection.push` sends a frame down an open connection. `external.notify` asks a push provider (100,000 requests a second) to notify devices, many per request when batched.
-- **Decision.** `message-order`: the sender's clock, the server's clock, or a sequence per conversation.
+- **Counts.** `onlineRecipients`, `offlineRecipients`, `mentionedOffline` and `contactsShown` size the fan-outs.
+- **Calls.** `connection.push` sends a frame down an open connection. `external.notify` asks a push provider to notify one device. Every device is one message against the quota: FCM's HTTP v1 API has no multicast, and the SDK helpers that take up to 500 devices send one message each. The provider's default quota is 600,000 messages a minute (10,000 a second); the scenarios assume Firebase raised it to 100,000 a second for this scale.
+- **Decisions.** `message-order`: the sender's clock, the server's clock, or a sequence per conversation. The step `isLargeGroup` (decided by `largeGroup`) branches on a conversation's size.
 
 ## Scenarios
 
@@ -56,7 +56,8 @@ Peak with 20 million connections.
 One message in fifty goes to a group of 500.
 - **Checks:**
   - delivery keeps up;
-  - nothing above 85%, so notifications must be batched to stay within the provider's quota;
+  - nothing above 85%: a hundred notifications per community message would be 400,000 a second, four times the quota, so large groups notify only the members who were mentioned (one per message on average);
+  - direct messages and small groups still notify every offline recipient (critical);
   - delivery p99 under 2 s.
 
 ### S3: Presence
@@ -71,15 +72,16 @@ One message in fifty goes to a group of 500.
 
 | ID | Design | Scenarios |
 |---|---|---|
-| `gateways-and-sequences` | Connection servers (80 to 200, scaled for connections) → chat service. It takes a sequence number from Redis, stores the message in Cassandra with a conditional insert, and publishes to Kafka. The delivery service looks up sessions, pushes in batches through the connection servers, and sends notifications in batches of 100. Presence lives in Redis with a TTL and is read in one batched lookup. | S1, S2, S3 |
-| `fixed-gateways` | 115 fixed connection servers and one notification request per device. | S1, S3 |
+| `gateways-and-sequences` | Connection servers (80 to 200, scaled for connections) → chat service. It takes a sequence number from Redis, stores the message in Cassandra with a conditional insert, and publishes to Kafka. The delivery service looks up sessions, pushes in batches through the connection servers, and notifies every offline recipient of small conversations and the mentioned members of large groups. Presence lives in Redis with a TTL and is read in one batched lookup. | S1, S2, S3 |
+| `fixed-gateways` | 115 fixed connection servers, notifying every offline member of every conversation. | S1, S3 |
 
-Ten mutants cover:
+Eleven mutants cover:
 - delivery: messages not published, and messages not delivered;
 - resends: a plain insert that stores a resent message twice;
 - ordering: no sequence numbers, and order by the client's clock;
 - reaching recipients: nothing pushed over open connections, and no notifications;
-- capacity: too few connection servers, unbatched notifications, and unbatched presence reads.
+- capacity: too few connection servers, notifying every member of a large group, and unbatched presence reads;
+- notifications: mentions only, even in direct messages.
 
 ## Estimates
 
