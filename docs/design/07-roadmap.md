@@ -357,7 +357,20 @@ Milestones:
 - **M14: News feed.** Fan-out on write or read, celebrity accounts, timelines in a cache, pagination. ✅ Delivered: three scenarios, two goldens, ten mutants and five estimates. It came with fan-out steps (`each`) sized by per-class counts, batches of a request's own calls, all-hit lookups, and entities hot by fact ([problem design](../problems/news-feed.md)).
 - **M15: Chat and notifications.** Connections as a resource, ordering, delivery and deduplication, presence, offline delivery. ✅ Delivered: three scenarios, two goldens, ten mutants and five estimates. It came with held connections and connection capacity, `connection.push`, `external.notify` with a push provider, connection servers, Cassandra's conditional writes, and problems that offer no logic ([problem design](../problems/chat.md)).
 - **M16: Orders and payments.** Idempotency keys, a transactional outbox, sagas with compensation, reconciliation. ✅ Delivered: three scenarios, two goldens, ten mutants and four estimates. It came with a card payments provider, `external.charge`, `external.refund` and `payments.lookup`, idempotency keys, outbox publishes with their validation, `no-dual-write`, duplicate requests, and optional workload keys ([problem design](../problems/payments.md)).
-- **M17: Back to the URL shortener, and compare mode.** Store TTLs instead of a purge job, an outbox for `link-created`, exactly-once counting, and two designs side by side.
+- **M17: Back to the URL shortener, and compare mode.** Store TTLs instead of a purge job, an outbox for `link-created`, exactly-once counting, and two designs side by side. ✅ Delivered: `expired-data-removed` and optional scenario operations, TTLs on durable writes, `exactlyOnce` commits from stream processors, the DynamoDB golden on TTLs and the PostgreSQL golden on an outbox, and a Compare tab that loads a second design from a file and compares scores and costs in every scenario.
+
+**v0.3 is done**:
+- five problem packs (URL shortener, rate limiter, news feed, chat, payments), each with goldens and mutants held by CI;
+- editor schemas for every content file;
+- compare mode.
+
+**Learned along the way (v0.3):**
+- **Facts beat flags.** Moving URL-specific flags out of the engine into facts that logic and calls name took one milestone. After that, every new problem needed only the engine features its lesson called for: fan-outs, connections, outboxes.
+- **Every new mechanism found a modelling gap.** A short-TTL block marker exposed that cache entries need writes that land, while long TTLs persist through a fault. Fan-outs needed per-class latency. Batched writes needed per-item billing.
+- **Content tests catch content mistakes early.** Probing every golden in every scenario before writing mutants exposed several problems: thresholds a scraper could not cross, budgets the shared design blew, and checks that flagged legitimate fallback paths.
+- **The analytic budget needs watching.** Each milestone added a few percent to the hottest loop, and calls across modules in that loop cost more than expected under the test runner. By M16 the CI runner sat at its budget.
+  - Paths come from a depth-first walk and share the step objects of a common prefix, so each prefix's probability is now computed once per class.
+  - That took analytic p50 from 92 to 66 ms and timelines from 530 to 390 ms, with identical results.
 
 | Problem | Patterns |
 |---|---|

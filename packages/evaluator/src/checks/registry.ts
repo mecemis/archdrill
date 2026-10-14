@@ -10,6 +10,7 @@ import {
 } from "@archdrill/model";
 import {
   eventConsumed,
+  expiredDataRemoved,
   idempotentConsumerWrites,
   noSyncWriteOnReadPath,
   publishesWithoutWaiting,
@@ -80,6 +81,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     eventConsumed,
     limitsAreGlobal,
     noDualWrite,
+    expiredDataRemoved,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -103,6 +105,10 @@ export function validateScenarioConfig(
   for (const op of scenario.focusOperations) {
     if (!operations.has(op))
       issues.push({ checkId: "-", message: `unknown focus operation "${op}"` });
+  }
+  for (const op of scenario.optionalOperations) {
+    if (!scenario.focusOperations.includes(op))
+      issues.push({ checkId: "-", message: `optional operation "${op}" is not a focus operation` });
   }
   for (const instance of scenario.checks) {
     const check = CHECKS.get(instance.use);
@@ -139,9 +145,11 @@ export function validateScenarioConfig(
         message: `decision "${String(decision)}" must be the workload's replication decision, so the simulated latency and the durability verdict agree`,
       });
     }
-    const op = (parsed.data as { operation?: unknown }).operation;
-    if (typeof op === "string" && !operations.has(op)) {
-      issues.push({ checkId: instance.id, message: `unknown operation "${op}"` });
+    const { operation: op, job } = parsed.data as { operation?: unknown; job?: unknown };
+    for (const id of [op, job]) {
+      if (typeof id === "string" && !operations.has(id)) {
+        issues.push({ checkId: instance.id, message: `unknown operation "${id}"` });
+      }
     }
     for (const req of instance.requirements) {
       if (!requirements.has(req))

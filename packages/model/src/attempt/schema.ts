@@ -103,6 +103,11 @@ export const CallStepSchema = z.object({
   each: IdSchema.optional(),
   /** For payments: the request carries an idempotency key, so the provider acts on a repeat only once. */
   idempotencyKey: z.boolean().optional(),
+  /**
+   * For writes from a stream processor: committed together with its
+   * checkpoint (two-phase commit), so a replay after a restart does not repeat them.
+   */
+  exactlyOnce: z.boolean().optional(),
   /** For publishes: through a transactional outbox, written with the store write before it. */
   outbox: z.boolean().optional(),
   /** For fire-and-forget publishes: messages held while the queue is unreachable. */

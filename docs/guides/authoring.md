@@ -44,6 +44,7 @@ problemId: url-shortener
 title: Edge cases
 order: 7
 story: |                   # the interviewer's prompt
+optionalOperations: [purge-expired]   # focus operations a design may do another way
 focusOperations: [create-link, redirect, purge-expired, scan-link]
 workload: …                # traffic and environments, see below
 dimensions: { correctness: 0.45, security: 0.25, operability: 0.2, latency: 0.1 }  # sum to 1
@@ -100,6 +101,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 | `no-sync-write-on-read-path`, `publishes-without-waiting`, `event-consumed`, `idempotent-consumer-writes` | Reads stay reads; events are published without waiting and consumed; increments survive redelivery |
 | `limits-are-global` | Rate limits are checked against a count every server shares |
 | `no-dual-write` | An event is written with the data it reports (transactional outbox) |
+| `expired-data-removed` | A job deletes expired data, or the store expires it through TTLs |
 
 `validateScenarioConfig` rejects unknown checks, invalid parameters, unknown operations and requirements, and workload mistakes; the content tests run it for every scenario.
 

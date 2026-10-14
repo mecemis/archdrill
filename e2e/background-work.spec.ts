@@ -17,9 +17,9 @@ test("shows what dropping the safety scan costs, and undo brings it back", async
 
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByLabel("Operation").selectOption("create-link");
-  const publish = page.getByText("Link events · publish Link created", { exact: true });
+  const publish = page.getByText("Link events · publish Link created (outbox)", { exact: true });
   await publish.locator("..").getByRole("button", { name: "Remove step" }).click();
-  await page.getByRole("button", { name: /^…on ok:/ }).click();
+  // An outbox publish has one way on, so removing it needs no choice.
 
   await expect(page.getByTestId("scenario-score")).toHaveText("40");
   await expect(page.getByText("Links to malicious sites are stopped")).toBeVisible();

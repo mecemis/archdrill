@@ -254,7 +254,8 @@ attempt:
           target: link-events
           action: queue.publish
           event: link-created
-          next: { ok: c201, error: c503 }
+          outbox: true
+          next: { ok: c201 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }

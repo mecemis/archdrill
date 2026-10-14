@@ -4,7 +4,7 @@ Scenario-based system design practice with deterministic simulation and evaluati
 
 You design **one architecture** for a problem, then drive it through **scenarios**: write path, read path, caching, peak traffic, failures, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. The analysis covers paths, data flow, configuration, and simulated load and faults, and every finding points at the part of the canvas that caused it.
 
-> **Status:** v0.1 (milestones M1 to M7) and v0.2 (M8 to M11) are complete. Eight URL Shortener scenarios run end to end (write path, read path, caching, cache outage and invalidation, peak traffic and hot keys, dependency failure, edge cases, click analytics): design, record, analyse, simulate, score, explain. v0.1 built the core: analytic simulation, write-path strategies, faults, timeouts and retries, scale, asynchronous work, and hardening (evaluation in a worker, budgets, reports and browser tests in CI). v0.2 added time: timelines with cache warm-up, autoscaling lag, breaker waits and backlogs, a timeline view with predictions and a scrubber, click analytics with stream aggregation and hot counters, and an estimation gym. See the [roadmap](docs/design/07-roadmap.md).
+> **Status:** v0.1 (M1 to M7), v0.2 (M8 to M11) and v0.3 (M12 to M17) are complete: five problem packs, each with scenarios, golden designs and mutants held by CI. Eight URL Shortener scenarios run end to end (write path, read path, caching, cache outage and invalidation, peak traffic and hot keys, dependency failure, edge cases, click analytics): design, record, analyse, simulate, score, explain. v0.1 built the core: analytic simulation, write-path strategies, faults, timeouts and retries, scale, asynchronous work, and hardening (evaluation in a worker, budgets, reports and browser tests in CI). v0.2 added time: timelines with cache warm-up, autoscaling lag, breaker waits and backlogs, a timeline view with predictions and a scrubber, click analytics with stream aggregation and hot counters, and an estimation gym. See the [roadmap](docs/design/07-roadmap.md).
 
 ![A gate finding: the cache-miss path answers 302 without reading the store; the offending path is highlighted on the canvas and in the step tree](docs/media/m1-gate-finding.png)
 
@@ -42,6 +42,9 @@ Most system design practice tools reward placing familiar components (a cache, a
   - utilisation on the canvas and request rates on connections.
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Working across scenarios:** a change that lowers another scenario's score raises a warning on that scenario's tab; a pinned baseline shows how every score moved and what changed; debriefs pose the follow-up questions once a scenario passes; designs export and import as JSON, upgraded by versioned migrations.
+- **Five problems:** a picker in the header switches between the URL shortener, a distributed rate limiter, a news feed, chat and notifications, and orders and payments. Each keeps its own design.
+- **Compare mode:** run the current design and a pinned baseline, or a second design loaded from a file, through every scenario, with scores and costs side by side.
+- **Authoring:** JSON Schemas for every kind of content file, so editors complete fields and flag mistakes; facts, counts and entity rules let new problems reuse the engine.
 - **Tests:**
   - over 540 unit, integration and property tests, including the product's success criteria;
   - a golden corpus of seven valid designs and 79 mutants that CI must catch;

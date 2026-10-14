@@ -450,6 +450,35 @@ function validateCallStep(
       ),
     );
   }
+  if (step.exactlyOnce) {
+    const handler = attempt.architecture.components.find((c) => c.id === flow.handler);
+    const processes =
+      handler !== undefined &&
+      ctx.catalog.capabilities(handler.kind, handler.flavor).has("stream-processing");
+    const transactional = ctx.catalog.capabilities(target.kind, target.flavor).has("transactions");
+    if (!processes || !transactional) {
+      issues.push(
+        error(
+          "step-exactly-once-unsupported",
+          `Step ${stepId} commits exactly once only from a stream processor into a store with transactions.`,
+          loc,
+        ),
+      );
+    }
+  }
+  if (
+    step.ttlSec !== undefined &&
+    action.capability !== "volatile-kv" &&
+    !ctx.catalog.capabilities(target.kind, target.flavor).has("ttl")
+  ) {
+    issues.push(
+      error(
+        "step-ttl-unsupported",
+        `"${target.label}" does not expire entries by itself, so step ${stepId} cannot set a TTL.`,
+        loc,
+      ),
+    );
+  }
   if (step.outbox && step.fireAndForget) {
     issues.push(
       error(
@@ -574,6 +603,8 @@ const NEW_PARAMS = [
   ["each", "a count to fan out over"],
   ["idempotencyKey", "an idempotency key"],
   ["outbox", "a transactional outbox"],
+  ["exactlyOnce", "exactly-once commits"],
+  ["ttlSec", "a TTL"],
 ] as const;
 
 function validateStepEntity(

@@ -139,6 +139,12 @@ Increments have their own effect (`increment`), which step matchers can name. St
 - `event-consumed` and `idempotent-consumer-writes` (M11) carry over to chat and payments.
 - `retry-only-idempotent` accepts retries of calls that carry an idempotency key.
 
+**As built (M17)**:
+
+- `expired-data-removed(entity, job)` accepts a job that deletes expired data, or writes that all carry a TTL the store enforces.
+- Scenarios can list `optionalOperations`: focus operations a design may leave out because it does their work another way. Checks about them then do not apply.
+- `idempotent-consumer-writes` accepts increments committed with a stream processor's checkpoints.
+
 **Metric checks** (from the simulation, per environment)
 - `p99-below(op, ms)`, `p50-below(op, ms)`.
 - `error-rate-below(op, rate, environment)`.

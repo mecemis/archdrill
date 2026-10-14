@@ -79,6 +79,7 @@ export function enumeratePaths(
               ...(step.each === undefined ? {} : { each: step.each }),
               ...(step.idempotencyKey === undefined ? {} : { idempotencyKey: step.idempotencyKey }),
               ...(step.outbox === undefined ? {} : { outbox: step.outbox }),
+              ...(step.exactlyOnce === undefined ? {} : { exactlyOnce: step.exactlyOnce }),
               outcome,
             }
           : { kind: "logic", stepId, logic: step.logic, outcome };

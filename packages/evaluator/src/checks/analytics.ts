@@ -167,10 +167,11 @@ export const idempotentConsumerWrites = defineCheck({
     const name = op.operation.label;
     const keyOf = (entity: string | undefined) =>
       ctx.problem.entities.find((e) => e.name === entity)?.key;
+    // Increments committed with a stream processor's checkpoints are not repeated by a replay.
     const counting = op.paths.filter(
       (p) =>
         isSuccessPath(p, op.operation) &&
-        calls(p).some((s) => ACTIONS[s.action].effect === "increment"),
+        calls(p).some((s) => ACTIONS[s.action].effect === "increment" && !s.exactlyOnce),
     );
     if (counting.length === 0) {
       return passed(
@@ -246,5 +247,45 @@ export const eventConsumed = defineCheck({
       );
     }
     return passed(`${consumers.map((c) => c.operation.label).join(" and ")} handles ${event}.`);
+  },
+});
+
+/**
+ * Expired data does not stay forever: a job deletes it, or the store expires
+ * it by itself because every write of it carries a TTL.
+ */
+export const expiredDataRemoved = defineCheck({
+  id: "expired-data-removed",
+  description:
+    "A job deletes the entity once it expires, or every write of it carries a TTL that the store enforces.",
+  params: z.strictObject({ entity: z.string().min(1), job: z.string().min(1) }),
+  run(params, ctx) {
+    const job = ctx.analysis.operations.get(params.job);
+    const deletes = (job?.paths ?? []).some((p) =>
+      calls(p).some(
+        (s) => s.action === "store.delete" && s.entity === params.entity && s.outcome === "ok",
+      ),
+    );
+    if (deletes) return passed(`${job?.operation.label} deletes expired ${params.entity} records.`);
+    const writes = [...ctx.analysis.operations.values()].flatMap((op) =>
+      distinctSteps(
+        op.paths,
+        (s) =>
+          s.entity === params.entity &&
+          (s.action === "store.insert" || s.action === "store.insertIfAbsent"),
+      ).map((step) => ({ operation: op.operation.id, step })),
+    );
+    if (writes.length > 0 && writes.every(({ step }) => step.ttlSec !== undefined)) {
+      return passed(
+        `The store expires ${params.entity} records by itself: every write sets a TTL.`,
+      );
+    }
+    const evidence: Evidence[] = writes
+      .filter(({ step }) => step.ttlSec === undefined)
+      .map(({ operation, step }) => ({ type: "step", operation, stepId: step.stepId }));
+    return failed(
+      `Nothing removes expired ${params.entity} records: no job deletes them, and the writes set no TTL.`,
+      evidence,
+    );
   },
 });

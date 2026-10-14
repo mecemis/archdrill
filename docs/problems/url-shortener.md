@@ -398,6 +398,12 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - 301;
   - a managed queue billed per message.
 
+**As built (M17).** Three more ways to meet S7 and S8:
+
+- **Store TTLs.** S7 lists the purge job as optional (`optionalOperations`). `expired-data-removed` passes when a job deletes expired links, or when every link write sets a TTL in a store that expires entries (DynamoDB, Cassandra). The DynamoDB golden now writes links with a one-year TTL and has no purge job.
+- **An outbox for `link-created`.** A new staff signal in S7 asks that a link and its event commit together. The PostgreSQL golden now publishes through a transactional outbox.
+- **Exactly-once counting.** Increments from a stream processor into a store with transactions can commit with its checkpoints (`exactlyOnce`). `idempotent-consumer-writes` accepts them, a third way to count each click once.
+
 **Estimates.** The pack asks nine back-of-envelope questions: links a day (86.4 M), links after five years (158 B), storage before replication (79 TB), peak redirects (300 k/s), 7-character base62 codes (3.5 × 10¹²), memory for the top 20 million links (14 GB), clicks a day (8.6 B), click-log bandwidth at peak (60 MB/s) and storage for counts (1.3 TB).
 
 ---

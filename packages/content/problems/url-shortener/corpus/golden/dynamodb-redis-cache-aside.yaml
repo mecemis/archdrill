@@ -8,7 +8,8 @@ description: >-
   Every new link is checked with the URL-safety API right after the insert:
   a malicious one is disabled and answered with 400, and when the API fails
   the link is accepted and published for a batched rescan by the same
-  service, which also purges expired links 25 at a time.
+  service. Links are written with a TTL, so DynamoDB deletes expired ones by
+  itself; there is no purge job.
 expect:
   s5-hot-keys: { minScore: 90 }
   s4-cache-outage: { minScore: 90 }
@@ -127,6 +128,7 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
+          ttlSec: 31536000
           next: { ok: check, conflict: c409, error: c503 }
         generate:
           type: logic
@@ -137,6 +139,7 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
+          ttlSec: 31536000
           next: { ok: check, conflict: generate-retry, error: c503 }
         generate-retry:
           type: logic
@@ -147,6 +150,7 @@ attempt:
           target: links
           action: store.insertIfAbsent
           entity: Link
+          ttlSec: 31536000
           next: { ok: check, conflict: c503, error: c503 }
         check:
           type: call
@@ -212,19 +216,6 @@ attempt:
           next: { ok: s200, error: s503 }
         s200: { type: respond, status: 200 }
         s503: { type: respond, status: 503 }
-    - operation: purge-expired
-      handler: link-api
-      root: delete
-      steps:
-        delete:
-          type: call
-          target: links
-          action: store.delete
-          entity: Link
-          batchSize: 25
-          next: { ok: p200, error: p503 }
-        p200: { type: respond, status: 200 }
-        p503: { type: respond, status: 503 }
   decisions:
     code-strategy: random-conditional
     code-length: "8"
