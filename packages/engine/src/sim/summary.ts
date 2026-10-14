@@ -416,32 +416,53 @@ export function summarize(components: readonly WeightedMoments[]): LatencySummar
   };
 }
 
-export function pathProbability(
-  path: Path,
+/**
+ * Every path's probability for one class, in path order.
+ *
+ * Paths come from a depth-first walk, and paths that start the same way share
+ * those step objects. The product over a shared prefix is therefore computed
+ * once, in the same order of multiplications as one path at a time.
+ */
+export function pathProbabilities(
+  paths: readonly Path[],
   cls: OperationModel["classes"][number],
   state: OutcomeState,
   /** Which steps are hot for which classes; without it, the class's hot key applies to every step. */
   op?: Pick<OperationModel, "unkeyed" | "hotBy">,
-): number {
-  let probability = 1;
-  const steps = path.steps;
+): Float64Array {
+  const result = new Float64Array(paths.length);
   const keyed = op !== undefined && (op.unkeyed.size > 0 || op.hotBy.size > 0);
   let flipped: RequestClass | null = null;
-  for (let index = 0; index < steps.length && probability > 0; index++) {
-    const step = steps[index] as PathStep;
-    // Only a conditional insert looks back along the path (where its key came from).
-    const prior =
-      step.kind === "call" && step.action === "store.insertIfAbsent"
-        ? steps.slice(0, index)
-        : NO_STEPS;
-    let asked = cls;
-    if (keyed && op && isHotStep(op, step.stepId, cls) !== cls.hotKey) {
-      flipped ??= { ...cls, hotKey: !cls.hotKey };
-      asked = flipped;
+  // prefix[d]: the product over the first d steps of the previous path.
+  const prefix: number[] = [1];
+  let previous: readonly PathStep[] = NO_STEPS;
+  for (let p = 0; p < paths.length; p++) {
+    const steps = (paths[p] as Path).steps;
+    let shared = 0;
+    const limit = Math.min(steps.length, previous.length);
+    while (shared < limit && steps[shared] === previous[shared]) shared++;
+    let probability = prefix[shared] as number;
+    for (let index = shared; index < steps.length; index++) {
+      if (probability > 0) {
+        const step = steps[index] as PathStep;
+        // Only a conditional insert looks back along the path (where its key came from).
+        const prior =
+          step.kind === "call" && step.action === "store.insertIfAbsent"
+            ? steps.slice(0, index)
+            : NO_STEPS;
+        let asked = cls;
+        if (keyed && op && isHotStep(op, step.stepId, cls) !== cls.hotKey) {
+          flipped ??= { ...cls, hotKey: !cls.hotKey };
+          asked = flipped;
+        }
+        probability *= outcomeProbability(step, asked, state, prior);
+      }
+      prefix[index + 1] = probability;
     }
-    probability *= outcomeProbability(step, asked, state, prior);
+    result[p] = probability;
+    previous = steps;
   }
-  return probability;
+  return result;
 }
 
 export function summarizeOperations(
@@ -479,10 +500,13 @@ export function summarizeOperations(
     let success = 0;
     let unhandled = 0;
     let errorStatus = 0;
-    for (const path of op.analysis.paths) {
-      const byClass = classes.map((cls) => ({
+    const probabilities = classes.map((cls) =>
+      pathProbabilities(op.analysis.paths, cls, state, op),
+    );
+    for (const [pathIndex, path] of op.analysis.paths.entries()) {
+      const byClass = classes.map((cls, i) => ({
         hot: cls.hotKey,
-        p: cls.share * pathProbability(path, cls, state, op),
+        p: cls.share * (probabilities[i]?.[pathIndex] ?? 0),
       }));
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
