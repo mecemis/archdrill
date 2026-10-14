@@ -255,6 +255,29 @@ describe("App", () => {
     expect(flow?.steps.expiryHit).toBeUndefined();
   });
 
+  it("says where a component's numbers come from", () => {
+    renderApp();
+    act(() => useUi.getState().select({ type: "component", id: "links" }));
+
+    fireEvent.click(screen.getByText("Where these numbers come from"));
+
+    expect(screen.getByText("Amazon DynamoDB (on-demand, Standard table class)")).toBeDefined();
+    const pricing = screen
+      .getAllByRole("link")
+      .find((a) => a.getAttribute("href") === "https://aws.amazon.com/dynamodb/pricing/on-demand/");
+    expect(pricing).toBeDefined();
+    expect(screen.getAllByText("published").length).toBeGreaterThan(0);
+    // Prices read as the source states them, not rounded away.
+    expect(screen.getByText("$0.125 per million reads, $0.625 per million writes")).toBeDefined();
+
+    act(() => useUi.getState().select({ type: "component", id: "api" }));
+    fireEvent.click(screen.getByText("Where these numbers come from"));
+
+    expect(screen.getByText("c6i.2xlarge (EC2, 8 vCPU)")).toBeDefined();
+    // A thin handler's throughput is the catalog's own assumption, and says so.
+    expect(screen.getAllByText("assumption").length).toBeGreaterThan(0);
+  });
+
   it("shows simulated load per environment", () => {
     useAttemptStore.getState().replace(cacheAsideAttempt());
     renderApp();

@@ -424,6 +424,15 @@ A first scenario now takes a handful of clicks from an empty canvas to a score.
 
 The flow editor was then rebuilt around a top-to-bottom list of steps in plain sentences. One searchable picker chooses each step, and outcomes that end a request get their conventional response, changeable in place. It replaces the indented tree and its per-branch forms.
 
+## M21: A realism foundation (in progress)
+
+**Part 1, sources (as built).** Every catalog number is published (cited, with the date read) or a model (reasoning and basis), and each size names the real offering it stands for ([ADR 0009](../adr/0009-every-number-has-a-source.md)). Tests enforce the coverage, and the inspector shows it. Prices and memory now match their sources; no score in the corpus changed.
+
+**Next:**
+- **Calibration.** Reference points the engine must reproduce within a tolerance: pgbench reads per vCPU, etcd writes, Redis commands per node.
+- **Work units and sizes.** Requests carry payload sizes and operations carry work units: a 20 KB DynamoDB read costs five read units; bandwidth, data transfer and ALB capacity units follow.
+- **The gaps ADR 0009 lists:** the URL-safety API's real price (and a local threat list), FCM's per-device quota, and Stripe's default rate limit, each with the content changes they bring.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

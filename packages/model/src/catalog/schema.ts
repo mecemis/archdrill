@@ -5,7 +5,63 @@ export const IdSchema = z
   .string()
   .regex(/^[a-z0-9][a-zA-Z0-9-]*$/, "ids use letters, digits and dashes, starting lowercase");
 
-/** Physics of one size preset. Numbers are documented ballparks, not quotes. */
+/**
+ * Where a number came from. Every catalog number is either PUBLISHED (a
+ * price, quota or spec a vendor states, cited) or a MODEL (how this catalog
+ * turns specs and measurements into simulator behaviour, with its reasoning
+ * and the sources it rests on). The two are kept apart on purpose: a model
+ * presented as a measurement is the error this guards against.
+ */
+export const SourceSchema = z.strictObject({
+  id: IdSchema,
+  title: z.string().min(1),
+  url: z.url(),
+  publisher: z.string().min(1),
+  /** A price list, a quota or limit, a published spec, a measurement, or documentation. */
+  kind: z.enum(["price", "quota", "spec", "benchmark", "documentation"]),
+  /** When the figure was read (YYYY-MM-DD). Prices and quotas change; a stale date should show. */
+  retrieved: z.iso.date(),
+  /** Who read it, when it was not read first-hand: another project's cited data, for example. */
+  via: z.string().min(1).optional(),
+});
+export type Source = z.infer<typeof SourceSchema>;
+
+export const ProvenanceSchema = z.union([
+  z.strictObject({
+    /** The source that states this number. */
+    published: IdSchema,
+    note: z.string().min(1).optional(),
+  }),
+  z.strictObject({
+    /** How the number is modelled, in a sentence or two a reader can check. */
+    model: z.string().min(1),
+    /** Sources the model rests on; empty for a stated assumption. */
+    basis: z.array(IdSchema).default([]),
+  }),
+]);
+export type Provenance = z.infer<typeof ProvenanceSchema>;
+
+/** Numbers on a size, and on a flavor, that need a provenance. */
+export const SIZE_NUMBERS = [
+  "capacityPerSec",
+  "latencyMs",
+  "costPerHour",
+  "memoryGb",
+  "maxConnections",
+] as const;
+export const FLAVOR_NUMBERS = [
+  "storagePricePerGbMonth",
+  "requestCost",
+  "perKeyCapacityPerSec",
+  "startupSec",
+] as const;
+
+const ProvenanceMapSchema = z.partialRecord(
+  z.enum([...SIZE_NUMBERS, ...FLAVOR_NUMBERS]),
+  ProvenanceSchema,
+);
+
+/** Physics of one size preset. Every number cites where it came from (see SourceSchema). */
 export const SizeSchema = z.object({
   label: z.string().min(1),
   capacityPerSec: z
@@ -23,6 +79,9 @@ export const SizeSchema = z.object({
     cv: z.number().nonnegative(),
   }),
   costPerHour: z.number().nonnegative(),
+  /** The real offering this size stands for, such as "db.m6i.large (AWS RDS)". */
+  standsFor: z.string().min(1).optional(),
+  provenance: ProvenanceMapSchema.default({}),
 });
 export type Size = z.infer<typeof SizeSchema>;
 
@@ -60,6 +119,10 @@ export const FlavorSchema = z
       })
       .optional(),
     notes: z.string().optional(),
+    /** The real offering the flavor stands for, where its sizes do not say. */
+    standsFor: z.string().min(1).optional(),
+    /** Provenance of the flavor's numbers, and defaults for every size's. */
+    provenance: ProvenanceMapSchema.default({}),
   })
   .refine((f) => f.defaultSize === undefined || f.defaultSize in f.sizes, {
     message: "defaultSize must name one of the flavor's sizes",
@@ -100,8 +163,25 @@ export const CatalogSchema = z
   .object({
     version: z.number().int().positive(),
     kinds: z.array(KindSchema).min(1),
+    /** Everything the catalog's numbers cite. */
+    sources: z.array(SourceSchema).default([]),
   })
   .superRefine((catalog, ctx) => {
+    const sourceIds = new Set(catalog.sources.map((s) => s.id));
+    const cited = (provenance: Partial<Record<string, Provenance>>, path: (string | number)[]) => {
+      for (const [field, entry] of Object.entries(provenance)) {
+        const ids = !entry ? [] : "published" in entry ? [entry.published] : entry.basis;
+        for (const id of ids) {
+          if (!sourceIds.has(id)) {
+            ctx.addIssue({
+              code: "custom",
+              message: `${field} cites unknown source "${id}"`,
+              path: [...path, "provenance", field],
+            });
+          }
+        }
+      }
+    };
     const seen = new Set<string>();
     catalog.kinds.forEach((kind, i) => {
       if (seen.has(kind.id)) {
@@ -122,6 +202,10 @@ export const CatalogSchema = z
           });
         }
         flavorIds.add(flavor.id);
+        cited(flavor.provenance, ["kinds", i, "flavors", j]);
+        for (const [sizeId, size] of Object.entries(flavor.sizes)) {
+          cited(size.provenance, ["kinds", i, "flavors", j, "sizes", sizeId]);
+        }
       });
     });
   });
