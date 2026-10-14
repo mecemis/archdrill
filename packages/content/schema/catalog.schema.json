@@ -194,6 +194,66 @@
                       "costPerHour": {
                         "type": "number",
                         "minimum": 0
+                      },
+                      "standsFor": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "provenance": {
+                        "default": {},
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "enum": [
+                            "capacityPerSec",
+                            "latencyMs",
+                            "costPerHour",
+                            "memoryGb",
+                            "maxConnections",
+                            "storagePricePerGbMonth",
+                            "requestCost",
+                            "perKeyCapacityPerSec",
+                            "startupSec"
+                          ]
+                        },
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "published": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                },
+                                "note": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": ["published"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "basis": {
+                                  "default": [],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                                  }
+                                }
+                              },
+                              "required": ["model"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
                       }
                     },
                     "required": ["label", "latencyMs", "costPerHour"]
@@ -236,6 +296,66 @@
                 },
                 "notes": {
                   "type": "string"
+                },
+                "standsFor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provenance": {
+                  "default": {},
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": [
+                      "capacityPerSec",
+                      "latencyMs",
+                      "costPerHour",
+                      "memoryGb",
+                      "maxConnections",
+                      "storagePricePerGbMonth",
+                      "requestCost",
+                      "perKeyCapacityPerSec",
+                      "startupSec"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "published": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                          },
+                          "note": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": ["published"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "model": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "basis": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                            }
+                          }
+                        },
+                        "required": ["model"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
                 }
               },
               "required": ["id", "label", "description"]
@@ -251,6 +371,46 @@
           "holdsData",
           "flavors"
         ]
+      }
+    },
+    "sources": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "publisher": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["price", "quota", "spec", "benchmark", "documentation"]
+          },
+          "retrieved": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "via": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "title", "url", "publisher", "kind", "retrieved"],
+        "additionalProperties": false
       }
     }
   },

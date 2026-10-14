@@ -9,6 +9,7 @@ import { compact, usd } from "../ui/format";
 import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitives";
 import { AutoscaleEditor } from "./AutoscaleEditor";
 import { ConnectionInspector } from "./ConnectionInspector";
+import { ProvenancePanel } from "./ProvenancePanel";
 
 const MAX_REPLICAS = 200;
 const MAX_SHARDS = 64;
@@ -130,6 +131,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
         ))}
       </div>
       {flavor?.notes && <p className="text-xs text-fg-subtle">{flavor.notes}</p>}
+      <ProvenancePanel kind={component.kind} flavor={component.flavor} sizeId={component.size} />
       <RemoveComponentButton component={component} />
     </div>
   );

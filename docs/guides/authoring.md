@@ -20,6 +20,16 @@ packages/content/problems/url-shortener/
 
 Register a new pack in `packages/content/src/index.ts`, and its corpus in `packages/content/test/corpus.ts`. The app offers every registered pack in a problem picker; each problem keeps its own design in the browser.
 
+## The catalog: every number has a source
+
+Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/0009-every-number-has-a-source.md)). Every number on a flavor or a size needs a provenance, and the content tests fail without one.
+
+- **Sources.** Add a source to `sources` with its id, title, URL, publisher, kind (`price`, `quota`, `spec`, `benchmark` or `documentation`) and the date you read it. Prefer the vendor's own page. A figure read second-hand names its reader in `via`.
+- **Published numbers.** A number a vendor states cites it: `costPerHour: { published: aws-rds-price-list, note: Single-AZ. }`.
+- **Model numbers.** A number the catalog derives says how, and on what. For example: `capacityPerSec: { model: "pgbench measures ... ; the catalog takes about a sixth ...", basis: [pgbench-selfhost] }`. With an empty `basis` it shows as an assumption, and the text should say so.
+- **Where it goes.** A provenance on the flavor applies to all of its sizes; a size can override it.
+- **Stands for.** Name the real offering: `standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)`.
+
 ## problem.yaml
 
 - `requirements`: functional (`FR-n`) and non-functional (`NFR-n`) requirements; checks cite them.

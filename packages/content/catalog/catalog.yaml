@@ -1,11 +1,15 @@
 # yaml-language-server: $schema=../schema/catalog.schema.json
 # Component catalog.
 #
-# Every number is an order-of-magnitude ballpark for comparing designs, not a
-# capacity plan or a price quote. Throughput is per replica (or per node) for
-# small requests; latency is server-side processing time; cost is an on-demand
-# list-price ballpark per instance-hour (us-east-1, 2026). Storage is priced per
-# GB-month for every stored copy.
+# Every number says where it came from. A PUBLISHED number (a price, quota or
+# spec) cites the vendor source it was read from and when; a MODEL number (how a
+# spec becomes simulator behaviour: capacity, latency, startup time) states its
+# reasoning and the sources it rests on, or says plainly that it is an
+# assumption. Each size names the real offering it stands for.
+#
+# Throughput is per replica (or per node) for small requests; latency is
+# server-side processing time; cost is on-demand per instance-hour in us-east-1.
+# Storage is priced per GB-month for every stored copy.
 version: 1
 kinds:
   - id: client
@@ -41,9 +45,20 @@ kinds:
             label: managed
             capacityPerSec: { read: 5000000, write: 5000000 }
             latencyMs: { base: 1, cv: 0.3 }
-            costPerHour: 0.03
+            costPerHour: 0.0225
+            provenance:
+              costPerHour:
+                published: aws-alb-pricing
+                note: The hourly charge. Capacity units (LCU), billed by connections and bytes, come with payload sizes.
+              capacityPerSec:
+                model: Managed balancers scale out on their own and AWS publishes no ceiling, so the figure is set where a managed balancer never limits a design. Very sudden spikes may need pre-warming.
+                basis: []
+              latencyMs:
+                model: About a millisecond of added latency; AWS publishes no figure.
+                basis: []
         defaultSize: managed
         notes: Scales automatically; very sudden extreme spikes may need pre-warming.
+        standsFor: AWS Application Load Balancer
       - id: nginx
         label: NGINX
         description: Self-managed reverse proxy and load balancer. Run at least two for redundancy.
@@ -53,6 +68,17 @@ kinds:
             capacityPerSec: { read: 50000, write: 50000 }
             latencyMs: { base: 0.5, cv: 0.3 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU)
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: NGINX serves about 261,000 requests a second for 1 KB on 4 CPUs as a web server. Proxying costs an upstream connection and TLS per request, so the catalog takes about a fifth of that.
+                basis:
+                  - nginx-performance
+              latencyMs:
+                model: Half a millisecond of proxy processing; an assumption.
+                basis: []
         defaultSize: m
 
   - id: api-gateway
@@ -73,8 +99,24 @@ kinds:
             capacityPerSec: { read: 1000000, write: 1000000 }
             latencyMs: { base: 5, cv: 0.5 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                published: aws-apigw-pricing
+                note: "No hourly charge: it is billed per request."
+              capacityPerSec:
+                model: The account default is 10,000 requests a second per Region; the catalog assumes the quota has been raised for the design's traffic.
+                basis:
+                  - aws-apigw-quotas
+              latencyMs:
+                model: A few milliseconds of gateway processing; AWS publishes no figure.
+                basis: []
         defaultSize: managed
         notes: Billed per request (about $1 per million for HTTP APIs), which gets expensive on very hot paths; account throttling limits must be raised for high traffic.
+        standsFor: Amazon API Gateway (HTTP API)
+        provenance:
+          requestCost:
+            published: aws-apigw-pricing
+            note: HTTP APIs, first 300 million requests a month.
       - id: kong
         label: Kong
         description: Self-managed gateway with rate-limiting and authentication plugins. Run at least two.
@@ -84,6 +126,17 @@ kinds:
             capacityPerSec: { read: 20000, write: 20000 }
             latencyMs: { base: 1.5, cv: 0.4 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU)
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: Kong runs on NGINX; with authentication and rate-limiting plugins it does far less per core than plain proxying. An assumption.
+                basis:
+                  - nginx-performance
+              latencyMs:
+                model: A millisecond and a half of plugin processing; an assumption.
+                basis: []
         defaultSize: m
 
   - id: service
@@ -103,18 +156,34 @@ kinds:
             capacityPerSec: { read: 4000, write: 2500 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.085
+            standsFor: c6i.large (EC2, 2 vCPU)
           m:
             label: 4 vCPU
             capacityPerSec: { read: 8000, write: 5000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU)
           l:
             label: 8 vCPU
             capacityPerSec: { read: 16000, write: 10000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.34
+            standsFor: c6i.2xlarge (EC2, 8 vCPU)
         defaultSize: m
         notes: Throughput assumes a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime; heavier handlers do far less.
+        provenance:
+          startupSec:
+            model: "A minute from launch to taking traffic: instance boot, runtime start and health checks. An assumption."
+            basis: []
+          capacityPerSec:
+            model: About 2,000 reads a second per vCPU for a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime, and fewer writes. An assumption; heavier handlers do far less.
+            basis: []
+          latencyMs:
+            model: Two milliseconds of handler time for a thin handler; an assumption.
+            basis: []
+          costPerHour:
+            published: ec2-c6i-prices
+            note: c6i prices scale linearly with size.
 
   - id: near-cache
     label: Near cache
@@ -145,6 +214,17 @@ kinds:
             costPerHour: 0
         defaultSize: m
         notes: Lives in the memory of the service that connects to it, one copy per instance of that service. A delete reaches one instance only; bound staleness with the TTL.
+        standsFor: A bounded map inside the service (Caffeine, Guava)
+        provenance:
+          costPerHour:
+            model: "No charge of its own: it uses memory of the service it lives in."
+            basis: []
+          memoryGb:
+            model: The size you configure, not a measurement.
+            basis: []
+          latencyMs:
+            model: "An in-process hash-map lookup: tens of microseconds at most, with no network hop."
+            basis: []
 
   - id: cache
     label: Cache
@@ -162,34 +242,78 @@ kinds:
         sizes:
           s:
             label: 13 GB
-            memoryGb: 13
+            memoryGb: 13.07
             capacityPerSec: { read: 100000, write: 80000 }
             latencyMs: { base: 0.5, cv: 0.6 }
-            costPerHour: 0.22
+            costPerHour: 0.206
+            standsFor: cache.r6g.large (ElastiCache, Redis OSS)
+            provenance:
+              costPerHour:
+                published: aws-elasticache-price-list
+              memoryGb:
+                published: aws-elasticache-price-list
+                note: Memory left for data after the node's own reservation.
           m:
             label: 26 GB
-            memoryGb: 26
+            memoryGb: 26.32
             capacityPerSec: { read: 150000, write: 120000 }
             latencyMs: { base: 0.5, cv: 0.6 }
-            costPerHour: 0.44
+            costPerHour: 0.411
+            standsFor: cache.r6g.xlarge (ElastiCache, Redis OSS)
+            provenance:
+              costPerHour:
+                published: aws-elasticache-price-list
+              memoryGb:
+                published: aws-elasticache-price-list
+                note: Memory left for data after the node's own reservation.
           l:
             label: 52 GB
-            memoryGb: 52
+            memoryGb: 52.82
             capacityPerSec: { read: 200000, write: 160000 }
             latencyMs: { base: 0.5, cv: 0.6 }
-            costPerHour: 0.87
+            costPerHour: 0.821
+            standsFor: cache.r6g.2xlarge (ElastiCache, Redis OSS)
+            provenance:
+              costPerHour:
+                published: elasticache-r6g-2xlarge
+              memoryGb:
+                published: elasticache-r6g-2xlarge
         defaultSize: m
         notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
+        provenance:
+          capacityPerSec:
+            model: "One Redis node executes commands on a single thread: about 100,000 to 200,000 small commands a second without pipelining, more on larger nodes with Redis 7.1's I/O threads. Writes cost a little more."
+            basis:
+              - redis-benchmarks
+              - aws-elasticache-71
+          latencyMs:
+            model: Half a millisecond inside the node for a small command.
+            basis:
+              - redis-benchmarks
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.
         sizes:
           m:
             label: 26 GB
-            memoryGb: 26
+            memoryGb: 26.32
             capacityPerSec: { read: 300000, write: 250000 }
             latencyMs: { base: 0.5, cv: 0.6 }
-            costPerHour: 0.44
+            costPerHour: 0.411
+            standsFor: cache.r6g.xlarge (ElastiCache, Memcached)
+            provenance:
+              costPerHour:
+                published: aws-elasticache-price-list
+                note: Memcached nodes cost the same as Redis OSS nodes.
+              memoryGb:
+                published: aws-elasticache-price-list
+              capacityPerSec:
+                model: Multi-threaded, so a 4-vCPU node takes about twice the commands of a single-threaded Redis node. An assumption.
+                basis:
+                  - redis-benchmarks
+              latencyMs:
+                model: Half a millisecond inside the node for a small command; an assumption.
+                basis: []
         defaultSize: m
         notes: Nodes are independent; use shards for capacity. Memcached has no replication, so replicas only model extra nodes holding the same keys.
 
@@ -211,19 +335,45 @@ kinds:
             label: 2 vCPU
             capacityPerSec: { read: 5000, write: 1500 }
             latencyMs: { base: 2, cv: 1 }
-            costPerHour: 0.18
+            costPerHour: 0.178
+            standsFor: db.m6i.large (RDS PostgreSQL, 2 vCPU)
+            provenance:
+              costPerHour:
+                published: aws-rds-price-list
+                note: Single-AZ.
           m:
             label: 8 vCPU
             capacityPerSec: { read: 20000, write: 5000 }
             latencyMs: { base: 2, cv: 1 }
-            costPerHour: 0.7
+            costPerHour: 0.712
+            standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)
+            provenance:
+              costPerHour:
+                published: rds-m6i-prices
+                note: Single-AZ.
           l:
             label: 16 vCPU
             capacityPerSec: { read: 40000, write: 10000 }
             latencyMs: { base: 2, cv: 1 }
-            costPerHour: 1.4
+            costPerHour: 1.424
+            standsFor: db.m6i.4xlarge (RDS PostgreSQL, 16 vCPU)
+            provenance:
+              costPerHour:
+                published: rds-m6i-prices
+                note: Single-AZ.
         defaultSize: m
         notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
+        provenance:
+          storagePricePerGbMonth:
+            published: rds-gp3-storage
+            note: RDS gp3, Single-AZ, per stored copy.
+          capacityPerSec:
+            model: pgbench measures about 15,000 in-memory primary-key reads a second per vCPU and about 1,600 TPC-B-like transactions per vCPU. The catalog takes about a sixth of the read figure (2,500 per vCPU) to cover network round trips, connection handling and real queries, and about 600 single-row writes per vCPU.
+            basis:
+              - pgbench-selfhost
+          latencyMs:
+            model: Two milliseconds for an indexed lookup or a single-row insert, with a coefficient of variation of 1 for the occasional slow query. An assumption.
+            basis: []
       - id: mysql
         label: MySQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
@@ -233,8 +383,25 @@ kinds:
             label: 8 vCPU
             capacityPerSec: { read: 20000, write: 5000 }
             latencyMs: { base: 2, cv: 1 }
-            costPerHour: 0.7
+            costPerHour: 0.712
+            standsFor: db.m6i.2xlarge (RDS MySQL, 8 vCPU)
+            provenance:
+              costPerHour:
+                model: The published PostgreSQL rate for db.m6i.2xlarge; RDS MySQL lists within a few percent of it.
+                basis:
+                  - rds-m6i-prices
         defaultSize: m
+        provenance:
+          storagePricePerGbMonth:
+            published: rds-gp3-storage
+            note: RDS gp3, Single-AZ, per stored copy.
+          capacityPerSec:
+            model: Taken equal to PostgreSQL on the same hardware for primary-key work; an assumption.
+            basis:
+              - pgbench-selfhost
+          latencyMs:
+            model: Two milliseconds for an indexed lookup or a single-row insert; an assumption.
+            basis: []
 
   - id: key-value-db
     label: Key-value database
@@ -257,8 +424,29 @@ kinds:
             capacityPerSec: { read: 1000000, write: 1000000 }
             latencyMs: { base: 4, cv: 0.5 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                published: aws-dynamodb-pricing
+                note: On-demand tables have no hourly charge.
+              capacityPerSec:
+                model: On-demand tables default to 40,000 read and 40,000 write request units a second; the catalog assumes the quota has been raised for the design's traffic.
+                basis:
+                  - aws-dynamodb-quotas
+              latencyMs:
+                model: Single-digit milliseconds inside the service; 4 ms is taken for a point read or write. An assumption.
+                basis: []
         defaultSize: on-demand
         notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). One item lives in one partition, which takes at most 1,000 writes a second, however much capacity the table has.
+        standsFor: Amazon DynamoDB (on-demand, Standard table class)
+        provenance:
+          storagePricePerGbMonth:
+            published: aws-dynamodb-pricing
+          requestCost:
+            published: aws-dynamodb-pricing
+            note: "Per million request units: a read unit covers up to 4 KB, a write unit up to 1 KB."
+          perKeyCapacityPerSec:
+            published: aws-dynamodb-partitions
+            note: Every partition delivers at most 3,000 read units and 1,000 write units a second; one item lives in one partition.
 
   - id: wide-column-db
     label: Wide-column database
@@ -272,15 +460,30 @@ kinds:
       - id: cassandra
         label: Cassandra
         description: Leaderless, partitioned database (Apache Cassandra or ScyllaDB). Shards are the groups of nodes that own a range of keys; replicas are the copies of each range.
-        storagePricePerGbMonth: 0.1
+        storagePricePerGbMonth: 0.08
         sizes:
           m:
             label: 8 vCPU node
             capacityPerSec: { read: 15000, write: 30000 }
             latencyMs: { base: 2, cv: 0.8 }
-            costPerHour: 0.6
+            costPerHour: 0.504
+            standsFor: r6i.2xlarge (EC2, 8 vCPU, 64 GiB) with gp3 volumes
+            provenance:
+              costPerHour:
+                published: ec2-r6i-2xlarge
+              capacityPerSec:
+                model: Instaclustr measured about 45,000 insert-only operations a second on 8-vCPU nodes with cassandra-stress, and advises discounting 20-40% for production. The catalog takes 30,000 writes and half as many reads, since a read may touch several SSTables.
+                basis:
+                  - instaclustr-cassandra
+              latencyMs:
+                model: Two milliseconds for a single-partition read or write at a local coordinator; an assumption.
+                basis: []
         defaultSize: m
         notes: Writes are cheap appends, so a node takes about twice as many writes as reads. Run three replicas of every range. Counter columns add in place, so a retried or redelivered increment counts twice. Conditional writes (IF NOT EXISTS) run a lightweight transaction, a consensus round between replicas that costs several plain writes.
+        provenance:
+          storagePricePerGbMonth:
+            published: ebs-gp3-storage
+            note: EBS gp3 volumes on EC2, per stored copy.
 
   - id: id-generator
     label: Id generator
@@ -298,6 +501,16 @@ kinds:
             capacityPerSec: { read: 20000, write: 20000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU)
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: "A small service claiming keys from a key table: 20,000 claims a second on 4 vCPUs. An assumption."
+                basis: []
+              latencyMs:
+                model: Two milliseconds per claim; an assumption.
+                basis: []
         defaultSize: m
         notes: Every claim marks keys as used in a durable key table. Claiming in batches keeps the service off the per-request path.
 
@@ -318,6 +531,18 @@ kinds:
             capacityPerSec: { read: 40000, write: 10000 }
             latencyMs: { base: 3, cv: 0.6 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU) per member
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: "etcd's benchmark on three 8-vCPU members: about 44,000 to 50,000 writes a second at 20 ms with 1,000 clients, and 141,000 linearizable reads. A 4-vCPU member kept at low latency is taken at 10,000 writes and 40,000 reads."
+                basis:
+                  - etcd-performance
+              latencyMs:
+                model: "A few milliseconds: a quorum round within one zone."
+                basis:
+                  - etcd-performance
         defaultSize: m
         notes: Every write goes through consensus and costs a quorum round trip, and only the leader takes writes. Keep it off the per-request path.
       - id: zookeeper
@@ -329,6 +554,17 @@ kinds:
             capacityPerSec: { read: 40000, write: 10000 }
             latencyMs: { base: 3, cv: 0.6 }
             costPerHour: 0.17
+            standsFor: c6i.xlarge (EC2, 4 vCPU) per server
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: "Taken like etcd: writes go through the leader and a quorum. An assumption."
+                basis:
+                  - etcd-performance
+              latencyMs:
+                model: "A few milliseconds: a quorum round within one zone; an assumption."
+                basis: []
         defaultSize: m
         notes: Writes go through the leader and a quorum. Keep it off the per-request path.
 
@@ -350,8 +586,24 @@ kinds:
             capacityPerSec: { read: 1000000, write: 1000000 }
             latencyMs: { base: 8, cv: 0.5 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                published: aws-sqs-pricing
+                note: "No hourly charge: it is billed per request."
+              capacityPerSec:
+                model: Standard queues support a very high, nearly unlimited number of calls a second per action.
+                basis:
+                  - aws-sqs-quotas
+              latencyMs:
+                model: Several milliseconds per send; an assumption.
+                basis: []
         defaultSize: on-demand
         notes: You pay per request. Messages wait for days if consumers fall behind; a message that keeps failing is delivered a few times, then moved to a dead-letter queue.
+        standsFor: Amazon SQS (standard queue)
+        provenance:
+          requestCost:
+            published: aws-sqs-pricing
+            note: Per million requests; each 64 KB of payload counts as one request.
       - id: kafka
         label: Kafka
         description: Partitioned, replicated log on brokers you run (or a managed cluster). Run at least three brokers.
@@ -360,7 +612,20 @@ kinds:
             label: 4 vCPU broker
             capacityPerSec: { read: 200000, write: 100000 }
             latencyMs: { base: 3, cv: 0.5 }
-            costPerHour: 0.4
+            costPerHour: 0.408
+            standsFor: kafka.m7g.xlarge (Amazon MSK, 4 vCPU)
+            provenance:
+              costPerHour:
+                model: Twice the published kafka.m7g.large rate of $0.204 an hour, as MSK broker prices scale with size.
+                basis:
+                  - aws-msk-pricing
+              capacityPerSec:
+                model: A partition takes tens of MB a second. For small messages with replication factor 3, a 4-vCPU broker is taken at 100,000 writes and 200,000 reads a second. An assumption.
+                basis:
+                  - confluent-partitions
+              latencyMs:
+                model: A few milliseconds to append with acknowledgement from the replicas; an assumption.
+                basis: []
         defaultSize: m
         notes: Throughput per broker for small messages with replication factor 3. Consumers track their own offsets; at-least-once delivery is the default.
 
@@ -380,9 +645,23 @@ kinds:
             label: 8 vCPU task manager
             capacityPerSec: { read: 100000, write: 100000 }
             latencyMs: { base: 1, cv: 0.5 }
-            costPerHour: 0.4
+            costPerHour: 0.384
+            standsFor: m6i.2xlarge (EC2, 8 vCPU) running a self-managed task manager
+            provenance:
+              costPerHour:
+                published: aws-ec2-price-list
+              capacityPerSec:
+                model: 100,000 small messages a second with simple per-key state such as counts, on 8 vCPUs. An assumption.
+                basis: []
+              latencyMs:
+                model: A millisecond of processing per message; an assumption.
+                basis: []
         defaultSize: m
         notes: Throughput for small messages with simple per-key state, such as counts. A restart replays messages since the last checkpoint, so whatever it writes must tolerate seeing a message twice.
+        provenance:
+          startupSec:
+            model: "Two minutes: the job restarts and restores its state from the last checkpoint. An assumption."
+            basis: []
 
   - id: websocket-gateway
     label: WebSocket gateway
@@ -401,9 +680,26 @@ kinds:
             capacityPerSec: { read: 200000, write: 200000 }
             maxConnections: 250000
             latencyMs: { base: 1, cv: 0.5 }
-            costPerHour: 0.4
+            costPerHour: 0.384
+            standsFor: m6i.2xlarge (EC2, 8 vCPU, 32 GiB)
+            provenance:
+              costPerHour:
+                published: aws-ec2-price-list
+              maxConnections:
+                model: "Memory decides: about 100 KB of buffers per connection leaves room for about 250,000 in 32 GiB. An assumption."
+                basis: []
+              capacityPerSec:
+                model: 200,000 frames a second relayed on 8 vCPUs; an assumption.
+                basis: []
+              latencyMs:
+                model: A millisecond to relay a frame; an assumption.
+                basis: []
         defaultSize: m
         notes: Every open connection holds memory for its buffers, so memory, not CPU, decides how many fit on an instance. A node that goes down drops all of its connections at once, and they all reconnect.
+        provenance:
+          startupSec:
+            model: A minute from launch to holding connections; an assumption.
+            basis: []
 
   - id: external-api
     label: External API
@@ -422,8 +718,20 @@ kinds:
             capacityPerSec: { read: 5000 }
             latencyMs: { base: 50, cv: 0.6 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                model: Not priced yet. The Lookup API costs $0.50 per 1,000 calls beyond 100,000 a month (by quote above 10 million), which a real design avoids with a local threat list kept current by the Update API. Pricing both is planned.
+                basis:
+                  - web-risk-pricing
+              capacityPerSec:
+                model: A quota of 5,000 requests a second for the project, as raised for this design; an assumption.
+                basis: []
+              latencyMs:
+                model: Tens of milliseconds over the internet; an assumption.
+                basis: []
         defaultSize: quota
         notes: The quota is fixed per project; calls above it are rejected (HTTP 429). Each answer takes tens of milliseconds over the internet.
+        standsFor: Google Web Risk (Lookup API)
       - id: push-provider
         label: Push notifications
         description: Mobile push services (Apple Push Notification service, Firebase Cloud Messaging) that deliver notifications to devices without an open connection.
@@ -435,8 +743,20 @@ kinds:
             capacityPerSec: { write: 100000 }
             latencyMs: { base: 80, cv: 0.6 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                model: Neither provider charges to send notifications.
+                basis: []
+              capacityPerSec:
+                model: Assumed raised and counted per request. FCM's default is 600,000 messages a minute per project (10,000 a second) and counts every device, so multicast requests overstate it; correcting this is planned.
+                basis:
+                  - fcm-quotas
+              latencyMs:
+                model: Tens of milliseconds to hand a notification to the provider; an assumption.
+                basis: []
         defaultSize: quota
         notes: Providers throttle senders above their rate and deliver on a best-effort basis. One request can address many devices (multicast), which is how large groups are notified.
+        standsFor: Firebase Cloud Messaging and Apple Push Notification service
       - id: card-payments
         label: Card payments
         description: A payment service provider (for example Stripe or Adyen) that charges and refunds cards and records every payment.
@@ -448,5 +768,189 @@ kinds:
             capacityPerSec: { read: 5000, write: 5000 }
             latencyMs: { base: 300, cv: 0.6 }
             costPerHour: 0
+            provenance:
+              costPerHour:
+                model: Providers charge a fee per transaction (a percentage of the amount), which the cost model leaves out.
+                basis: []
+              capacityPerSec:
+                model: "Assumed raised by contract: Stripe's live-mode default is 100 requests a second per account."
+                basis:
+                  - stripe-rate-limits
+              latencyMs:
+                model: A charge takes a few hundred milliseconds; an assumption.
+                basis: []
         defaultSize: quota
         notes: A charge takes a few hundred milliseconds and sometimes times out without saying whether it went through. Idempotency keys make repeats safe; the provider's records are the source of truth for what was charged.
+        standsFor: A payment service provider (Stripe, Adyen)
+sources:
+  - id: aws-ec2-price-list
+    title: "AWS Price List API: Amazon EC2, us-east-1"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-08-28
+    via: breakscale (MIT), src/content/vendors/aws.ts, read from the AWS Price List API
+  - id: aws-rds-price-list
+    title: "AWS Price List API: Amazon RDS, us-east-1"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-08-28
+    via: breakscale (MIT), src/content/vendors/aws.ts, read from the AWS Price List API
+  - id: aws-elasticache-price-list
+    title: "AWS Price List API: Amazon ElastiCache, us-east-1"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonElastiCache/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-08-28
+    via: breakscale (MIT), src/content/vendors/aws.ts, read from the AWS Price List API
+  - id: ec2-c6i-prices
+    title: EC2 c6i on-demand prices, us-east-1
+    url: https://www.doit.com/compute/spot/us-east-1/c6i.large
+    publisher: DoiT (AWS on-demand rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: rds-m6i-prices
+    title: RDS db.m6i.2xlarge and db.m6i.4xlarge prices
+    url: https://instances.vantage.sh/aws/rds/db.m6i.2xlarge
+    publisher: Vantage (AWS on-demand rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: elasticache-r6g-2xlarge
+    title: ElastiCache cache.r6g.2xlarge price and memory
+    url: https://instances.vantage.sh/aws/elasticache/cache.r6g.2xlarge
+    publisher: Vantage (AWS on-demand rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: ec2-r6i-2xlarge
+    title: EC2 r6i.2xlarge price
+    url: https://instances.vantage.sh/aws/ec2/r6i.2xlarge
+    publisher: Vantage (AWS on-demand rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: aws-alb-pricing
+    title: Elastic Load Balancing pricing
+    url: https://aws.amazon.com/elasticloadbalancing/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-14
+  - id: aws-apigw-pricing
+    title: Amazon API Gateway pricing
+    url: https://aws.amazon.com/api-gateway/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-14
+  - id: aws-apigw-quotas
+    title: Amazon API Gateway quotas
+    url: https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html
+    publisher: AWS
+    kind: quota
+    retrieved: 2026-10-14
+  - id: aws-dynamodb-pricing
+    title: Amazon DynamoDB pricing for on-demand capacity
+    url: https://aws.amazon.com/dynamodb/pricing/on-demand/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-14
+  - id: aws-dynamodb-quotas
+    title: Quotas in Amazon DynamoDB
+    url: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ServiceQuotas.html
+    publisher: AWS
+    kind: quota
+    retrieved: 2026-10-14
+  - id: aws-dynamodb-partitions
+    title: Best practices for designing and using partition keys effectively in DynamoDB
+    url: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html
+    publisher: AWS
+    kind: quota
+    retrieved: 2026-10-14
+  - id: aws-sqs-pricing
+    title: Amazon SQS introduces FIFO queues and lower prices for standard queues
+    url: https://aws.amazon.com/about-aws/whats-new/2016/11/amazon-sqs-introduces-fifo-queues-with-exactly-once-processing-and-lower-prices-for-standard-queues/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-14
+  - id: aws-sqs-quotas
+    title: Amazon SQS message quotas
+    url: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html
+    publisher: AWS
+    kind: quota
+    retrieved: 2026-10-14
+  - id: aws-msk-pricing
+    title: Amazon MSK pricing
+    url: https://aws.amazon.com/msk/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-14
+  - id: rds-gp3-storage
+    title: AWS RDS PostgreSQL pricing explained (gp3 storage)
+    url: https://infratally.com/articles/aws-rds-pricing-explained-2026/
+    publisher: InfraTally (summary of AWS rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: ebs-gp3-storage
+    title: RDS and EBS storage costs (gp3 for EC2)
+    url: https://www.usage.ai/blogs/aws/reserved-instances/rds/storage-cost/
+    publisher: Usage.ai (summary of AWS rates)
+    kind: price
+    retrieved: 2026-10-14
+  - id: redis-benchmarks
+    title: Redis benchmark
+    url: https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/benchmarks/
+    publisher: Redis
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: aws-elasticache-71
+    title: Achieve over 500 million requests per second per cluster with Amazon ElastiCache for Redis 7.1
+    url: https://aws.amazon.com/blogs/database/achieve-over-500-million-requests-per-second-per-cluster-with-amazon-elasticache-for-redis-7-1
+    publisher: AWS
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: pgbench-selfhost
+    title: PostgreSQL pgbench results on r6g.large
+    url: https://www.selfhost.dev/benchmarks/
+    publisher: selfhost.dev (vendor benchmark)
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: etcd-performance
+    title: etcd performance
+    url: https://etcd.io/docs/v3.5/op-guide/performance/
+    publisher: etcd
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: confluent-partitions
+    title: How to choose the number of topics/partitions in a Kafka cluster
+    url: https://www.confluent.io/blog/how-to-choose-the-number-of-topics-partitions-in-a-kafka-cluster/
+    publisher: Confluent
+    kind: documentation
+    retrieved: 2026-10-14
+  - id: instaclustr-cassandra
+    title: Significant performance improvements with Apache Cassandra 2.1
+    url: https://www.instaclustr.com/blog/significant-performance-improvements-with-cassandra-2-1/
+    publisher: Instaclustr
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: nginx-performance
+    title: Testing the performance of NGINX and NGINX Plus web servers
+    url: https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers
+    publisher: NGINX
+    kind: benchmark
+    retrieved: 2026-10-14
+  - id: fcm-quotas
+    title: FCM throttling and quotas
+    url: https://firebase.google.com/docs/cloud-messaging/throttling-and-quotas
+    publisher: Google
+    kind: quota
+    retrieved: 2026-10-14
+  - id: stripe-rate-limits
+    title: Stripe rate limits
+    url: https://docs.stripe.com/rate-limits
+    publisher: Stripe
+    kind: quota
+    retrieved: 2026-10-14
+  - id: web-risk-pricing
+    title: Web Risk pricing
+    url: https://cloud.google.com/web-risk/pricing
+    publisher: Google Cloud
+    kind: price
+    retrieved: 2026-10-14
