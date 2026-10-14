@@ -5,6 +5,7 @@ import {
   type Flow,
   feasibleOutcomes,
   getLogic,
+  outcomeTone,
   reachableStepIds,
   type Step,
   type StepInput,
@@ -95,12 +96,16 @@ function defaultExits(
 ): AnyCommand[] {
   if (step.type === "respond") return [];
   const outcomes = feasibleOutcomes({ ...step, next: {} } as Step, ctx.attempt);
-  return outcomes
-    .filter((o) => !continuing.includes(o))
-    .flatMap((outcome) => {
-      const status = defaultExitStatus(outcome, ctx);
-      return status === null ? [] : respondTo(ctx, { stepId, outcome }, status, taken, created);
-    });
+  return (
+    outcomes
+      .filter((o) => !continuing.includes(o))
+      // In a consumer, the other way of a decision (a large group, a match) needs steps of its own.
+      .filter((o) => !(ctx.background && step.type === "logic" && outcomeTone(o) !== "positive"))
+      .flatMap((outcome) => {
+        const status = defaultExitStatus(outcome, ctx);
+        return status === null ? [] : respondTo(ctx, { stepId, outcome }, status, taken, created);
+      })
+  );
 }
 
 function binding(ctx: EditContext, step: StepInput): AnyCommand[] {

@@ -76,14 +76,23 @@ mutants:
       scenario: s1-deliver
       fails: [connections-held]
 
-  - id: unbatched-notifications
+  - id: notify-whole-community
     base: gateways-and-sequences
-    description: Every device gets its own notification request.
+    description: Every offline member of a large group is notified of every message.
     apply:
-      - updateStep: { operation: deliver-message, stepId: notify, batchSize: null }
+      - linkOutcome: { operation: deliver-message, stepId: size, outcome: large, target: notify }
     expect:
       scenario: s2-groups
       fails: [within-quota]
+
+  - id: mentions-only-everywhere
+    base: gateways-and-sequences
+    description: Direct messages and small groups also notify only mentioned recipients.
+    apply:
+      - linkOutcome: { operation: deliver-message, stepId: size, outcome: small, target: notify-mentioned }
+    expect:
+      scenario: s2-groups
+      fails: [small-conversations-notified]
 
   - id: unbatched-presence-reads
     base: gateways-and-sequences

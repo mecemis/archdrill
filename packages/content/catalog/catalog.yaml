@@ -782,50 +782,75 @@ kinds:
         capabilities: [push-notifications]
         managedRedundancy: true
         sizes:
+          default:
+            label: "600,000 messages/min (default quota)"
+            capacityPerSec: { write: 10000 }
+            latencyMs: { base: 80, cv: 0.6 }
+            costPerHour: 0
+            provenance:
+              capacityPerSec:
+                published: fcm-quotas
+                note: 600,000 messages a minute per project, for every device a message goes to.
           quota:
-            label: "100,000 requests/s"
+            label: "100,000 messages/s (raised quota)"
             capacityPerSec: { write: 100000 }
             latencyMs: { base: 80, cv: 0.6 }
             costPerHour: 0
             provenance:
-              costPerHour:
-                model: Neither provider charges to send notifications.
-                basis: []
               capacityPerSec:
-                model: Assumed raised and counted per request. FCM's default is 600,000 messages a minute per project (10,000 a second) and counts every device, so multicast requests overstate it; correcting this is planned.
+                model: Ten times the default, raised on request. Firebase asks projects that outgrow the default to contact support; the figure is an assumption.
                 basis:
                   - fcm-quotas
-              latencyMs:
-                model: Tens of milliseconds to hand a notification to the provider; an assumption.
-                basis: []
-        defaultSize: quota
-        notes: Providers throttle senders above their rate and deliver on a best-effort basis. One request can address many devices (multicast), which is how large groups are notified.
-        standsFor: Firebase Cloud Messaging and Apple Push Notification service
+                  - fcm-scale
+        defaultSize: default
+        notes: >-
+          Every device is one message against the quota. The HTTP v1 API sends
+          to one device per request, and the SDK helpers that take up to 500
+          devices send one message for each. Calls above the quota are
+          rejected (HTTP 429) until the next minute. Delivery is best effort.
+        standsFor: Firebase Cloud Messaging (HTTP v1) and Apple Push Notification service
+        provenance:
+          costPerHour:
+            model: Neither provider charges to send notifications.
+            basis: []
+          latencyMs:
+            model: Tens of milliseconds to hand a notification to the provider; an assumption.
+            basis: []
       - id: card-payments
         label: Card payments
         description: A payment service provider (for example Stripe or Adyen) that charges and refunds cards and records every payment.
         capabilities: [payments]
         managedRedundancy: true
         sizes:
+          default:
+            label: "25 requests/s per endpoint (default)"
+            capacityPerSec: { read: 25, write: 25 }
+            latencyMs: { base: 300, cv: 0.6 }
+            costPerHour: 0
+            provenance:
+              capacityPerSec:
+                published: stripe-rate-limits
+                note: In live mode, 100 requests a second per account and 25 a second for each endpoint unless noted. Charging and looking up a payment are an endpoint each.
           quota:
-            label: "5,000 requests/s"
+            label: "5,000 requests/s (raised by contract)"
             capacityPerSec: { read: 5000, write: 5000 }
             latencyMs: { base: 300, cv: 0.6 }
             costPerHour: 0
             provenance:
-              costPerHour:
-                model: Providers charge a fee per transaction (a percentage of the amount), which the cost model leaves out.
-                basis: []
               capacityPerSec:
-                model: "Assumed raised by contract: Stripe's live-mode default is 100 requests a second per account."
+                model: Raised for a high-volume merchant. Stripe raises limits on request, six weeks ahead for a large increase; the figure is an assumption.
                 basis:
                   - stripe-rate-limits
-              latencyMs:
-                model: A charge takes a few hundred milliseconds; an assumption.
-                basis: []
-        defaultSize: quota
-        notes: A charge takes a few hundred milliseconds and sometimes times out without saying whether it went through. Idempotency keys make repeats safe; the provider's records are the source of truth for what was charged.
+        defaultSize: default
+        notes: A charge takes a few hundred milliseconds and sometimes times out without saying whether it went through. Idempotency keys make repeats safe; the provider's records are the source of truth for what was charged. Calls above the limit are rejected (HTTP 429).
         standsFor: A payment service provider (Stripe, Adyen)
+        provenance:
+          costPerHour:
+            model: Providers charge a fee per transaction (a percentage of the amount), which the cost model leaves out.
+            basis: []
+          latencyMs:
+            model: A charge takes a few hundred milliseconds; an assumption.
+            basis: []
 sources:
   - id: aws-ec2-price-list
     title: "AWS Price List API: Amazon EC2, us-east-1"
@@ -985,6 +1010,12 @@ sources:
     url: https://firebase.google.com/docs/cloud-messaging/throttling-and-quotas
     publisher: Google
     kind: quota
+    retrieved: 2026-10-14
+  - id: fcm-scale
+    title: Scale FCM message delivery
+    url: https://firebase.google.com/docs/cloud-messaging/scale-fcm
+    publisher: Google
+    kind: documentation
     retrieved: 2026-10-14
   - id: stripe-rate-limits
     title: Stripe rate limits

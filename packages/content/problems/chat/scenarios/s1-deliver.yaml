@@ -7,7 +7,8 @@ story: |
   "Twenty million people are connected at peak, each holding a WebSocket
   open. They send 200,000 messages a second, mostly to one other person. A
   connected recipient sees the message within a second; one who is not gets a
-  push notification. Phones on bad networks resend messages that seemed to
+  push notification: Firebase has raised your quota to 100,000 a second, and
+  every device counts. Phones on bad networks resend messages that seemed to
   fail. Everyone in a conversation sees the same order."
 focusOperations: [send-message, deliver-message, connect]
 workload:
@@ -74,7 +75,7 @@ checks:
       that holds the connection.
 
   - id: notified-when-offline
-    use: all-success-paths-contain
+    use: no-path
     title: Recipients without a connection get a push notification
     dimension: correctness
     weight: 2
@@ -82,8 +83,12 @@ checks:
     requirements: [FR-2]
     params:
       operation: deliver-message
-      statuses: [200]
-      step: { action: external.notify }
+      where:
+        all:
+          - status: [200]
+          # Large groups may notify only mentioned members (S2).
+          - not: { hasStep: { logic: isLargeGroup, outcome: large } }
+          - not: { hasStep: { action: external.notify, each: offlineRecipients } }
     why: >-
       Someone whose app is closed only learns about a message from a push
       notification.

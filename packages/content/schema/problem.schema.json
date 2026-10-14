@@ -337,6 +337,7 @@
           "checkLimit",
           "checkLocalLimit",
           "isCelebrity",
+          "isLargeGroup",
           "matchThreatList",
           "obfuscateId"
         ]

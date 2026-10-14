@@ -93,6 +93,13 @@ export const LOGIC = {
       "Branch on whether the post's author has millions of followers, too many to copy the post to each of them.",
     decidedBy: { fact: "celebrity", outcome: "celebrity" },
   },
+  isLargeGroup: {
+    label: "large group?",
+    outcomes: ["small", "large"],
+    description:
+      "Branch on whether the conversation is a large group, whose members are too many to notify about every message.",
+    decidedBy: { fact: "largeGroup", outcome: "large" },
+  },
   matchThreatList: {
     label: "match local threat lists",
     outcomes: ["clean", "match"],

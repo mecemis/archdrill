@@ -45,6 +45,8 @@ export const StepMatcherSchema = z.strictObject({
   aggregated: z.boolean().optional(),
   /** Matches publishes that hand messages to a local buffer, or that wait for the queue. */
   fireAndForget: z.boolean().optional(),
+  /** Matches calls made once for each of these counts (a fan-out over recipients). */
+  each: oneOrMany(z.string().min(1)).optional(),
 });
 export type StepMatcher = z.output<typeof StepMatcherSchema>;
 
@@ -87,7 +89,8 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
       matcher.batched !== undefined ||
       matcher.coalesced !== undefined ||
       matcher.aggregated !== undefined ||
-      matcher.fireAndForget !== undefined;
+      matcher.fireAndForget !== undefined ||
+      matcher.each !== undefined;
     return !callOnly && (!matcher.logic || matcher.logic.includes(step.logic));
   }
   if (matcher.logic) return false;
@@ -116,6 +119,7 @@ export function matchStep(step: PathStep, matcher: StepMatcher): boolean {
   ) {
     return false;
   }
+  if (matcher.each && (step.each === undefined || !matcher.each.includes(step.each))) return false;
   return true;
 }
 

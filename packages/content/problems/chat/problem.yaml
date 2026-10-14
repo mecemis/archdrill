@@ -93,9 +93,10 @@ events:
 counts:
   - { id: onlineRecipients, label: connected recipients, default: 1 }
   - { id: offlineRecipients, label: recipients without a connection, default: 0 }
+  - { id: mentionedOffline, label: mentioned recipients without a connection, default: 0 }
   - { id: contactsShown, label: contacts on screen, default: 20 }
 client: { flavor: mobile-app, label: App users }
-logic: []
+logic: [isLargeGroup]
 decisionPoints:
   - id: message-order
     question: What orders the messages of a conversation?

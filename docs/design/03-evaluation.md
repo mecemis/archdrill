@@ -132,7 +132,7 @@ Both point at what a fault hits or what runs over capacity at those moments; fai
 - **`event-consumed(operation, event)`**: the operation publishes the event, and a consumer of it is ready to run. A consumer is otherwise optional (a design may do the work another way), so this check is what makes counting required in S8.
 - **`idempotent-consumer-writes(operation)`**: on a consumer's successful paths, every increment comes after a conditional insert that recorded the message as new, keyed by something other than what is counted. Writes that replace (window totals) pass as they are.
 
-Increments have their own effect (`increment`), which step matchers can name. Step matchers can also ask for aggregated writes (`aggregated: true`) and fire-and-forget publishes (`fireAndForget: true`). Estimates (the estimation gym) are judged separately and never affect scenario scores.
+Increments have their own effect (`increment`), which step matchers can name. Step matchers can also ask for aggregated writes (`aggregated: true`), fire-and-forget publishes (`fireAndForget: true`) and fan-outs over a count (`each: offlineRecipients`). Estimates (the estimation gym) are judged separately and never affect scenario scores.
 
 **As built (M13–M16)**, the new problem packs added four checks:
 
