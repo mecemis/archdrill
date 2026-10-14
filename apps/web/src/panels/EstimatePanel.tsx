@@ -4,12 +4,12 @@ import { type FormEvent, useEffect, useState } from "react";
 import { activePack } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { Prose } from "../ui/Prose";
-import { Button, SectionTitle } from "../ui/primitives";
+import { Button, INPUT_CLASS, SectionTitle } from "../ui/primitives";
 
 const BAND_STYLE = {
-  "spot-on": "bg-emerald-100 text-emerald-900",
-  close: "bg-amber-100 text-amber-900",
-  off: "bg-rose-100 text-rose-900",
+  "spot-on": "bg-ok-soft text-ok-fg",
+  close: "bg-warn-soft text-warn-fg",
+  off: "bg-bad-soft text-bad-fg",
 } as const;
 
 const percent = (factor: number) => `${Math.round((factor - 1) * 100)}%`;
@@ -32,21 +32,21 @@ export function EstimatePanel() {
   const attempt = useAttemptStore((s) => s.attempt);
   const results = evaluateEstimates(attempt, activePack.problem);
   if (results.length === 0) {
-    return <p className="p-4 text-sm text-zinc-500">This problem has no estimates yet.</p>;
+    return <p className="p-4 text-sm text-fg-subtle">This problem has no estimates yet.</p>;
   }
   const answered = results.filter((r) => r.value !== null);
   const spotOn = answered.filter((r) => r.band === "spot-on").length;
   const tolerance = activePack.problem.estimates[0]?.tolerance ?? 2;
   return (
-    <div className="flex flex-col gap-4 p-4 text-sm text-zinc-800">
+    <div className="flex flex-col gap-4 p-4 text-sm text-fg">
       <section className="flex flex-col gap-1">
         <SectionTitle>Estimate</SectionTitle>
-        <p className="text-zinc-700">
+        <p className="text-fg-muted">
           Size the problem before you design it. Write numbers the way you would on a whiteboard:
           86M, 3.5e12, 79 TB, 60 MB/s. Within {percent(SPOT_ON_FACTOR)} is spot on; within{" "}
           {tolerance}× is close.
         </p>
-        <p className="text-xs text-zinc-500" data-testid="estimate-summary">
+        <p className="text-xs text-fg-subtle" data-testid="estimate-summary">
           {answered.length} of {results.length} answered · {spotOn} spot on
         </p>
       </section>
@@ -76,8 +76,8 @@ function EstimateCard({ result }: { readonly result: EstimateResult }) {
   };
   const inputId = `estimate-${estimate.id}`;
   return (
-    <li className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3">
-      <label htmlFor={inputId} className="font-medium text-zinc-900">
+    <li className="flex flex-col gap-2 rounded-md border border-line bg-surface p-3">
+      <label htmlFor={inputId} className="font-medium text-fg">
         {estimate.question}
       </label>
       <form onSubmit={submit} className="flex items-center gap-2">
@@ -87,20 +87,20 @@ function EstimateCard({ result }: { readonly result: EstimateResult }) {
           onChange={(e) => setText(e.target.value)}
           placeholder="e.g. 86M"
           autoComplete="off"
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+          className={`${INPUT_CLASS} min-w-0 flex-1`}
         />
         <Button type="submit" disabled={text.trim() !== "" && parsed === null}>
           Check
         </Button>
       </form>
       {text.trim() !== "" && parsed === null && (
-        <p className="text-xs text-rose-700">
+        <p className="text-xs text-bad-fg">
           Not a quantity I can read. Try a number with a unit, like{" "}
           {estimate.kind === "bytes" || estimate.kind === "byte-rate" ? "79 TB" : "86M"}.
         </p>
       )}
       {parsed !== null && parsed !== value && (
-        <p className="text-xs text-zinc-500">Reads as {formatQuantity(parsed, estimate.kind)}.</p>
+        <p className="text-xs text-fg-subtle">Reads as {formatQuantity(parsed, estimate.kind)}.</p>
       )}
       {result.band !== null && (
         <p className="flex items-center gap-2">
@@ -110,8 +110,8 @@ function EstimateCard({ result }: { readonly result: EstimateResult }) {
         </p>
       )}
       {revealed ? (
-        <div className="flex flex-col gap-1 rounded-md bg-zinc-50 p-2 text-xs text-zinc-700">
-          <p className="font-medium text-zinc-900">
+        <div className="flex flex-col gap-1 rounded-md bg-sunken p-2 text-xs text-fg-muted">
+          <p className="font-medium text-fg">
             About {formatQuantity(estimate.answer, estimate.kind)}
           </p>
           <Prose text={estimate.derivation} />
@@ -119,7 +119,7 @@ function EstimateCard({ result }: { readonly result: EstimateResult }) {
       ) : (
         <button
           type="button"
-          className="self-start text-xs text-zinc-600 underline hover:text-zinc-900"
+          className="self-start text-xs text-fg-muted underline hover:text-fg"
           onClick={() => setRevealed(true)}
         >
           {value === null ? "Show the answer" : "Show how"}

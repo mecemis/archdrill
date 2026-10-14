@@ -5,7 +5,7 @@ import { EMPTY_HIGHLIGHT, useUi } from "../../state/ui-store";
 /** Validation issues; clicking one selects or highlights what it is about. */
 export function IssuesList({ issues }: { readonly issues: readonly Issue[] }) {
   if (issues.length === 0) {
-    return <p className="p-3 text-sm text-zinc-500">The design has no validation issues.</p>;
+    return <p className="p-3 text-sm text-fg-subtle">The design has no validation issues.</p>;
   }
   const sorted = [...issues].sort((a, b) =>
     a.severity === b.severity ? 0 : a.severity === "error" ? -1 : 1,
@@ -19,13 +19,13 @@ export function IssuesList({ issues }: { readonly issues: readonly Issue[] }) {
             <button
               type="button"
               onClick={() => locate(issue)}
-              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-50"
+              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sunken"
             >
               <Icon
-                className={`mt-0.5 h-4 w-4 shrink-0 ${issue.severity === "error" ? "text-rose-600" : "text-amber-600"}`}
+                className={`mt-0.5 h-4 w-4 shrink-0 ${issue.severity === "error" ? "text-bad-fg" : "text-warn-fg"}`}
                 aria-label={issue.severity}
               />
-              <span className="text-zinc-800">{issue.message}</span>
+              <span className="text-fg">{issue.message}</span>
             </button>
           </li>
         );

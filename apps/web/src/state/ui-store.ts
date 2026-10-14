@@ -27,7 +27,10 @@ export interface Highlight {
 }
 
 export type ResultsTab = "findings" | "paths" | "load" | "timeline" | "issues" | "compare";
-export type RightTab = "flow" | "inspector" | "decisions";
+export type LeftTab = "brief" | "estimate" | "palette" | "decisions";
+export type RightTab = "flow" | "inspector";
+/** How much room the results drawer takes: its header only, a share of the screen, or most of it. */
+export type DockSize = "min" | "normal" | "max";
 
 interface UiState {
   readonly scenarioId: string;
@@ -39,9 +42,11 @@ interface UiState {
   readonly hover: Highlight | null;
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
+  /** The open left panel; null when it is collapsed to its rail. */
+  readonly leftTab: LeftTab | null;
   readonly rightTab: RightTab;
-  /** The results dock takes most of the screen, for timelines. */
-  readonly dockExpanded: boolean;
+  readonly rightOpen: boolean;
+  readonly dock: DockSize;
   /** The timeline the Timeline tab shows; null for the scenario's first. */
   readonly timelineId: string | null;
   /** A moment of a timeline the canvas shows instead of the selected environment. */
@@ -58,8 +63,12 @@ interface UiState {
   togglePin: (key: string, highlight: Highlight) => void;
   clearPin: () => void;
   setResultsTab: (tab: ResultsTab) => void;
+  /** Opens a left panel; choosing the open one collapses it. */
+  toggleLeftTab: (tab: LeftTab) => void;
+  openLeftTab: (tab: LeftTab) => void;
   setRightTab: (tab: RightTab) => void;
-  setDockExpanded: (expanded: boolean) => void;
+  setRightOpen: (open: boolean) => void;
+  setDock: (dock: DockSize) => void;
   setTimelineId: (timelineId: string) => void;
   setTimelineCursor: (cursor: { timelineId: string; step: number } | null) => void;
 }
@@ -75,8 +84,10 @@ export const useUi = create<UiState>((set, get) => ({
   hover: null,
   pinned: null,
   resultsTab: "findings",
+  leftTab: "brief",
   rightTab: "flow",
-  dockExpanded: false,
+  rightOpen: true,
+  dock: "normal",
   timelineId: null,
   timelineCursor: null,
   environmentId: null,
@@ -101,10 +112,16 @@ export const useUi = create<UiState>((set, get) => ({
     set({ pinned: get().pinned?.key === key ? null : { key, highlight } }),
   clearPin: () => set({ pinned: null }),
   setResultsTab: (resultsTab) =>
-    // Timelines need the room; leaving them keeps whatever size the candidate chose.
-    set(resultsTab === "timeline" ? { resultsTab, dockExpanded: true } : { resultsTab }),
-  setRightTab: (rightTab) => set({ rightTab }),
-  setDockExpanded: (dockExpanded) => set({ dockExpanded }),
+    // Timelines need the room; other views open a collapsed drawer and keep any other size.
+    set({
+      resultsTab,
+      dock: resultsTab === "timeline" ? "max" : get().dock === "min" ? "normal" : get().dock,
+    }),
+  toggleLeftTab: (tab) => set({ leftTab: get().leftTab === tab ? null : tab }),
+  openLeftTab: (leftTab) => set({ leftTab }),
+  setRightTab: (rightTab) => set({ rightTab, rightOpen: true }),
+  setRightOpen: (rightOpen) => set({ rightOpen }),
+  setDock: (dock) => set({ dock }),
   setTimelineId: (timelineId) => set({ timelineId, timelineCursor: null }),
   setTimelineCursor: (timelineCursor) => set({ timelineCursor }),
 }));

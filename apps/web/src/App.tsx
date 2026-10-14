@@ -2,30 +2,32 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { DesignCanvas } from "./canvas/DesignCanvas";
 import { Header } from "./panels/Header";
 import { ResultsDock } from "./panels/results/ResultsDock";
-import { LeftPanel, RightPanel } from "./panels/SidePanels";
-import { useUi } from "./state/ui-store";
+import { LeftPanel, LeftRail, RightPanel } from "./panels/SidePanels";
+import { type DockSize, useUi } from "./state/ui-store";
 import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
 import { Toasts } from "./ui/Toasts";
 
+/** Grid rows for each results drawer size: header, workspace, drawer. */
+const ROWS: Readonly<Record<DockSize, string>> = {
+  min: "grid-rows-[auto_minmax(0,1fr)_auto]",
+  normal: "grid-rows-[auto_minmax(0,1fr)_minmax(0,34vh)]",
+  max: "grid-rows-[auto_minmax(0,1fr)_minmax(0,58vh)]",
+};
+
 export function App() {
   useShortcuts();
   useRegressionWatch();
-  const expanded = useUi((s) => s.dockExpanded);
+  const dock = useUi((s) => s.dock);
   return (
     <ReactFlowProvider>
       {/* One explicit column, so a crowded header scrolls instead of widening the page. */}
-      <div
-        className={`grid h-full grid-cols-1 bg-zinc-50 text-zinc-900 ${
-          expanded
-            ? "grid-rows-[auto_minmax(0,1fr)_minmax(0,62vh)]"
-            : "grid-rows-[auto_minmax(0,1fr)_17rem]"
-        }`}
-      >
+      <div className={`grid h-full grid-cols-1 bg-app text-fg ${ROWS[dock]}`}>
         <Header />
-        <div className="grid min-h-0 grid-cols-[18rem_minmax(0,1fr)_22rem]">
+        <div className="flex min-h-0">
+          <LeftRail />
           <LeftPanel />
-          <main className="min-h-0" aria-label="Design canvas">
+          <main className="min-h-0 min-w-0 flex-1" aria-label="Design canvas">
             <DesignCanvas />
           </main>
           <RightPanel />

@@ -65,7 +65,7 @@ export function CompareView() {
   const current = useEvaluation();
   if (!baseline || !evaluation) {
     return (
-      <div className="flex flex-col items-start gap-2 p-3 text-sm text-zinc-600">
+      <div className="flex flex-col items-start gap-2 p-3 text-sm text-fg-muted">
         <p>
           Pin the current design as a baseline, then change it, or load another design from a file:
           this view runs both through every scenario and shows how scores and costs differ, and what
@@ -84,7 +84,7 @@ export function CompareView() {
   const changes = describeChanges(baseline, attempt);
   return (
     <div className="flex flex-col gap-3 p-3 text-sm">
-      <p className="text-xs text-zinc-500" data-testid="compare-source">
+      <p className="text-xs text-fg-subtle" data-testid="compare-source">
         Comparing with {source ? source : "the pinned design"}.
       </p>
       <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ export function CompareView() {
         </Button>
       </div>
       <table className="w-full max-w-3xl text-left">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-fg-subtle">
           <tr>
             <th className="font-medium">Scenario</th>
             <th className="font-medium">Baseline</th>
@@ -134,10 +134,10 @@ export function CompareView() {
                 <td
                   className={
                     delta === null || delta === 0
-                      ? "text-zinc-500"
+                      ? "text-fg-subtle"
                       : delta > 0
-                        ? "font-semibold text-emerald-700"
-                        : "font-semibold text-rose-700"
+                        ? "font-semibold text-ok-fg"
+                        : "font-semibold text-bad-fg"
                   }
                 >
                   {delta === null ? "–" : delta > 0 ? `+${delta}` : delta}
@@ -150,11 +150,11 @@ export function CompareView() {
         </tbody>
       </table>
       <section>
-        <h4 className="mb-1 text-xs font-semibold text-zinc-600">What changed</h4>
+        <h4 className="mb-1 text-xs font-semibold text-fg-muted">What changed</h4>
         {changes.length === 0 ? (
-          <p className="text-zinc-500">Nothing yet.</p>
+          <p className="text-fg-subtle">Nothing yet.</p>
         ) : (
-          <ul className="list-disc pl-5 text-zinc-700">
+          <ul className="list-disc pl-5 text-fg-muted">
             {changes.map((line) => (
               <li key={line}>{line}</li>
             ))}

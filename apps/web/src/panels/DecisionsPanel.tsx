@@ -15,7 +15,7 @@ const simulatedDecisions = new Set(
 export function DecisionsPanel() {
   return (
     <div className="flex flex-col gap-5 p-4">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-fg-subtle">
         Interview trade-offs that a diagram cannot show. Your choices are checked against your flows
         and the requirements.
       </p>
@@ -35,13 +35,13 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
   const assumed = point.options.find((o) => o.id === point.default);
   return (
     <fieldset
-      className={`flex flex-col gap-1.5 rounded-md ${highlighted ? "bg-amber-50 p-2 ring-2 ring-amber-400" : ""}`}
+      className={`flex flex-col gap-1.5 rounded-md ${highlighted ? "bg-warn-soft p-2 ring-2 ring-warn" : ""}`}
     >
       <legend className="mb-1">
         <SectionTitle>{point.question}</SectionTitle>
       </legend>
       {point.options.map((option) => (
-        <label key={option.id} className="flex items-center gap-2 text-sm text-zinc-800">
+        <label key={option.id} className="flex items-center gap-2 text-sm text-fg">
           <input
             type="radio"
             name={point.id}
@@ -52,23 +52,23 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
         </label>
       ))}
       {chosen === undefined && assumed && (
-        <p className="text-xs text-zinc-500">Assumed: {assumed.label}, until you decide.</p>
+        <p className="text-xs text-fg-subtle">Assumed: {assumed.label}, until you decide.</p>
       )}
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {point.requirements.map((r) => (
-          <span key={r} className="rounded bg-sky-50 px-1.5 py-0.5 font-medium text-sky-800">
+          <span key={r} className="rounded bg-info-soft px-1.5 py-0.5 font-medium text-info-fg">
             {r}
           </span>
         ))}
         {simulatedDecisions.has(point.id) && (
-          <span className="rounded bg-violet-50 px-1.5 py-0.5 font-medium text-violet-800">
+          <span className="rounded bg-accent-soft px-1.5 py-0.5 font-medium text-accent-fg">
             affects the simulation
           </span>
         )}
         {chosen !== undefined && (
           <button
             type="button"
-            className="ml-auto text-zinc-500 underline hover:text-zinc-800"
+            className="ml-auto text-fg-subtle underline hover:text-fg"
             onClick={() => dispatch("setDecision", { decision: point.id, option: null })}
           >
             Clear
@@ -76,8 +76,8 @@ function Decision({ point }: { readonly point: DecisionPoint }) {
         )}
       </div>
       {implemented && (
-        <p className="text-xs text-zinc-600">
-          Your flow implements: <span className="font-medium text-zinc-900">{implemented}</span>
+        <p className="text-xs text-fg-muted">
+          Your flow implements: <span className="font-medium text-fg">{implemented}</span>
         </p>
       )}
     </fieldset>

@@ -385,6 +385,20 @@ Also in v0.3:
 - A problem authoring guide and a JSON Schema for editors.
 - Compare mode: two attempts against the same scenario script.
 
+## M18: Redesign and dark mode (as built)
+
+The interface was rebuilt around the canvas. ✅ Delivered:
+
+- a design system of semantic colour tokens with light and dark themes;
+- an icon rail with collapsible side panels, and a results drawer with three sizes;
+- scenario steps with status colours;
+- a categorised, searchable palette;
+- category-tinted nodes;
+- a score ring;
+- views that fit a loaded design.
+
+Browser tests cover themes, panels and the drawer.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

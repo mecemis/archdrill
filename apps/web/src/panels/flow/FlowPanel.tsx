@@ -41,7 +41,7 @@ export function FlowPanel() {
         </Select>
       </Field>
       {operation?.trigger.type === "event" && (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-fg-muted">
           Optional: a consumer of {eventLabel(operation.trigger.event)}. Leave it out if your design
           does this work another way.
         </p>
@@ -74,7 +74,7 @@ export function FlowPanel() {
           </section>
           <Button
             variant="ghost"
-            className="self-start text-xs text-rose-700"
+            className="self-start text-xs text-bad-fg"
             onClick={() => dispatch("removeFlow", { operation: flow.operation })}
           >
             Delete this flow
@@ -102,11 +102,11 @@ function RouteNote({
         : trigger.type === "schedule"
           ? `Runs in the background: ${trigger.description}`
           : `Ingress: ${route.map((id) => componentLabel(attempt, id)).join(" → ")}`;
-    return <p className="text-xs text-zinc-600">{text}</p>;
+    return <p className="text-xs text-fg-muted">{text}</p>;
   }
   const handler = attempt.flows.find((f) => f.operation === operation.id)?.handler ?? "";
   return (
-    <p className="flex gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-800">
+    <p className="flex gap-1.5 rounded-md bg-bad-soft px-2.5 py-2 text-xs text-bad-fg">
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
       {trigger.type === "event"
         ? `${componentLabel(attempt, handler)} receives no ${eventLabel(trigger.event)} messages. Publish the event to a queue in another flow, and connect this service to that queue.`
@@ -134,14 +134,14 @@ function CreateFlow({
   const selected = services.includes(handler) ? handler : (services[0] ?? "");
   if (services.length === 0) {
     return (
-      <p className="rounded-md bg-amber-50 px-2.5 py-2 text-sm text-amber-950">
+      <p className="rounded-md bg-warn-soft px-2.5 py-2 text-sm text-warn-fg">
         Add a Service from the palette first. It will handle this operation.
       </p>
     );
   }
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-sm text-zinc-700">{CREATE_PROMPTS[operation.trigger.type]}</p>
+      <p className="text-sm text-fg-muted">{CREATE_PROMPTS[operation.trigger.type]}</p>
       <Select value={selected} onChange={(e) => setHandler(e.target.value)} aria-label="Handler">
         {services.map((id) => (
           <option key={id} value={id}>

@@ -42,6 +42,7 @@ Most system design practice tools reward placing familiar components (a cache, a
   - utilisation on the canvas and request rates on connections.
 - **Evaluator:** gates, severity caps, weighted dimensions, senior signals, and findings that say what was checked, what was found, why interviewers care, and how to fix it.
 - **Working across scenarios:** a change that lowers another scenario's score raises a warning on that scenario's tab; a pinned baseline shows how every score moved and what changed; debriefs pose the follow-up questions once a scenario passes; designs export and import as JSON, upgraded by versioned migrations.
+- **Light and dark themes:** a layout built around the canvas, with collapsible panels and a results drawer; the theme follows the system until you pick one.
 - **Five problems:** a picker in the header switches between the URL shortener, a distributed rate limiter, a news feed, chat and notifications, and orders and payments. Each keeps its own design.
 - **Compare mode:** run the current design and a pinned baseline, or a second design loaded from a file, through every scenario, with scores and costs side by side.
 - **Authoring:** JSON Schemas for every kind of content file, so editors complete fields and flag mistakes; facts, counts and entity rules let new problems reuse the engine.

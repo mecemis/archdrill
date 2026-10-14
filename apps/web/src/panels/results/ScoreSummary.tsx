@@ -1,13 +1,26 @@
 import type { Readiness, ScenarioResult } from "@archdrill/evaluator";
 import { activePack } from "../../state/content";
 import { useEvaluationPending } from "../../state/evaluation";
+import { Badge } from "../../ui/primitives";
 
-const BAND_STYLES = {
-  "not-passing": { label: "Not passing", className: "bg-rose-100 text-rose-800" },
-  passing: { label: "Passing", className: "bg-amber-100 text-amber-900" },
-  strong: { label: "Strong", className: "bg-sky-100 text-sky-900" },
-  excellent: { label: "Excellent", className: "bg-emerald-100 text-emerald-900" },
-} as const;
+type Band = "not-passing" | "passing" | "strong" | "excellent";
+
+const BAND_STYLES: Readonly<
+  Record<Band, { readonly label: string; readonly tone: "bad" | "warn" | "info" | "ok" }>
+> = {
+  "not-passing": { label: "Not passing", tone: "bad" },
+  passing: { label: "Passing", tone: "warn" },
+  strong: { label: "Strong", tone: "info" },
+  excellent: { label: "Excellent", tone: "ok" },
+};
+
+/** Stroke colours for the score ring, by band. */
+const RING_COLORS: Readonly<Record<Band, string>> = {
+  "not-passing": "var(--bad)",
+  passing: "var(--warn)",
+  strong: "var(--info)",
+  excellent: "var(--ok)",
+};
 
 const READINESS_LABELS: Readonly<Record<Readiness, string>> = {
   missing: "no flow yet",
@@ -27,14 +40,71 @@ function titleCase(id: string): string {
   return id.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
+/** Bar colour for a dimension score. */
+function dimensionTone(score: number): string {
+  if (score >= 90) return "bg-ok";
+  if (score >= 70) return "bg-info";
+  if (score >= 50) return "bg-warn";
+  return "bg-bad";
+}
+
+const RING_RADIUS = 26;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+function ScoreRing({ score, band }: { readonly score: number; readonly band: Band }) {
+  return (
+    <div className="relative h-16 w-16 shrink-0">
+      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90" aria-hidden="true">
+        <circle cx="32" cy="32" r={RING_RADIUS} fill="none" stroke="var(--track)" strokeWidth="6" />
+        <circle
+          cx="32"
+          cy="32"
+          r={RING_RADIUS}
+          fill="none"
+          stroke={RING_COLORS[band]}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={`${(RING_LENGTH * score) / 100} ${RING_LENGTH}`}
+          className="transition-[stroke-dasharray] duration-500"
+        />
+      </svg>
+      <span
+        className="absolute inset-0 flex items-center justify-center text-xl font-bold text-fg tabular-nums"
+        data-testid="scenario-score"
+      >
+        {score}
+      </span>
+    </div>
+  );
+}
+
+/** The score and band in one line, for the results drawer's header. */
+export function ScoreChip({ result }: { readonly result: ScenarioResult | undefined }) {
+  if (!result) return null;
+  if (result.status !== "evaluated") {
+    return (
+      <Badge tone={result.status === "invalid" ? "bad" : "neutral"}>
+        {result.status === "invalid" ? "Not evaluable" : "Waiting for flows"}
+      </Badge>
+    );
+  }
+  const band = BAND_STYLES[result.scorecard.band];
+  return (
+    <span className="flex items-center gap-2">
+      <span className="text-base font-bold text-fg tabular-nums">{result.scorecard.score}</span>
+      <Badge tone={band.tone}>{band.label}</Badge>
+    </span>
+  );
+}
+
 export function ScoreSummary({ result }: { readonly result: ScenarioResult | undefined }) {
   const pending = useEvaluationPending();
   if (!result) return null;
   if (result.status === "invalid") {
     return (
       <div className="flex flex-col gap-1 p-4">
-        <p className="text-sm font-semibold text-rose-800">Not evaluable yet</p>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm font-semibold text-bad-fg">Not evaluable yet</p>
+        <p className="text-sm text-fg-muted">
           Fix {result.blocking.length} design error{result.blocking.length === 1 ? "" : "s"} (see
           Issues) to get a score.
         </p>
@@ -43,16 +113,19 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
   }
   if (result.status === "incomplete") {
     return (
-      <div className="flex flex-col gap-1 p-4">
-        <p className="text-sm font-semibold text-zinc-900">Waiting for flows</p>
-        {result.operations.map(({ operation, status }) => {
-          const op = activePack.problem.operations.find((o) => o.id === operation);
-          return (
-            <p key={operation} className="text-sm text-zinc-600">
-              {op?.label ?? operation}: {READINESS_LABELS[status]}
-            </p>
-          );
-        })}
+      <div className="flex flex-col gap-2 p-4">
+        <p className="text-sm font-semibold text-fg">Waiting for flows</p>
+        <ul className="flex flex-col gap-1">
+          {result.operations.map(({ operation, status }) => {
+            const op = activePack.problem.operations.find((o) => o.id === operation);
+            return (
+              <li key={operation} className="flex items-center gap-2 text-sm text-fg-muted">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" aria-hidden="true" />
+                {op?.label ?? operation}: {READINESS_LABELS[status]}
+              </li>
+            );
+          })}
+        </ul>
       </div>
     );
   }
@@ -64,63 +137,69 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
       : [],
   );
   return (
-    <div className="flex flex-col gap-3 p-4">
-      <div className="flex items-baseline gap-3">
-        <span
-          className="text-4xl font-bold tabular-nums text-zinc-900"
-          data-testid="scenario-score"
-        >
-          {scorecard.score}
-        </span>
-        <span className={`rounded-full px-2.5 py-0.5 text-sm font-semibold ${band.className}`}>
-          {band.label}
-        </span>
-        <span className="text-xs text-zinc-500" aria-live="polite">
-          {pending ? "Updating…" : ""}
-        </span>
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex items-center gap-3">
+        <ScoreRing score={scorecard.score} band={scorecard.band} />
+        <div className="flex min-w-0 flex-col items-start gap-1">
+          <Badge tone={band.tone} className="text-xs">
+            {band.label}
+          </Badge>
+          {scorecard.cap && (
+            <p className="text-xs text-fg-subtle">
+              Capped at {scorecard.cap.value} by {CAP_REASONS[scorecard.cap.reason]}.
+            </p>
+          )}
+          <span className="text-xs text-fg-subtle" aria-live="polite">
+            {pending ? "Updating…" : ""}
+          </span>
+        </div>
       </div>
-      {scorecard.cap && (
-        <p className="text-xs text-zinc-600">
-          Capped at {scorecard.cap.value} by {CAP_REASONS[scorecard.cap.reason]}.
-        </p>
-      )}
       {strategies.map(({ id, label }) => (
-        <p key={id} className="text-xs text-zinc-700">
-          Approach: <span className="font-semibold text-zinc-900">{label}</span>
+        <p key={id} className="text-xs text-fg-subtle">
+          Approach: <span className="font-semibold text-fg">{label}</span>
         </p>
       ))}
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-2">
         {scorecard.dimensions.map((d) => (
-          <li
-            key={d.dimension}
-            className="grid grid-cols-[7rem_1fr_2.5rem] items-center gap-2 text-xs"
-          >
-            <span className="text-zinc-700">{titleCase(d.dimension)}</span>
+          <li key={d.dimension} className="flex flex-col gap-1 text-xs">
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="text-fg-muted">{titleCase(d.dimension)}</span>
+              {d.score !== null && (
+                <span className="font-medium text-fg tabular-nums">{Math.round(d.score)}</span>
+              )}
+            </span>
             {d.score === null ? (
-              <span className="col-span-2 text-zinc-400">
+              <span className="text-fg-subtle">
                 {d.definedCount > 0 ? "not applicable to this design" : "not evaluated yet"}
               </span>
             ) : (
-              <>
-                <span className="h-2 overflow-hidden rounded-full bg-zinc-200" aria-hidden="true">
-                  <span
-                    className="block h-full rounded-full bg-teal-600"
-                    style={{ width: `${d.score}%` }}
-                  />
-                </span>
-                <span className="text-right tabular-nums text-zinc-800">{Math.round(d.score)}</span>
-              </>
+              <span className="h-1.5 overflow-hidden rounded-full bg-track" aria-hidden="true">
+                <span
+                  className={`block h-full rounded-full transition-[width] duration-500 ${dimensionTone(d.score)}`}
+                  style={{ width: `${d.score}%` }}
+                />
+              </span>
             )}
           </li>
         ))}
       </ul>
       {(scorecard.signals.senior.total > 0 || scorecard.signals.staff.total > 0) && (
-        <p className="text-xs text-zinc-600">
-          Signals: senior {scorecard.signals.senior.demonstrated}/{scorecard.signals.senior.total}
-          {scorecard.signals.staff.total > 0 &&
-            ` · staff ${scorecard.signals.staff.demonstrated}/${scorecard.signals.staff.total}`}
-        </p>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge tone={signalTone(scorecard.signals.senior)}>
+            Senior {scorecard.signals.senior.demonstrated}/{scorecard.signals.senior.total}
+          </Badge>
+          {scorecard.signals.staff.total > 0 && (
+            <Badge tone={signalTone(scorecard.signals.staff)}>
+              Staff {scorecard.signals.staff.demonstrated}/{scorecard.signals.staff.total}
+            </Badge>
+          )}
+        </div>
       )}
     </div>
   );
+}
+
+function signalTone(signal: { readonly demonstrated: number; readonly total: number }) {
+  if (signal.total === 0) return "neutral" as const;
+  return signal.demonstrated === signal.total ? ("accent" as const) : ("neutral" as const);
 }

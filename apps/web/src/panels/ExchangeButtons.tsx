@@ -5,7 +5,7 @@ import { activePack } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
-import { Button } from "../ui/primitives";
+import { IconButton } from "../ui/primitives";
 
 /** Saves the design to a file, or loads one, upgrading designs saved by earlier versions. */
 export function ExchangeButtons() {
@@ -45,22 +45,20 @@ export function ExchangeButtons() {
 
   return (
     <>
-      <Button
-        variant="ghost"
+      <IconButton
         onClick={download}
         title="Export: save the design to a file"
         aria-label="Export design"
       >
         <Download className="h-4 w-4" />
-      </Button>
-      <Button
-        variant="ghost"
+      </IconButton>
+      <IconButton
         onClick={() => input.current?.click()}
         title="Import: load a design from a file"
         aria-label="Import design"
       >
         <Upload className="h-4 w-4" />
-      </Button>
+      </IconButton>
       <input
         ref={input}
         type="file"

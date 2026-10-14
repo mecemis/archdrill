@@ -10,10 +10,11 @@ import {
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react";
-import { type DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { catalogIndex } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
+import { useTheme } from "../state/theme";
 import { useCanvasLoad } from "../state/timeline-view";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
@@ -50,6 +51,34 @@ function removeFromCanvas(nodes: readonly Node[], edges: readonly Edge[]): void 
 }
 
 const nodeTypes = { component: ComponentNode };
+const FIT_OPTIONS = { padding: 0.15, maxZoom: 1 } as const;
+/** How long the view takes to fit a design that was loaded or reset. */
+const FIT_DURATION_MS = 250;
+/** Time for React Flow to receive and measure new nodes before fitting them. */
+const FIT_DELAY_MS = 120;
+
+/**
+ * Fits the view when several components appear or disappear at once (a design
+ * imported, reset or restored); adding or removing one keeps the view still.
+ */
+function useFitOnReplace(nodeIds: string) {
+  const { fitView } = useReactFlow();
+  const previous = useRef(nodeIds);
+  useEffect(() => {
+    const before = new Set(previous.current.split(" ").filter(Boolean));
+    const after = new Set(nodeIds.split(" ").filter(Boolean));
+    previous.current = nodeIds;
+    const changed =
+      [...after].filter((id) => !before.has(id)).length +
+      [...before].filter((id) => !after.has(id)).length;
+    if (changed <= 1) return;
+    const timer = setTimeout(
+      () => void fitView({ ...FIT_OPTIONS, duration: FIT_DURATION_MS }),
+      FIT_DELAY_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [nodeIds, fitView]);
+}
 const edgeTypes = { connection: ConnectionEdge };
 
 function CanvasInner() {
@@ -63,6 +92,7 @@ function CanvasInner() {
   const pinned = useUi((s) => s.pinned);
   const { screenToFlowPosition } = useReactFlow();
   const { load: metrics, moment } = useCanvasLoad();
+  const theme = useTheme((s) => s.theme);
 
   const operation = analysis.operations.get(operationId);
   const highlight = hover ?? pinned?.highlight ?? null;
@@ -81,6 +111,7 @@ function CanvasInner() {
   );
   const projectedNodes = useMemo(() => projectNodes(input), [input]);
   const edges = useMemo(() => projectEdges(input), [input]);
+  useFitOnReplace(projectedNodes.map((n) => n.id).join(" "));
 
   // React Flow needs live positions while dragging; the attempt only changes on drop.
   const [nodes, setNodes] = useState<Node<ComponentNodeData>[]>(projectedNodes);
@@ -158,22 +189,31 @@ function CanvasInner() {
         event.dataTransfer.dropEffect = "copy";
       }}
       onDrop={onDrop}
+      colorMode={theme}
       fitView
-      fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+      fitViewOptions={FIT_OPTIONS}
     >
       <EdgeMarkers />
-      <Background gap={20} />
-      <Controls showInteractive={false} />
+      <Background gap={22} size={1.4} />
+      <Controls showInteractive={false} position="bottom-left" />
+      {attempt.architecture.components.length <= 1 && !moment && (
+        <Panel position="top-center">
+          <p className="rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm text-fg-muted shadow-pop">
+            Start from <span className="font-semibold text-fg">Components</span> on the left: drag a
+            service onto the canvas, then connect it from the client's handle.
+          </p>
+        </Panel>
+      )}
       {moment && (
         <Panel position="top-center">
           <p
-            className="flex items-center gap-2 whitespace-nowrap rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm text-sky-900 shadow-sm"
+            className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-info-line bg-elevated px-3 py-1.5 text-sm text-info-fg shadow-pop"
             data-testid="canvas-moment"
           >
             Showing {moment.label} at {moment.at} s
             <button
               type="button"
-              className="rounded px-1.5 py-0.5 text-xs font-medium underline hover:bg-sky-100"
+              className="rounded px-1.5 py-0.5 text-xs font-medium underline hover:bg-info-soft"
               onClick={() => useUi.getState().setTimelineCursor(null)}
             >
               Back to the environment

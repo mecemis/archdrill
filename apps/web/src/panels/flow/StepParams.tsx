@@ -1,6 +1,6 @@
 import { ACTIONS, type ActionId, actionTakesParam, type CallStep } from "@archdrill/model";
 import { activePack } from "../../state/content";
-import { Field, Select } from "../../ui/primitives";
+import { Field, INPUT_CLASS, Select } from "../../ui/primitives";
 
 /** Call parameters a candidate tunes, as they are stored on a step. */
 export type TunableValues = Partial<
@@ -193,7 +193,7 @@ function Check({
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-800">
+    <label className="flex items-center gap-2 text-sm text-fg">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
@@ -226,7 +226,7 @@ function NumberField({
           const n = Math.round(Number(e.target.value));
           onChange(Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, n)));
         }}
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className={INPUT_CLASS}
       />
     </Field>
   );

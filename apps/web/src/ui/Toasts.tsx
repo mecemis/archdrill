@@ -14,7 +14,7 @@ export function Toasts() {
           key={toast.id}
           role={toast.tone === "error" ? "alert" : "status"}
           className={`pointer-events-auto flex max-w-sm items-start gap-2 rounded-md px-3 py-2 text-sm shadow-lg ${
-            toast.tone === "error" ? "bg-rose-700 text-white" : "bg-zinc-900 text-white"
+            toast.tone === "error" ? "bg-bad text-on-accent" : "bg-inverse text-on-inverse"
           }`}
         >
           <span className="flex-1">{toast.message}</span>
