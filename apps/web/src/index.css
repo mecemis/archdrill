@@ -203,6 +203,31 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
+/* A failing or overloaded component pulses gently; traffic moves along edges. */
+@keyframes health-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--bad) 0%, transparent);
+  }
+}
+
+.health-critical {
+  animation: health-pulse 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-critical {
+    animation: none;
+  }
+
+  .traffic-dots {
+    display: none;
+  }
+}
+
 /* Thin, theme-aware scrollbars. */
 * {
   scrollbar-width: thin;
@@ -243,5 +268,4 @@ input[type="range"] {
 
 .react-flow__handle:hover {
   transform: scale(1.35);
-  background: var(--accent) !important;
 }

@@ -1,7 +1,7 @@
 import { describePath, type TimelineMark, type TimelineMetrics } from "@archdrill/engine";
 import type { Prediction } from "@archdrill/model";
-import { CircleCheck, CircleX } from "lucide-react";
-import { useState } from "react";
+import { CircleCheck, CircleX, Pause, Play } from "lucide-react";
+import { useEffect, useState } from "react";
 import { activePack } from "../../state/content";
 import { useEvaluation } from "../../state/evaluation";
 import { currentAnswers, predictionKey, usePredictions } from "../../state/predictions";
@@ -11,7 +11,7 @@ import { useUi } from "../../state/ui-store";
 import { compact, milliseconds, percent } from "../../ui/format";
 import { LineChart, type TimeBand } from "../../ui/LineChart";
 import { StatusBadge } from "../../ui/outcome";
-import { Button, Tabs } from "../../ui/primitives";
+import { Button, IconButton, Tabs } from "../../ui/primitives";
 import { componentLabel } from "../flow/step-label";
 
 /** Components worth charting: those that come anywhere near capacity. */
@@ -197,15 +197,60 @@ function stepAt(metrics: TimelineMetrics, t: number): number {
   );
 }
 
+/** A whole timeline plays in about this long, however many steps it has. */
+const PLAYBACK_MS = 9000;
+/** No faster than this per step, so short timelines stay watchable. */
+const MIN_STEP_MS = 120;
+
+/** Plays the timeline: moves the moment forward step by step, and stops at the end. */
+function usePlayback(metrics: TimelineMetrics, step: number | null) {
+  const [playing, setPlaying] = useState(false);
+  const last = metrics.times.length - 1;
+  useEffect(() => {
+    if (!playing) return;
+    const interval = Math.max(MIN_STEP_MS, PLAYBACK_MS / Math.max(1, last));
+    const timer = setInterval(() => {
+      const ui = useUi.getState();
+      const current =
+        ui.timelineCursor?.timelineId === metrics.timeline.id ? ui.timelineCursor.step : -1;
+      if (current >= last) {
+        setPlaying(false);
+        return;
+      }
+      ui.setTimelineCursor({ timelineId: metrics.timeline.id, step: current + 1 });
+    }, interval);
+    return () => clearInterval(timer);
+  }, [playing, last, metrics.timeline.id]);
+  const toggle = () => {
+    // Playing from the end starts over.
+    if (!playing && step === last) {
+      useUi.getState().setTimelineCursor({ timelineId: metrics.timeline.id, step: 0 });
+    }
+    setPlaying(!playing);
+  };
+  return { playing, toggle, stop: () => setPlaying(false) };
+}
+
 /** Picks the moment the canvas and the path mix show. */
 function Scrubber({ metrics }: { readonly metrics: TimelineMetrics }) {
   const step = useCursorStep(metrics);
-  const set = (next: number | null) =>
+  const { playing, toggle, stop } = usePlayback(metrics, step);
+  const set = (next: number | null) => {
+    stop();
     useUi
       .getState()
       .setTimelineCursor(next === null ? null : { timelineId: metrics.timeline.id, step: next });
+  };
   return (
     <div className="flex flex-wrap items-center gap-3">
+      <IconButton
+        onClick={toggle}
+        aria-label={playing ? "Pause the timeline" : "Play the timeline"}
+        title={playing ? "Pause" : "Play: watch the design change over time on the canvas"}
+        active={playing}
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </IconButton>
       <label className="flex flex-1 items-center gap-2 text-sm text-fg-muted">
         <span className="shrink-0">Moment</span>
         <input

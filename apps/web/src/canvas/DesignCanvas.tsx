@@ -10,16 +10,20 @@ import {
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react";
+import { Activity } from "lucide-react";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { catalogIndex } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
+import { useLayout } from "../state/layout";
 import { useAttemptStore } from "../state/store";
 import { useTheme } from "../state/theme";
 import { useCanvasLoad } from "../state/timeline-view";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
+import { IconButton } from "../ui/primitives";
 import { ComponentNode } from "./ComponentNode";
 import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
+import { findingsByComponent } from "./node-findings";
 import { addComponentFromPalette, PALETTE_MIME, parsePaletteData } from "./palette-drop";
 import { type ComponentNodeData, projectEdges, projectNodes } from "./projection";
 
@@ -84,7 +88,9 @@ const edgeTypes = { connection: ConnectionEdge };
 function CanvasInner() {
   const attempt = useAttemptStore((s) => s.attempt);
   const dispatch = useAttemptStore((s) => s.dispatch);
-  const { analysis } = useEvaluation();
+  const { analysis, scenarios } = useEvaluation();
+  const scenarioId = useUi((s) => s.scenarioId);
+  const animateTraffic = useLayout((s) => s.animateTraffic);
   const operationId = useUi((s) => s.operation);
   const selection = useUi((s) => s.selection);
   const slotArmed = useUi((s) => s.slot !== null);
@@ -96,6 +102,14 @@ function CanvasInner() {
 
   const operation = analysis.operations.get(operationId);
   const highlight = hover ?? pinned?.highlight ?? null;
+  const result = scenarios.find((s) => s.scenarioId === scenarioId);
+  const findings = useMemo(
+    () =>
+      result?.status === "evaluated"
+        ? findingsByComponent(result.checks, attempt, analysis)
+        : undefined,
+    [result, attempt, analysis],
+  );
   const input = useMemo(
     () => ({
       attempt,
@@ -106,8 +120,9 @@ function CanvasInner() {
       selection,
       slotArmed,
       metrics,
+      findings,
     }),
-    [attempt, operation, analysis.issues, highlight, selection, slotArmed, metrics],
+    [attempt, operation, analysis.issues, highlight, selection, slotArmed, metrics, findings],
   );
   const projectedNodes = useMemo(() => projectNodes(input), [input]);
   const edges = useMemo(() => projectEdges(input), [input]);
@@ -196,6 +211,22 @@ function CanvasInner() {
       <EdgeMarkers />
       <Background gap={22} size={1.4} />
       <Controls showInteractive={false} position="bottom-left" />
+      {metrics && (
+        <Panel position="top-right">
+          <IconButton
+            active={animateTraffic}
+            aria-pressed={animateTraffic}
+            aria-label="Animate traffic"
+            title={
+              animateTraffic ? "Stop the moving traffic" : "Show traffic moving along connections"
+            }
+            onClick={() => useLayout.getState().setAnimateTraffic(!animateTraffic)}
+            className={`border border-line shadow-card ${animateTraffic ? "" : "bg-elevated"}`}
+          >
+            <Activity className="h-4 w-4" />
+          </IconButton>
+        </Panel>
+      )}
       {attempt.architecture.components.length <= 1 && !moment && (
         <Panel position="top-center">
           <p className="rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm text-fg-muted shadow-pop">

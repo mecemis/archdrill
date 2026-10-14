@@ -1,28 +1,48 @@
 import { ReactFlowProvider } from "@xyflow/react";
+import { useEffect, useState } from "react";
 import { DesignCanvas } from "./canvas/DesignCanvas";
 import { Header } from "./panels/Header";
 import { ResultsDock } from "./panels/results/ResultsDock";
 import { LeftPanel, LeftRail, RightPanel } from "./panels/SidePanels";
+import { dockLimit, useLayout } from "./state/layout";
 import { type DockSize, useUi } from "./state/ui-store";
 import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
 import { Toasts } from "./ui/Toasts";
 
-/** Grid rows for each results drawer size: header, workspace, drawer. */
-const ROWS: Readonly<Record<DockSize, string>> = {
-  min: "grid-rows-[auto_minmax(0,1fr)_auto]",
-  normal: "grid-rows-[auto_minmax(0,1fr)_minmax(0,34vh)]",
-  max: "grid-rows-[auto_minmax(0,1fr)_minmax(0,58vh)]",
-};
+/** Share of the window the enlarged drawer takes, for timelines. */
+const MAX_DOCK_SHARE = 0.58;
+
+function useWindowHeight(): number {
+  const [height, setHeight] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return height;
+}
+
+/** The drawer's grid row: its header only, the size it was dragged to, or most of the window. */
+function dockRow(dock: DockSize, dragged: number, windowHeight: number): string {
+  if (dock === "min") return "auto";
+  const height = dock === "max" ? windowHeight * MAX_DOCK_SHARE : dragged;
+  return `${Math.round(Math.min(height, dockLimit(windowHeight)))}px`;
+}
 
 export function App() {
   useShortcuts();
   useRegressionWatch();
   const dock = useUi((s) => s.dock);
+  const dragged = useLayout((s) => s.dock);
+  const windowHeight = useWindowHeight();
   return (
     <ReactFlowProvider>
       {/* One explicit column, so a crowded header scrolls instead of widening the page. */}
-      <div className={`grid h-full grid-cols-1 bg-app text-fg ${ROWS[dock]}`}>
+      <div
+        className="grid h-full grid-cols-1 bg-app text-fg"
+        style={{ gridTemplateRows: `auto minmax(0,1fr) ${dockRow(dock, dragged, windowHeight)}` }}
+      >
         <Header />
         <div className="flex min-h-0">
           <LeftRail />

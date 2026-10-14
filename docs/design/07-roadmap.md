@@ -399,6 +399,17 @@ The interface was rebuilt around the canvas. ✅ Delivered:
 
 Browser tests cover themes, panels and the drawer.
 
+## M19: Resizable panels and a live canvas (as built)
+
+✅ Delivered:
+- side panels and the results drawer resize by mouse or keyboard, and the sizes are remembered;
+- components show their health under the simulated load (amber close to capacity; red and pulsing when overloaded or failing);
+- badges show the open findings about each component and open them on click;
+- traffic moves along connections in proportion to their load;
+- timelines play on the canvas.
+
+Unlike a decorative animation, every cue comes from the simulation: the shown environment or timeline moment, and the scenario's findings.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

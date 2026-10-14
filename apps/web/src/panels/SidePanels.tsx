@@ -8,8 +8,10 @@ import {
   Shapes,
 } from "lucide-react";
 import { useEffect } from "react";
+import { LIMITS, useLayout } from "../state/layout";
 import { type LeftTab, useUi } from "../state/ui-store";
 import { FOCUS_RING, IconButton, Tabs } from "../ui/primitives";
+import { ResizeHandle } from "../ui/ResizeHandle";
 import { BriefPanel } from "./BriefPanel";
 import { DecisionsPanel } from "./DecisionsPanel";
 import { EstimatePanel } from "./EstimatePanel";
@@ -79,12 +81,26 @@ const PANEL_TITLES: Readonly<Record<LeftTab, string>> = {
 
 export function LeftPanel() {
   const tab = useUi((s) => s.leftTab);
+  const width = useLayout((s) => s.left);
   if (tab === null) return null;
   return (
     <aside
       aria-label={PANEL_TITLES[tab]}
-      className="flex min-h-0 w-[18rem] shrink-0 flex-col border-r border-line bg-surface"
+      className="relative flex min-h-0 shrink-0 flex-col border-r border-line bg-surface"
+      style={{ width }}
     >
+      <ResizeHandle
+        axis="x"
+        grow={1}
+        value={width}
+        min={LIMITS.left.min}
+        max={LIMITS.left.max}
+        label="Resize the left panel"
+        onResize={useLayout.getState().setLeft}
+        onEnd={useLayout.getState().save}
+        onReset={() => useLayout.getState().reset("left")}
+        className="-right-1"
+      />
       <h2 className="flex h-11 shrink-0 items-center border-b border-line px-4 text-sm font-semibold text-fg">
         {PANEL_TITLES[tab]}
       </h2>
@@ -104,6 +120,7 @@ export function RightPanel() {
   const open = useUi((s) => s.rightOpen);
   const setTab = useUi((s) => s.setRightTab);
   const setOpen = useUi((s) => s.setRightOpen);
+  const width = useLayout((s) => s.right);
   // Selecting something on the canvas brings up its inspector.
   useEffect(() => {
     if (selection) setTab("inspector");
@@ -127,8 +144,21 @@ export function RightPanel() {
   return (
     <aside
       aria-label="Flow and inspector"
-      className="flex min-h-0 w-[21rem] shrink-0 flex-col border-l border-line bg-surface"
+      className="relative flex min-h-0 shrink-0 flex-col border-l border-line bg-surface"
+      style={{ width }}
     >
+      <ResizeHandle
+        axis="x"
+        grow={-1}
+        value={width}
+        min={LIMITS.right.min}
+        max={LIMITS.right.max}
+        label="Resize the right panel"
+        onResize={useLayout.getState().setRight}
+        onEnd={useLayout.getState().save}
+        onReset={() => useLayout.getState().reset("right")}
+        className="-left-1"
+      />
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
         <Tabs
           label="Right panel"
