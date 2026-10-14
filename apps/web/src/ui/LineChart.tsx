@@ -15,12 +15,12 @@ export interface TimeBand {
 
 /** Colour and dash pattern per series, so lines differ by more than colour. */
 const STYLES = [
-  { color: "#0369a1", dash: "" },
-  { color: "#be123c", dash: "6 3" },
-  { color: "#b45309", dash: "2 3" },
-  { color: "#047857", dash: "8 3 2 3" },
-  { color: "#6d28d9", dash: "1 2" },
-  { color: "#3f3f46", dash: "10 4" },
+  { color: "var(--info)", dash: "" },
+  { color: "var(--bad)", dash: "6 3" },
+  { color: "var(--warn)", dash: "2 3" },
+  { color: "var(--ok)", dash: "8 3 2 3" },
+  { color: "var(--accent)", dash: "1 2" },
+  { color: "var(--fg-muted)", dash: "10 4" },
 ] as const;
 
 const WIDTH = 640;
@@ -110,7 +110,7 @@ export function LineChart({
 
   return (
     <figure className="flex flex-col gap-1">
-      <figcaption id={id} className="text-xs font-semibold text-zinc-600">
+      <figcaption id={id} className="text-xs font-semibold text-fg-muted">
         {title}
       </figcaption>
       <svg
@@ -139,9 +139,9 @@ export function LineChart({
               y={TOP}
               width={Math.max(1, x(Math.min(band.to, end)) - x(band.from))}
               height={HEIGHT - TOP - BOTTOM}
-              fill="#ffe4e6"
+              fill="var(--bad-soft)"
             />
-            <text x={x(band.from) + 3} y={TOP + 10} fontSize="9" fill="#9f1239">
+            <text x={x(band.from) + 3} y={TOP + 10} fontSize="9" fill="var(--bad-fg)">
               {band.label}
             </text>
           </g>
@@ -153,16 +153,29 @@ export function LineChart({
               x2={WIDTH - RIGHT}
               y1={y(level)}
               y2={y(level)}
-              stroke="#e4e4e7"
+              stroke="var(--line)"
               strokeWidth="1"
             />
-            <text x={LEFT - 4} y={y(level) + 3} fontSize="9" textAnchor="end" fill="#71717a">
+            <text
+              x={LEFT - 4}
+              y={y(level) + 3}
+              fontSize="9"
+              textAnchor="end"
+              fill="var(--fg-subtle)"
+            >
               {format(level)}
             </text>
           </g>
         ))}
         {ticks.map((t) => (
-          <text key={t} x={x(t)} y={HEIGHT - 6} fontSize="9" textAnchor="middle" fill="#71717a">
+          <text
+            key={t}
+            x={x(t)}
+            y={HEIGHT - 6}
+            fontSize="9"
+            textAnchor="middle"
+            fill="var(--fg-subtle)"
+          >
             {t} s
           </text>
         ))}
@@ -173,7 +186,7 @@ export function LineChart({
               x2={WIDTH - RIGHT}
               y1={y(limit.value)}
               y2={y(limit.value)}
-              stroke="#e11d48"
+              stroke="var(--bad)"
               strokeWidth="1"
               strokeDasharray="4 3"
             />
@@ -182,7 +195,7 @@ export function LineChart({
               y={y(limit.value) - 3}
               fontSize="9"
               textAnchor="end"
-              fill="#be123c"
+              fill="var(--bad-fg)"
             >
               {limit.label}
             </text>
@@ -194,7 +207,7 @@ export function LineChart({
             x2={x(times[cursorIndex] ?? 0)}
             y1={TOP}
             y2={HEIGHT - BOTTOM}
-            stroke="#0c4a6e"
+            stroke="var(--fg)"
             strokeWidth="1"
           />
         )}
@@ -212,7 +225,7 @@ export function LineChart({
           );
         })}
       </svg>
-      <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-700">
+      <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-fg-muted">
         {series.map((s, i) => {
           const style = STYLES[i % STYLES.length] ?? STYLES[0];
           return (
@@ -231,7 +244,7 @@ export function LineChart({
               <span>
                 {s.label}
                 {cursorIndex >= 0 && (
-                  <span className="text-zinc-500 tabular-nums">
+                  <span className="text-fg-subtle tabular-nums">
                     : {formatAt(s.values[cursorIndex], format)}
                   </span>
                 )}

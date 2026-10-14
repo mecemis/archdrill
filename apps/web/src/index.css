@@ -1,7 +1,247 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Components use these semantic colours, never raw palette
+ * shades, so light and dark themes come from the same markup. The theme is
+ * set on <html data-theme="light|dark"> by public/theme.js before first paint
+ * and kept in sync by state/theme.ts.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans:
+    "Inter var", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Surfaces, from the app background up to floating elements. */
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-muted: var(--muted);
+  --color-track: var(--track);
+  --color-elevated: var(--elevated);
+  --color-inverse: var(--inverse);
+  --color-on-inverse: var(--on-inverse);
+
+  /* Text. */
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
+
+  /* Borders. */
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  /* Brand accent: selection, primary actions, focus. */
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-line: var(--accent-line);
+
+  /* Status: solid fill, soft background, text on soft or plain surfaces, border. */
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-fg: var(--ok-fg);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-fg: var(--warn-fg);
+  --color-warn-line: var(--warn-line);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-bad-fg: var(--bad-fg);
+  --color-bad-line: var(--bad-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-fg: var(--info-fg);
+  --color-info-line: var(--info-line);
+
+  /* Component categories on the canvas and in the palette. */
+  --color-cat-client: var(--cat-client);
+  --color-cat-edge: var(--cat-edge);
+  --color-cat-compute: var(--cat-compute);
+  --color-cat-cache: var(--cat-cache);
+  --color-cat-storage: var(--cat-storage);
+  --color-cat-messaging: var(--cat-messaging);
+  --color-cat-coordination: var(--cat-coordination);
+  --color-cat-external: var(--cat-external);
+
+  --shadow-card: 0 1px 2px rgb(15 18 25 / 0.06), 0 1px 3px rgb(15 18 25 / 0.04);
+  --shadow-pop: 0 8px 24px rgb(15 18 25 / 0.12), 0 2px 6px rgb(15 18 25 / 0.06);
+}
+
+:root {
+  color-scheme: light;
+  --app: #f4f5f8;
+  --surface: #ffffff;
+  --sunken: #f7f8fa;
+  --muted: #eef0f4;
+  --track: #e3e6ec;
+  --elevated: #ffffff;
+  --inverse: #161a23;
+  --on-inverse: #f4f5f8;
+
+  --fg: #121620;
+  --fg-muted: #474f5f;
+  --fg-subtle: #636a7b;
+  --fg-faint: #a3a9b6;
+
+  --line: #e3e6ec;
+  --line-strong: #cdd2db;
+
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --on-accent: #ffffff;
+  --accent-soft: #eef0ff;
+  --accent-fg: #4338ca;
+  --accent-line: #c7cbfb;
+
+  --ok: #10b981;
+  --ok-soft: #ecfdf5;
+  --ok-fg: #047857;
+  --ok-line: #a7f3d0;
+  --warn: #f59e0b;
+  --warn-soft: #fffbeb;
+  --warn-fg: #a35208;
+  --warn-line: #fcd88a;
+  --bad: #e11d48;
+  --bad-soft: #fff1f2;
+  --bad-fg: #be123c;
+  --bad-line: #fecdd3;
+  --info: #0284c7;
+  --info-soft: #f0f9ff;
+  --info-fg: #0369a1;
+  --info-line: #bae6fd;
+
+  --cat-client: #64748b;
+  --cat-edge: #0ea5e9;
+  --cat-compute: #6366f1;
+  --cat-cache: #f59e0b;
+  --cat-storage: #10b981;
+  --cat-messaging: #d946ef;
+  --cat-coordination: #14b8a6;
+  --cat-external: #f97316;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app: #0b0d12;
+  --surface: #12151c;
+  --sunken: #0f1218;
+  --muted: #1a1e28;
+  --track: #252a37;
+  --elevated: #181c25;
+  --inverse: #e8eaf0;
+  --on-inverse: #12151c;
+
+  --fg: #e8eaf0;
+  --fg-muted: #b0b6c3;
+  --fg-subtle: #7d8494;
+  --fg-faint: #545b6b;
+
+  --line: #232835;
+  --line-strong: #323849;
+
+  --accent: #818cf8;
+  --accent-strong: #a5b4fc;
+  --on-accent: #0b0d12;
+  --accent-soft: rgb(129 140 248 / 0.14);
+  --accent-fg: #a5b4fc;
+  --accent-line: rgb(129 140 248 / 0.4);
+
+  --ok: #34d399;
+  --ok-soft: rgb(52 211 153 / 0.12);
+  --ok-fg: #6ee7b7;
+  --ok-line: rgb(52 211 153 / 0.35);
+  --warn: #fbbf24;
+  --warn-soft: rgb(251 191 36 / 0.12);
+  --warn-fg: #fcd34d;
+  --warn-line: rgb(251 191 36 / 0.35);
+  --bad: #fb7185;
+  --bad-soft: rgb(251 113 133 / 0.12);
+  --bad-fg: #fda4af;
+  --bad-line: rgb(251 113 133 / 0.38);
+  --info: #38bdf8;
+  --info-soft: rgb(56 189 248 / 0.12);
+  --info-fg: #7dd3fc;
+  --info-line: rgb(56 189 248 / 0.35);
+
+  --cat-client: #94a3b8;
+  --cat-edge: #38bdf8;
+  --cat-compute: #818cf8;
+  --cat-cache: #fbbf24;
+  --cat-storage: #34d399;
+  --cat-messaging: #e879f9;
+  --cat-coordination: #2dd4bf;
+  --cat-external: #fb923c;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.3);
+}
+
 html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  background: var(--app);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Native checkboxes, radios and sliders in the accent colour. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+/* Thin, theme-aware scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* React Flow, themed by the same tokens. */
+.react-flow {
+  --xy-background-color: var(--app);
+  --xy-background-pattern-color: var(--line-strong);
+  --xy-edge-stroke: var(--fg-faint);
+  --xy-controls-button-background-color: var(--elevated);
+  --xy-controls-button-background-color-hover: var(--muted);
+  --xy-controls-button-color: var(--fg-muted);
+  --xy-controls-button-color-hover: var(--fg);
+  --xy-controls-button-border-color: var(--line);
+  --xy-controls-box-shadow: var(--shadow-card);
+  --xy-attribution-background-color: transparent;
+  --xy-selection-background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  --xy-selection-border: 1px dashed var(--accent);
+}
+
+.react-flow__controls {
+  border-radius: 0.625rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.react-flow__attribution {
+  opacity: 0.5;
+}
+
+.react-flow__handle {
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.35);
+  background: var(--accent) !important;
 }

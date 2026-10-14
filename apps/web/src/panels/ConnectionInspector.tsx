@@ -13,7 +13,7 @@ import { useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { compact, percent } from "../ui/format";
-import { Button, Field, SectionTitle, Select } from "../ui/primitives";
+import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitives";
 
 const RETRY_OPTIONS = Array.from({ length: MAX_RETRIES + 1 }, (_, n) => n);
 
@@ -28,7 +28,7 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
   return (
     <div className="flex flex-col gap-4 p-4">
       <SectionTitle>Connection</SectionTitle>
-      <p className="text-sm text-zinc-900">
+      <p className="text-sm text-fg">
         {label(connection.from)} → {label(connection.to)}
       </p>
       <Field label="Mode">
@@ -48,7 +48,7 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
       {callsFlowSteps ? (
         <PolicyEditor connection={connection} />
       ) : (
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-fg-subtle">
           Requests pass this hop on their way in. Timeouts, retries and circuit breakers apply to
           the calls a service makes from its flow steps.
         </p>
@@ -157,7 +157,7 @@ function Checkbox({
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-800">
+    <label className="flex items-center gap-2 text-sm text-fg">
       <input
         type="checkbox"
         checked={checked}
@@ -209,7 +209,7 @@ function OptionalNumber({
         onChange={(on) => onCommit(on ? placeholder : null)}
       />
       {enabled ? (
-        <label className="flex items-center gap-2 pl-6 text-xs text-zinc-600">
+        <label className="flex items-center gap-2 pl-6 text-xs text-fg-muted">
           <input
             type="number"
             min={1}
@@ -221,12 +221,12 @@ function OptionalNumber({
             onKeyDown={(e) => {
               if (e.key === "Enter") commit();
             }}
-            className="w-28 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+            className={`${INPUT_CLASS} w-28`}
           />
           {unit}
         </label>
       ) : (
-        <p className="pl-6 text-xs text-zinc-500">{offHint}</p>
+        <p className="pl-6 text-xs text-fg-subtle">{offHint}</p>
       )}
     </div>
   );
@@ -247,13 +247,13 @@ function CallMetrics({ connectionId }: { readonly connectionId: string }) {
     rows.push(["Failed fast by the breaker", percent(calls.shortCircuit, 1)]);
   if (calls.shed > 0.0001) rows.push(["Rejected by the bulkhead", percent(calls.shed, 1)]);
   return (
-    <section className="rounded-md bg-zinc-50 p-2.5 text-xs">
-      <h4 className="mb-1 font-semibold text-zinc-600">At {metrics.environment.label}</h4>
+    <section className="rounded-md bg-sunken p-2.5 text-xs">
+      <h4 className="mb-1 font-semibold text-fg-muted">At {metrics.environment.label}</h4>
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
         {rows.map(([term, value]) => (
           <div key={term} className="contents">
-            <dt className="text-zinc-600">{term}</dt>
-            <dd className="text-right text-zinc-900">{value}</dd>
+            <dt className="text-fg-muted">{term}</dt>
+            <dd className="text-right text-fg">{value}</dd>
           </div>
         ))}
       </dl>

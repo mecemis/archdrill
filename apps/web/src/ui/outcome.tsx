@@ -11,11 +11,11 @@ import {
 const TONE_STYLES: Readonly<
   Record<OutcomeTone, { readonly className: string; readonly icon: LucideIcon }>
 > = {
-  positive: { className: "border-emerald-300 bg-emerald-50 text-emerald-800", icon: CircleCheck },
-  absent: { className: "border-amber-300 bg-amber-50 text-amber-800", icon: CircleDashed },
-  negative: { className: "border-zinc-300 bg-zinc-100 text-zinc-700", icon: CircleMinus },
-  conflict: { className: "border-violet-300 bg-violet-50 text-violet-800", icon: Swords },
-  error: { className: "border-rose-300 bg-rose-50 text-rose-800", icon: CircleX },
+  positive: { className: "border-ok-line bg-ok-soft text-ok-fg", icon: CircleCheck },
+  absent: { className: "border-warn-line bg-warn-soft text-warn-fg", icon: CircleDashed },
+  negative: { className: "border-line-strong bg-muted text-fg-muted", icon: CircleMinus },
+  conflict: { className: "border-accent-line bg-accent-soft text-accent-fg", icon: Swords },
+  error: { className: "border-bad-line bg-bad-soft text-bad-fg", icon: CircleX },
 };
 
 /** Outcome label with colour, icon and border so tone never relies on colour alone. */
@@ -59,12 +59,12 @@ export function statusLabel(status: number): string {
 export function StatusBadge({ status }: { readonly status: number | null }) {
   const tone =
     status === null
-      ? "bg-rose-100 text-rose-800"
+      ? "bg-bad-soft text-bad-fg"
       : status >= 500
-        ? "bg-rose-100 text-rose-800"
+        ? "bg-bad-soft text-bad-fg"
         : status >= 400
-          ? "bg-amber-100 text-amber-900"
-          : "bg-emerald-100 text-emerald-800";
+          ? "bg-warn-soft text-warn-fg"
+          : "bg-ok-soft text-ok-fg";
   return (
     <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tone}`}>
       {status === null ? "unhandled" : status}

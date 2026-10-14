@@ -28,7 +28,7 @@ export function usd(value: number): string {
 
 /** Tailwind classes for a utilisation level: calm below 60%, warning to 80%, danger above. */
 export function utilizationTone(value: number): string {
-  if (value > 0.8) return "bg-rose-500";
-  if (value > 0.6) return "bg-amber-500";
-  return "bg-emerald-500";
+  if (value > 0.8) return "bg-bad";
+  if (value > 0.6) return "bg-warn";
+  return "bg-ok";
 }

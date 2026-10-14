@@ -122,7 +122,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-md border border-sky-300 bg-sky-50 p-3"
+      className="flex flex-col gap-3 rounded-md border border-info-line bg-info-soft p-3"
       data-testid="add-step-form"
     >
       <fieldset className="flex flex-wrap gap-1">
@@ -134,7 +134,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
             aria-pressed={mode === m.id}
             disabled={m.disabled}
             onClick={() => setMode(m.id)}
-            className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-40 ${mode === m.id ? "bg-sky-700 text-white" : "bg-white text-zinc-700"}`}
+            className={`rounded px-2 py-1 text-xs font-medium disabled:opacity-40 ${mode === m.id ? "bg-accent text-on-accent" : "bg-surface text-fg-muted"}`}
           >
             {m.label}
           </button>
@@ -142,7 +142,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
       </fieldset>
       {mode === "call" && (
         <>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-fg-muted">
             Tip: click a highlighted component on the canvas to pick it.
           </p>
           <Field label="Component">

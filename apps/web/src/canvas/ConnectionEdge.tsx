@@ -11,12 +11,23 @@ import type { ConnectionEdgeData } from "./projection";
 
 const MIN_LABELLED_LENGTH = 90;
 
-function strokeFor(data: ConnectionEdgeData | undefined, selected: boolean | undefined): string {
-  if (data?.hasError) return "#e11d48";
-  if (selected) return "#0284c7";
-  if (data?.emphasis === "highlighted") return "#d97706";
-  if (data && (data.steps.length > 0 || data.ingress)) return "#0f766e";
-  return "#a1a1aa";
+/** Edge colours, as design tokens; each has an arrowhead of its own. */
+const STROKES = {
+  error: "var(--bad)",
+  selected: "var(--accent-strong)",
+  highlighted: "var(--warn)",
+  flow: "var(--accent)",
+  idle: "var(--fg-faint)",
+} as const;
+
+type Stroke = keyof typeof STROKES;
+
+function strokeFor(data: ConnectionEdgeData | undefined, selected: boolean | undefined): Stroke {
+  if (data?.hasError) return "error";
+  if (selected) return "selected";
+  if (data?.emphasis === "highlighted") return "highlighted";
+  if (data && (data.steps.length > 0 || data.ingress)) return "flow";
+  return "idle";
 }
 
 function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
@@ -33,10 +44,10 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
       <BaseEdge
         id={id}
         path={path}
-        markerEnd={`url(#arrow-${stroke.slice(1)})`}
+        markerEnd={`url(#arrow-${stroke})`}
         style={{
-          stroke,
-          strokeWidth: active || selected ? 2.5 : 1.5,
+          stroke: STROKES[stroke],
+          strokeWidth: selected ? 3 : active ? 2.25 : 1.5,
           strokeDasharray: data?.mode === "async" ? "6 4" : undefined,
           opacity: data?.emphasis === "dimmed" ? 0.3 : 1,
         }}
@@ -48,14 +59,14 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           >
             {rate > 0 && (
-              <span className="rounded bg-white/90 px-1 text-[11px] font-medium text-zinc-700 tabular-nums shadow-sm">
+              <span className="rounded-md border border-line bg-elevated px-1.5 text-[11px] font-medium text-fg-muted tabular-nums shadow-card">
                 {compact(rate)}/s
               </span>
             )}
             {data.steps.map((n) => (
               <span
                 key={n}
-                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-700 px-1 text-[11px] font-semibold text-white"
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold text-on-accent shadow-card"
               >
                 {n}
               </span>
@@ -69,25 +80,23 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
 
 export const ConnectionEdge = memo(ConnectionEdgeView);
 
-const MARKER_COLORS = ["e11d48", "0284c7", "d97706", "0f766e", "a1a1aa"];
-
 /** Arrowhead definitions for every stroke colour the edges use. */
 export function EdgeMarkers() {
   return (
     <svg className="absolute h-0 w-0" aria-hidden="true">
       <defs>
-        {MARKER_COLORS.map((color) => (
+        {(Object.keys(STROKES) as Stroke[]).map((stroke) => (
           <marker
-            key={color}
-            id={`arrow-${color}`}
+            key={stroke}
+            id={`arrow-${stroke}`}
             viewBox="0 0 10 10"
             refX="9"
             refY="5"
-            markerWidth="7"
-            markerHeight="7"
+            markerWidth="5.5"
+            markerHeight="5.5"
             orient="auto-start-reverse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={`#${color}`} />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={STROKES[stroke]} />
           </marker>
         ))}
       </defs>

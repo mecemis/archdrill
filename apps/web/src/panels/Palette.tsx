@@ -1,11 +1,13 @@
-import type { Position } from "@archdrill/model";
+import type { Flavor, Kind, Position } from "@archdrill/model";
 import { useReactFlow } from "@xyflow/react";
+import { Search } from "lucide-react";
+import { useState } from "react";
 import { addComponentFromPalette, PALETTE_MIME } from "../canvas/palette-drop";
 import { catalogIndex } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
-import { KindIcon } from "../ui/icons";
-import { SectionTitle } from "../ui/primitives";
+import { CATEGORIES, CATEGORY_ORDER, KindChip, kindCategory } from "../ui/icons";
+import { FOCUS_RING, Input, SectionTitle } from "../ui/primitives";
 
 const NODE_HALF_WIDTH = 96;
 const NODE_HALF_HEIGHT = 36;
@@ -44,20 +46,66 @@ function freeSpotNearCentre(
   return origin;
 }
 
+/** Lower-case text a palette entry is found by. */
+function searchText(kind: Kind, flavor: Flavor): string {
+  return [kind.label, kind.description, flavor.label, flavor.description, ...kind.capabilities]
+    .join(" ")
+    .toLowerCase();
+}
+
 export function Palette() {
   const dispatch = useAttemptStore((s) => s.dispatch);
   const layout = useAttemptStore((s) => s.attempt.layout);
   const { screenToFlowPosition } = useReactFlow();
+  const [query, setQuery] = useState("");
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+
+  const groups = CATEGORY_ORDER.map((category) => ({
+    category,
+    entries: catalogIndex.catalog.kinds
+      .filter((kind) => kindCategory(kind.id) === category)
+      .flatMap((kind) =>
+        kind.flavors
+          .filter((flavor) => {
+            const text = searchText(kind, flavor);
+            return terms.every((t) => text.includes(t));
+          })
+          .map((flavor) => ({ kind, flavor })),
+      ),
+  })).filter((group) => group.entries.length > 0);
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <p className="text-xs text-zinc-500">Drag onto the canvas, or click to add.</p>
-      {catalogIndex.catalog.kinds.map((kind) => (
-        <section key={kind.id} className="flex flex-col gap-1.5">
-          <SectionTitle>{kind.label}</SectionTitle>
-          {kind.flavors.map((flavor) => (
+    <div className="flex flex-col gap-4 p-3">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-fg-subtle"
+          aria-hidden="true"
+        />
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search components"
+          aria-label="Search components"
+          className="w-full pl-8"
+        />
+      </div>
+      <p className="-mt-2 px-1 text-xs text-fg-subtle">Drag onto the canvas, or click to add.</p>
+      {groups.length === 0 && (
+        <p className="px-1 text-sm text-fg-subtle">Nothing matches "{query}".</p>
+      )}
+      {groups.map(({ category, entries }) => (
+        <section key={category} className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 px-1">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${CATEGORIES[category].solid}`}
+              aria-hidden="true"
+            />
+            <SectionTitle>{CATEGORIES[category].label}</SectionTitle>
+          </div>
+          {entries.map(({ kind, flavor }) => (
             <button
-              key={flavor.id}
+              key={`${kind.id}/${flavor.id}`}
               type="button"
               draggable
               onDragStart={(event) => {
@@ -76,10 +124,17 @@ export function Palette() {
                 if (id) useUi.getState().select({ type: "component", id });
               }}
               title={flavor.description}
-              className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-left text-sm text-zinc-800 hover:border-sky-400 hover:bg-sky-50"
+              aria-label={flavor.label}
+              className={`group flex cursor-grab items-start gap-2.5 rounded-xl border border-line bg-surface p-2 text-left shadow-card transition-colors hover:border-accent-line hover:bg-accent-soft active:cursor-grabbing ${FOCUS_RING}`}
             >
-              <KindIcon kind={kind.id} className="h-4 w-4 shrink-0 text-zinc-500" />
-              {flavor.label}
+              <KindChip kind={kind.id} />
+              <span className="flex min-w-0 flex-col">
+                <span className="flex items-baseline gap-1.5">
+                  <span className="truncate text-[13px] font-semibold text-fg">{flavor.label}</span>
+                  <span className="truncate text-[11px] text-fg-subtle">{kind.label}</span>
+                </span>
+                <span className="line-clamp-2 text-xs text-fg-muted">{flavor.description}</span>
+              </span>
             </button>
           ))}
         </section>

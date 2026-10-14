@@ -14,7 +14,7 @@ export function LoadPanel() {
   const { environments, environmentId, metrics } = useScenarioLoad();
   const setEnvironment = useUi((s) => s.setEnvironment);
   if (environments.length === 0) {
-    return <p className="p-3 text-sm text-zinc-500">This scenario does not simulate load.</p>;
+    return <p className="p-3 text-sm text-fg-subtle">This scenario does not simulate load.</p>;
   }
   return (
     <div className="flex flex-col gap-4 p-3">
@@ -27,7 +27,7 @@ export function LoadPanel() {
       {metrics ? (
         <LoadDetails metrics={metrics} />
       ) : (
-        <p className="text-sm text-zinc-500">Load appears once the scenario can be evaluated.</p>
+        <p className="text-sm text-fg-subtle">Load appears once the scenario can be evaluated.</p>
       )}
     </div>
   );
@@ -38,7 +38,7 @@ function LoadDetails({ metrics }: { readonly metrics: EnvironmentMetrics }) {
     <>
       <EnvironmentSummary metrics={metrics} />
       {!metrics.converged && (
-        <p className="flex gap-1.5 rounded-md bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+        <p className="flex gap-1.5 rounded-md bg-warn-soft px-2.5 py-2 text-xs text-warn-fg">
           <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
           The overload feedback did not settle; numbers are approximate. A component is far over
           capacity.
@@ -75,9 +75,9 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
   });
   return (
     <section>
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Operations</h4>
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Operations</h4>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-fg-subtle">
           <tr>
             <th className="font-medium">Operation</th>
             <th className="font-medium">Rate</th>
@@ -95,7 +95,7 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
                 <td className="py-0.5">
                   {label}
                   {op.trigger !== "request" && (
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-fg-subtle">
                       {" "}
                       · {op.trigger === "event" ? "consumer" : "job"}
                     </span>
@@ -103,11 +103,11 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
                 </td>
                 <td>{compact(op.rate)}/s</td>
                 {op.rate > 0 ? (
-                  <td className={op.successRate < 0.9999 ? "font-semibold text-rose-700" : ""}>
+                  <td className={op.successRate < 0.9999 ? "font-semibold text-bad-fg" : ""}>
                     {percent(op.successRate, 2)}
                   </td>
                 ) : (
-                  <td className="text-zinc-500">nothing arrives</td>
+                  <td className="text-fg-subtle">nothing arrives</td>
                 )}
                 {(["p50", "p95", "p99"] as const).map((p) => (
                   <td key={p}>
@@ -120,13 +120,13 @@ function OperationsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
         </tbody>
       </table>
       {background.length > 0 && (
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-fg-subtle">
           For consumers and jobs, latency is the lag from when the item is ready until it is done,
           waiting for batches included.
         </p>
       )}
       {notes.map((note) => (
-        <p key={note} className="mt-1 text-xs font-medium text-rose-700">
+        <p key={note} className="mt-1 text-xs font-medium text-bad-fg">
           {note}
         </p>
       ))}
@@ -139,9 +139,9 @@ function ComponentsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
   const rows = [...metrics.components.values()].sort((a, b) => b.utilization - a.utilization);
   return (
     <section>
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Components</h4>
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Components</h4>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-fg-subtle">
           <tr>
             <th className="font-medium">Component</th>
             <th className="font-medium">Load</th>
@@ -182,41 +182,39 @@ function ComponentRow({
   const load = metrics.readLoad + metrics.writeLoad;
   return (
     <tr
-      className="tabular-nums hover:bg-zinc-100"
+      className="tabular-nums hover:bg-muted"
       onMouseEnter={() => setHover(highlight)}
       onMouseLeave={() => setHover(null)}
     >
       <td className="py-0.5">
         {label}
         {metrics.faults.length > 0 && (
-          <span className="block text-xs font-medium text-rose-700">
-            {metrics.faults.join("; ")}
-          </span>
+          <span className="block text-xs font-medium text-bad-fg">{metrics.faults.join("; ")}</span>
         )}
       </td>
       <td title={`${compact(metrics.readLoad)} reads/s, ${compact(metrics.writeLoad)} writes/s`}>
         {compact(load)}/s
         {metrics.retryLoad > 0 && load > 0 && (
-          <span className="block text-xs text-amber-700">
+          <span className="block text-xs text-warn-fg">
             {percent(metrics.retryLoad / load, 0)} retries
           </span>
         )}
       </td>
       <td>
         <span className="flex items-center gap-2">
-          <span className="h-2 w-24 overflow-hidden rounded-full bg-zinc-200" aria-hidden="true">
+          <span className="h-2 w-24 overflow-hidden rounded-full bg-track" aria-hidden="true">
             <span
               className={`block h-full rounded-full ${utilizationTone(metrics.utilization)}`}
               style={{ width: `${Math.min(100, metrics.utilization * 100)}%` }}
             />
           </span>
-          <span className={metrics.utilization > 1 ? "font-semibold text-rose-700" : ""}>
+          <span className={metrics.utilization > 1 ? "font-semibold text-bad-fg" : ""}>
             {percent(metrics.utilization, 0)}
           </span>
         </span>
         {metrics.hottestShardUtilization > metrics.utilization + 0.05 && (
           <span
-            className={`block text-xs ${metrics.hottestShardUtilization > 1 ? "font-semibold text-rose-700" : "text-amber-700"}`}
+            className={`block text-xs ${metrics.hottestShardUtilization > 1 ? "font-semibold text-bad-fg" : "text-warn-fg"}`}
           >
             hot shard {percent(metrics.hottestShardUtilization, 0)}
           </span>
@@ -226,7 +224,7 @@ function ComponentRow({
       <td>
         {usd(metrics.monthlyCost)}
         {autoscaled && (
-          <span className="block text-xs text-zinc-500">{metrics.instances} instances</span>
+          <span className="block text-xs text-fg-subtle">{metrics.instances} instances</span>
         )}
       </td>
     </tr>
@@ -240,13 +238,13 @@ function EnvironmentSummary({ metrics }: { readonly metrics: EnvironmentMetrics 
   const { description, faults } = metrics.environment;
   if (!description && faults.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-700">
+    <div className="flex flex-col gap-1 rounded-md bg-sunken px-2.5 py-2 text-xs text-fg-muted">
       {description && <p>{description}</p>}
       {faults.length > 0 && faulty.length === 0 && (
-        <p className="text-zinc-500">No component in this design is affected.</p>
+        <p className="text-fg-subtle">No component in this design is affected.</p>
       )}
       {faulty.map((c) => (
-        <p key={c.componentId} className="flex gap-1.5 font-medium text-rose-800">
+        <p key={c.componentId} className="flex gap-1.5 font-medium text-bad-fg">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           {componentLabel(attempt, c.componentId)}: {c.faults.join("; ")}
         </p>
@@ -267,9 +265,9 @@ function CallsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
   };
   return (
     <section>
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Calls</h4>
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Calls</h4>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-fg-subtle">
           <tr>
             <th className="font-medium">Connection</th>
             <th className="font-medium">Calls</th>
@@ -289,13 +287,13 @@ function CallsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
               <tr key={c.connectionId} className="tabular-nums">
                 <td className="py-0.5">{route(c.connectionId)}</td>
                 <td>{compact(c.calls)}/s</td>
-                <td className={c.attempts > 1.2 * c.calls ? "font-semibold text-amber-700" : ""}>
+                <td className={c.attempts > 1.2 * c.calls ? "font-semibold text-warn-fg" : ""}>
                   ×{(c.attempts / c.calls).toFixed(2)}
                 </td>
-                <td className={c.failure > 0.001 ? "font-semibold text-rose-700" : ""}>
+                <td className={c.failure > 0.001 ? "font-semibold text-bad-fg" : ""}>
                   {percent(c.failure, 2)}
                 </td>
-                <td className="text-xs text-zinc-600">{why.join(", ")}</td>
+                <td className="text-xs text-fg-muted">{why.join(", ")}</td>
               </tr>
             );
           })}
@@ -309,9 +307,9 @@ function CachesTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
   const attempt = useAttemptStore((s) => s.attempt);
   return (
     <section>
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Caches</h4>
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Caches</h4>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-fg-subtle">
           <tr>
             <th className="font-medium">Cache</th>
             <th className="font-medium">Hit ratio</th>
@@ -326,7 +324,7 @@ function CachesTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
               <td className="py-0.5">
                 {componentLabel(attempt, c.componentId)} · {c.entity}
               </td>
-              <td className={c.populated ? "" : "font-semibold text-rose-700"}>
+              <td className={c.populated ? "" : "font-semibold text-bad-fg"}>
                 {c.populated ? percent(c.hitRatio) : "never populated"}
               </td>
               <td>{percent(c.negativeHitRatio)}</td>
@@ -351,12 +349,12 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
   );
   return (
     <section className="text-sm">
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Cost at this load</h4>
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Cost at this load</h4>
       <p className="tabular-nums">
         <span className="font-semibold">{usd(metrics.monthlyCost)}</span> / month · instances{" "}
         {usd(totals.instances)} · requests {usd(totals.requests)} · storage {usd(totals.storage)}
       </p>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="mt-1 text-xs text-fg-subtle">
         Ballpark list prices for comparing designs, not a quote. Storage counts every replica's
         copy.
       </p>

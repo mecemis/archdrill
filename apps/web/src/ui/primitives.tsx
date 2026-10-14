@@ -1,24 +1,63 @@
-import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import { ChevronDown } from "lucide-react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md";
 
 const VARIANTS: Readonly<Record<Variant, string>> = {
-  primary: "bg-sky-700 text-white hover:bg-sky-800 disabled:bg-sky-300",
+  primary:
+    "bg-accent text-on-accent shadow-card hover:bg-accent-strong disabled:opacity-45 disabled:shadow-none",
   secondary:
-    "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 disabled:text-zinc-400",
-  ghost: "text-zinc-700 hover:bg-zinc-100 disabled:text-zinc-300",
-  danger: "border border-rose-300 bg-white text-rose-700 hover:bg-rose-50",
+    "border border-line bg-surface text-fg shadow-card hover:border-line-strong hover:bg-sunken disabled:text-fg-faint disabled:shadow-none",
+  ghost:
+    "text-fg-muted hover:bg-muted hover:text-fg disabled:text-fg-faint disabled:hover:bg-transparent",
+  danger: "border border-bad-line bg-bad-soft text-bad-fg hover:border-bad",
 };
+
+const SIZES: Readonly<Record<Size, string>> = {
+  sm: "h-7 gap-1 rounded-md px-2 text-xs",
+  md: "h-8 gap-1.5 rounded-lg px-2.5 text-sm",
+};
+
+/** Focus ring shared by every interactive element. */
+export const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
 export function Button({
   variant = "secondary",
+  size = "md",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { readonly variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  readonly variant?: Variant;
+  readonly size?: Size;
+}) {
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-sky-600 disabled:cursor-not-allowed ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed ${FOCUS_RING} ${SIZES[size]} ${VARIANTS[variant]} ${className}`}
+      {...props}
+    />
+  );
+}
+
+/** A square button holding only an icon; it needs an aria-label. */
+export function IconButton({
+  className = "",
+  active = false,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { readonly active?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:text-fg-faint disabled:hover:bg-transparent ${FOCUS_RING} ${
+        active ? "bg-accent-soft text-accent-fg" : "text-fg-subtle hover:bg-muted hover:text-fg"
+      } ${className}`}
       {...props}
     />
   );
@@ -26,32 +65,79 @@ export function Button({
 
 export function Field({
   label,
+  hint,
   children,
 }: {
   readonly label: string;
+  readonly hint?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: the control is passed as a child, which wraps it in the label
-    <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600">
+    <label className="flex flex-col gap-1.5 text-xs font-medium text-fg-muted">
       {label}
       {children}
+      {hint && <span className="font-normal text-fg-subtle">{hint}</span>}
     </label>
   );
 }
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
+/** Classes for text and number inputs, for the places that render their own. */
+export const INPUT_CLASS = `h-8 rounded-lg border border-line bg-surface px-2.5 text-sm text-fg shadow-card placeholder:text-fg-faint hover:border-line-strong disabled:bg-sunken disabled:text-fg-subtle ${FOCUS_RING}`;
+
+export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`${INPUT_CLASS} ${className}`} {...props} />;
+}
+
+export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 focus-visible:outline-2 focus-visible:outline-sky-600"
-      {...props}
-    />
+    <span className={`relative inline-flex min-w-0 ${className}`}>
+      <select
+        className={`${INPUT_CLASS} w-full min-w-0 cursor-pointer appearance-none pr-8`}
+        {...props}
+      />
+      <ChevronDown
+        className="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-fg-subtle"
+        aria-hidden="true"
+      />
+    </span>
   );
 }
 
 export function SectionTitle({ children }: { readonly children: ReactNode }) {
   return (
-    <h3 className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{children}</h3>
+    <h3 className="text-[11px] font-semibold tracking-[0.06em] text-fg-subtle uppercase">
+      {children}
+    </h3>
+  );
+}
+
+type Tone = "neutral" | "accent" | "ok" | "warn" | "bad" | "info";
+
+const TONES: Readonly<Record<Tone, string>> = {
+  neutral: "bg-muted text-fg-muted",
+  accent: "bg-accent-soft text-accent-fg",
+  ok: "bg-ok-soft text-ok-fg",
+  warn: "bg-warn-soft text-warn-fg",
+  bad: "bg-bad-soft text-bad-fg",
+  info: "bg-info-soft text-info-fg",
+};
+
+export function Badge({
+  tone = "neutral",
+  className = "",
+  children,
+}: {
+  readonly tone?: Tone;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-px text-[11px] font-medium whitespace-nowrap tabular-nums ${TONES[tone]} ${className}`}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -61,38 +147,61 @@ export interface TabOption<T extends string> {
   readonly count?: number;
 }
 
+/** A segmented control; each segment is a tab. */
 export function Tabs<T extends string>({
   options,
   value,
   onChange,
   label,
+  className = "",
 }: {
   readonly options: readonly TabOption<T>[];
   readonly value: T;
   readonly onChange: (value: T) => void;
   readonly label: string;
+  readonly className?: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="flex gap-1">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          role="tab"
-          aria-selected={option.id === value}
-          onClick={() => onChange(option.id)}
-          className={`rounded-md px-2.5 py-1 text-sm font-medium ${
-            option.id === value ? "bg-zinc-900 text-white" : "text-zinc-600 hover:bg-zinc-100"
-          }`}
-        >
-          {option.label}
-          {option.count !== undefined && (
-            <span className="ml-1.5 rounded-full bg-zinc-200 px-1.5 text-xs text-zinc-800">
-              {option.count}
-            </span>
-          )}
-        </button>
-      ))}
+    <div
+      role="tablist"
+      aria-label={label}
+      className={`inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5 ${className}`}
+    >
+      {options.map((option) => {
+        const selected = option.id === value;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(option.id)}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors ${FOCUS_RING} ${
+              selected ? "bg-surface text-fg shadow-card" : "text-fg-subtle hover:text-fg"
+            }`}
+          >
+            {option.label}
+            {option.count !== undefined && (
+              <span
+                className={`min-w-5 rounded-full px-1.5 text-center text-[11px] tabular-nums ${
+                  selected ? "bg-accent-soft text-accent-fg" : "bg-track text-fg-muted"
+                }`}
+              >
+                {option.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+/** A keyboard key, for shortcut hints. */
+export function Kbd({ children }: { readonly children: ReactNode }) {
+  return (
+    <kbd className="rounded border border-line bg-sunken px-1 font-mono text-[10px] text-fg-subtle">
+      {children}
+    </kbd>
   );
 }

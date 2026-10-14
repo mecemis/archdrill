@@ -6,7 +6,7 @@ import { catalogIndex } from "../state/content";
 import { useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { percent } from "../ui/format";
-import { Field, Select } from "../ui/primitives";
+import { Field, INPUT_CLASS, Select } from "../ui/primitives";
 
 const TARGETS = [0.5, 0.6, 0.7, 0.8, 0.9];
 
@@ -25,7 +25,7 @@ export function AutoscaleEditor({ component }: { readonly component: Component }
     dispatch("setAutoscale", { id: component.id, autoscale: next ?? null });
   return (
     <fieldset className="flex flex-col gap-2">
-      <label className="flex items-center gap-2 text-sm text-zinc-800">
+      <label className="flex items-center gap-2 text-sm text-fg">
         <input
           type="checkbox"
           checked={autoscale !== undefined}
@@ -67,13 +67,13 @@ export function AutoscaleEditor({ component }: { readonly component: Component }
         </div>
       )}
       {autoscale && running !== undefined && metrics && (
-        <p className="pl-6 text-xs text-zinc-600">
+        <p className="pl-6 text-xs text-fg-muted">
           Runs {running} instance{running === 1 ? "" : "s"} at {metrics.environment.label}
           {running >= autoscale.max ? ", its maximum" : ""}.
         </p>
       )}
       {autoscale && (
-        <p className="pl-6 text-xs text-zinc-500">
+        <p className="pl-6 text-xs text-fg-subtle">
           It scales on the average utilisation of the last {AUTOSCALE_WINDOW_SEC} s, and a new
           instance takes {startupSec(component)} s to start taking traffic; timelines show the gap.
         </p>
@@ -111,7 +111,7 @@ function MaxInstances({
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
         }}
-        className="w-24 rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className={`${INPUT_CLASS} w-24`}
       />
     </Field>
   );

@@ -26,7 +26,7 @@ export function TimelinePanel() {
   const metrics = useShownTimeline();
   if (!metrics) {
     return (
-      <p className="p-3 text-sm text-zinc-500">
+      <p className="p-3 text-sm text-fg-subtle">
         Timelines appear once the scenario can be evaluated.
       </p>
     );
@@ -42,7 +42,7 @@ export function TimelinePanel() {
         />
       )}
       {metrics.timeline.description && (
-        <p className="text-sm text-zinc-700">{metrics.timeline.description}</p>
+        <p className="text-sm text-fg-muted">{metrics.timeline.description}</p>
       )}
       <TimelineView metrics={metrics} />
     </div>
@@ -83,17 +83,17 @@ function PredictGate({
   return (
     <section
       aria-label="Predict, then reveal"
-      className="flex flex-col gap-4 rounded-md border border-violet-200 bg-violet-50 p-4"
+      className="flex flex-col gap-4 rounded-md border border-accent-line bg-accent-soft p-4"
     >
-      <p className="text-sm text-violet-950">
+      <p className="text-sm text-accent-fg">
         Before you look: what do you expect to happen? Your answers are shown next to what the
         simulation finds.
       </p>
       {questions.map((q) => (
         <fieldset key={q.id} className="flex flex-col gap-1">
-          <legend className="mb-1 text-sm font-medium text-zinc-900">{q.question}</legend>
+          <legend className="mb-1 text-sm font-medium text-fg">{q.question}</legend>
           {q.options.map((o) => (
-            <label key={o.id} className="flex items-center gap-2 text-sm text-zinc-800">
+            <label key={o.id} className="flex items-center gap-2 text-sm text-fg">
               <input
                 type="radio"
                 name={`${predictionsKey}/${q.id}`}
@@ -111,7 +111,7 @@ function PredictGate({
         </Button>
         <button
           type="button"
-          className="text-sm text-zinc-600 underline hover:text-zinc-900"
+          className="text-sm text-fg-muted underline hover:text-fg"
           onClick={() => reveal(predictionsKey)}
         >
           Skip and show it
@@ -155,12 +155,12 @@ function PredictionResults({
             return (
               <li key={q.id} className="flex gap-2 text-sm">
                 <Icon
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${right ? "text-emerald-600" : "text-rose-600"}`}
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${right ? "text-ok-fg" : "text-bad-fg"}`}
                   aria-label={right ? "Right" : "Not quite"}
                 />
                 <span>
-                  <span className="font-medium text-zinc-900">{q.question}</span>{" "}
-                  <span className="text-zinc-700">
+                  <span className="font-medium text-fg">{q.question}</span>{" "}
+                  <span className="text-fg-muted">
                     You said: {label(answers[q.id])}. It was: {label(actual?.optionId)}
                     {actual ? ` (${describeValue(q, actual.value)})` : ""}.
                   </span>
@@ -172,7 +172,7 @@ function PredictionResults({
       )}
       <button
         type="button"
-        className="self-start text-xs text-zinc-600 underline hover:text-zinc-900"
+        className="self-start text-xs text-fg-muted underline hover:text-fg"
         onClick={() => {
           usePredictions.getState().reset(predictionsKey);
           // The canvas would otherwise give the moment away while the questions are up.
@@ -206,7 +206,7 @@ function Scrubber({ metrics }: { readonly metrics: TimelineMetrics }) {
       .setTimelineCursor(next === null ? null : { timelineId: metrics.timeline.id, step: next });
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <label className="flex flex-1 items-center gap-2 text-sm text-zinc-700">
+      <label className="flex flex-1 items-center gap-2 text-sm text-fg-muted">
         <span className="shrink-0">Moment</span>
         <input
           type="range"
@@ -225,13 +225,13 @@ function Scrubber({ metrics }: { readonly metrics: TimelineMetrics }) {
         </span>
       </label>
       {step === null ? (
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-fg-subtle">
           Pick a moment to see the design at that time; click a chart to jump there.
         </span>
       ) : (
         <button
           type="button"
-          className="text-xs text-zinc-600 underline hover:text-zinc-900"
+          className="text-xs text-fg-muted underline hover:text-fg"
           onClick={() => set(null)}
         >
           Clear
@@ -300,7 +300,7 @@ function TimelineCharts({ metrics }: { readonly metrics: TimelineMetrics }) {
   return (
     <>
       {metrics.unsettledSteps > 0 && (
-        <p className="rounded-md bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+        <p className="rounded-md bg-warn-soft px-2.5 py-2 text-xs text-warn-fg">
           The load model did not settle in {metrics.unsettledSteps} steps; those numbers are
           approximate.
         </p>
@@ -388,7 +388,7 @@ function PathMix({ metrics }: { readonly metrics: TimelineMetrics }) {
   return (
     <section aria-label="Requests at this moment" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <h4 className="text-xs font-semibold text-zinc-600">Requests at {at} s</h4>
+        <h4 className="text-xs font-semibold text-fg-muted">Requests at {at} s</h4>
         <Tabs
           label="Operation"
           value={operation}
@@ -397,7 +397,7 @@ function PathMix({ metrics }: { readonly metrics: TimelineMetrics }) {
         />
       </div>
       {shares.length === 0 ? (
-        <p className="text-sm text-zinc-500">Nothing reaches {operationLabel(operation)} now.</p>
+        <p className="text-sm text-fg-subtle">Nothing reaches {operationLabel(operation)} now.</p>
       ) : (
         <ol className="flex flex-col gap-1">
           {shares.slice(0, MAX_PATHS).map((share) => {
@@ -406,22 +406,19 @@ function PathMix({ metrics }: { readonly metrics: TimelineMetrics }) {
             const status = path.terminal.kind === "respond" ? path.terminal.status : null;
             const calls = path.steps.filter((s) => s.kind === "call");
             return (
-              <li
-                key={share.pathId}
-                className="rounded-md border border-zinc-200 bg-white px-2 py-1"
-              >
+              <li key={share.pathId} className="rounded-md border border-line bg-surface px-2 py-1">
                 <details>
                   <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm">
                     <span className="w-14 font-medium tabular-nums">
                       {percent(share.share, share.share < 0.01 ? 2 : 1)}
                     </span>
                     <StatusBadge status={status} />
-                    <span className="text-zinc-800">{describePath(path)}</span>
-                    <span className="ml-auto text-zinc-500 tabular-nums">
+                    <span className="text-fg">{describePath(path)}</span>
+                    <span className="ml-auto text-fg-subtle tabular-nums">
                       {milliseconds(share.meanMs)} on average
                     </span>
                   </summary>
-                  <ul className="mt-1 flex flex-col gap-0.5 pl-16 text-xs text-zinc-600">
+                  <ul className="mt-1 flex flex-col gap-0.5 pl-16 text-xs text-fg-muted">
                     {calls.map((call) => (
                       <li key={call.stepId} className="tabular-nums">
                         {componentLabel(attempt, call.target)} · {call.action} → {call.outcome}:{" "}
@@ -438,7 +435,7 @@ function PathMix({ metrics }: { readonly metrics: TimelineMetrics }) {
         </ol>
       )}
       {reached < 0.999 && shares.length > 0 && (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-fg-muted">
           {percent(1 - reached, 1)} do not reach the handler's steps (rejected on the way in, or
           waiting in a backlog).
         </p>
@@ -473,8 +470,8 @@ function EventLog({ metrics }: { readonly metrics: TimelineMetrics }) {
   if (metrics.marks.length === 0) return null;
   return (
     <section>
-      <h4 className="mb-1 text-xs font-semibold text-zinc-600">Events</h4>
-      <ol className="flex flex-col gap-0.5 text-sm text-zinc-800">
+      <h4 className="mb-1 text-xs font-semibold text-fg-muted">Events</h4>
+      <ol className="flex flex-col gap-0.5 text-sm text-fg">
         {metrics.marks.map((mark) => {
           const who = mark.componentIds.map((id) => componentLabel(attempt, id)).join(", ");
           const what = describeMark(mark, who);
@@ -482,7 +479,7 @@ function EventLog({ metrics }: { readonly metrics: TimelineMetrics }) {
             <li key={`${mark.at}-${mark.kind}-${what}`} className="tabular-nums">
               <button
                 type="button"
-                className="inline-block w-14 text-left text-sky-800 underline-offset-2 hover:underline"
+                className="inline-block w-14 text-left text-info-fg underline-offset-2 hover:underline"
                 aria-label={`Show the design at ${mark.at} seconds`}
                 onClick={() =>
                   useUi.getState().setTimelineCursor({

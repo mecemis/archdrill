@@ -113,7 +113,7 @@ function StepBlock({
   const number = ctx.numbers.get(stepId);
   if (ctx.plan.get(position) === "reference") {
     return (
-      <p className="flex items-center gap-1.5 py-0.5 text-xs text-zinc-500">
+      <p className="flex items-center gap-1.5 py-0.5 text-xs text-fg-subtle">
         <CornerDownRight className="h-3.5 w-3.5" aria-hidden="true" />
         continues at step {number} ({stepTitle(step, attempt)})
       </p>
@@ -123,7 +123,7 @@ function StepBlock({
     <div className="flex flex-col gap-1">
       <StepRow stepId={stepId} step={step} number={number} attachedFrom={attachedFrom} ctx={ctx} />
       {step.type !== "respond" && (
-        <ul className="ml-3 flex flex-col gap-1 border-l border-zinc-200 pl-3">
+        <ul className="ml-3 flex flex-col gap-1 border-l border-line pl-3">
           {feasibleOutcomes(step, attempt).map((outcome) => {
             const next = step.next[outcome];
             const attach: Attach = { to: "outcome", stepId, outcome };
@@ -153,7 +153,7 @@ function StepBlock({
             );
           })}
           {inactiveLinks(step, attempt).map((outcome) => (
-            <li key={outcome} className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <li key={outcome} className="flex items-center gap-1.5 text-xs text-fg-subtle">
               <span className="opacity-50">
                 <OutcomeChip outcome={outcome} />
               </span>
@@ -212,15 +212,15 @@ function StepRow({
       {inserting && <AddStepForm slot={insertSlot} flow={ctx.flow} />}
       <div
         className={`group flex items-center gap-2 rounded-md px-1.5 py-1 ${
-          ctx.highlighted.has(stepId) ? "bg-amber-100" : isLeaf ? "" : "bg-zinc-50"
+          ctx.highlighted.has(stepId) ? "bg-warn-soft" : isLeaf ? "" : "bg-sunken"
         }`}
       >
         {!isLeaf && (
-          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-700 px-1 text-[11px] font-semibold text-white">
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold text-on-accent">
             {number}
           </span>
         )}
-        <span className={isLeaf ? "text-zinc-700" : "font-medium text-zinc-900"}>
+        <span className={isLeaf ? "text-fg-muted" : "font-medium text-fg"}>
           {isLeaf ? "→ " : ""}
           {stepTitle(step, attempt, ctx.background)}
         </span>
@@ -253,14 +253,14 @@ function StepRow({
         />
       )}
       {choosing && (
-        <div className="flex flex-col gap-1 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs">
-          <p className="font-medium text-rose-900">Remove this step and keep what follows…</p>
+        <div className="flex flex-col gap-1 rounded-md border border-bad-line bg-bad-soft p-2 text-xs">
+          <p className="font-medium text-bad-fg">Remove this step and keep what follows…</p>
           {continuations.map(({ outcome, target }) => (
             <button
               key={outcome}
               type="button"
               onClick={() => remove(outcome)}
-              className="self-start rounded px-1.5 py-0.5 text-left text-zinc-800 hover:bg-rose-100"
+              className="self-start rounded px-1.5 py-0.5 text-left text-fg hover:bg-bad-soft"
             >
               …on {outcome}: {target}
             </button>
@@ -269,14 +269,14 @@ function StepRow({
             <button
               type="button"
               onClick={() => remove()}
-              className="rounded px-1.5 py-0.5 font-medium text-rose-800 hover:bg-rose-100"
+              className="rounded px-1.5 py-0.5 font-medium text-bad-fg hover:bg-bad-soft"
             >
               Remove it and everything after it
             </button>
             <button
               type="button"
               onClick={() => setChoosing(false)}
-              className="rounded px-1.5 py-0.5 text-zinc-700 hover:bg-zinc-100"
+              className="rounded px-1.5 py-0.5 text-fg-muted hover:bg-muted"
             >
               Cancel
             </button>
@@ -318,7 +318,7 @@ function SlotControl({ slot, flow, label }: { slot: Slot; flow: Flow; label: str
     <button
       type="button"
       onClick={() => useUi.getState().armSlot(slot)}
-      className="flex items-center gap-1 self-start rounded-md border border-dashed border-amber-400 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50"
+      className="flex items-center gap-1 self-start rounded-md border border-dashed border-warn-line px-2 py-1 text-xs font-medium text-warn-fg hover:bg-warn-soft"
     >
       <Plus className="h-3.5 w-3.5" aria-hidden="true" />
       {label}
@@ -344,12 +344,12 @@ function OrphanList({ flow, orphans }: { flow: Flow; orphans: readonly string[] 
   const attempt = useAttemptStore((s) => s.attempt);
   const dispatch = useAttemptStore((s) => s.dispatch);
   return (
-    <div className="mt-3 flex flex-col gap-1 rounded-md bg-zinc-50 p-2">
-      <p className="text-xs font-medium text-zinc-600">Not reachable from the first step</p>
+    <div className="mt-3 flex flex-col gap-1 rounded-md bg-sunken p-2">
+      <p className="text-xs font-medium text-fg-muted">Not reachable from the first step</p>
       {orphans.map((id) => {
         const step = flow.steps[id];
         return step ? (
-          <div key={id} className="flex items-center gap-2 text-xs text-zinc-700">
+          <div key={id} className="flex items-center gap-2 text-xs text-fg-muted">
             {stepTitle(step, attempt)}
             <IconButton
               label="Remove step"
@@ -379,7 +379,7 @@ function IconButton({
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900"
+      className="rounded p-1 text-fg-subtle hover:bg-track hover:text-fg"
     >
       {children}
     </button>
@@ -408,7 +408,7 @@ function StepSettings({
   };
   return (
     <div
-      className="flex flex-col gap-3 rounded-md border border-sky-300 bg-sky-50 p-3"
+      className="flex flex-col gap-3 rounded-md border border-info-line bg-info-soft p-3"
       data-testid="step-settings"
     >
       <StepParams

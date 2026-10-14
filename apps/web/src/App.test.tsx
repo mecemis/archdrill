@@ -18,6 +18,11 @@ import { App } from "./App";
 import { useAttemptStore } from "./state/store";
 import { useUi } from "./state/ui-store";
 
+// Panels, tabs and the drawer live in a global store; every test starts from its defaults.
+beforeEach(() => {
+  useUi.setState(useUi.getInitialState());
+});
+
 /** Visitors → ALB → Link API (25 × 8 vCPU) → DynamoDB holding Link, with no flows yet. */
 function topologyOnly() {
   return AttemptSchema.parse({

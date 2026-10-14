@@ -6,7 +6,7 @@ import { activePack, catalogIndex } from "../state/content";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
 import { compact, usd } from "../ui/format";
-import { Button, Field, SectionTitle, Select } from "../ui/primitives";
+import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitives";
 import { AutoscaleEditor } from "./AutoscaleEditor";
 import { ConnectionInspector } from "./ConnectionInspector";
 
@@ -18,7 +18,7 @@ export function Inspector() {
   const attempt = useAttemptStore((s) => s.attempt);
   if (!selection) {
     return (
-      <p className="p-4 text-sm text-zinc-500">Select a component or a connection to edit it.</p>
+      <p className="p-4 text-sm text-fg-subtle">Select a component or a connection to edit it.</p>
     );
   }
   if (selection.type === "component") {
@@ -97,7 +97,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       )}
       {kind?.inProcess && <InProcessNote component={component} />}
       {size && profile && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-zinc-600">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-fg-muted">
           <dt>Reads</dt>
           <dd className="tabular-nums">{compact(profile.readCapacity)}/s</dd>
           <dt>Writes</dt>
@@ -117,19 +117,19 @@ function ComponentInspector({ component }: { readonly component: Component }) {
         </dl>
       )}
       {flavor?.managedRedundancy && (
-        <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600">
+        <p className="rounded-md bg-sunken px-2.5 py-2 text-xs text-fg-muted">
           Managed and redundant across zones; no replicas to configure.
         </p>
       )}
       {kind?.holdsData && <DataBindings component={component} />}
       <div className="flex flex-wrap gap-1">
         {capabilities.map((cap) => (
-          <span key={cap} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-700">
+          <span key={cap} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-fg-muted">
             {cap}
           </span>
         ))}
       </div>
-      {flavor?.notes && <p className="text-xs text-zinc-500">{flavor.notes}</p>}
+      {flavor?.notes && <p className="text-xs text-fg-subtle">{flavor.notes}</p>}
       <RemoveComponentButton component={component} />
     </div>
   );
@@ -142,7 +142,7 @@ function InProcessNote({ component }: { readonly component: Component }) {
     return s.attempt.architecture.components.find((c) => c.id === caller)?.label;
   });
   return (
-    <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-xs text-zinc-600">
+    <p className="rounded-md bg-sunken px-2.5 py-2 text-xs text-fg-muted">
       {host
         ? `Runs inside ${host}: no network hop, and one copy per instance of it.`
         : "Connect the service it should run inside."}
@@ -197,8 +197,8 @@ function RemoveComponentButton({ component }: { readonly component: Component })
   };
   if (confirming) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-rose-200 bg-rose-50 p-2.5 text-sm">
-        <p className="text-rose-900">
+      <div className="flex flex-col gap-2 rounded-md border border-bad-line bg-bad-soft p-2.5 text-sm">
+        <p className="text-bad-fg">
           {component.label} handles {handled} flow{handled === 1 ? "" : "s"}. Removing it removes{" "}
           {handled === 1 ? "that flow" : "those flows"} too.
         </p>
@@ -230,9 +230,9 @@ function DataBindings({ component }: { readonly component: Component }) {
   const stored = new Set(component.data.map((d) => d.entity));
   return (
     <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1 text-xs font-medium text-zinc-600">Stores</legend>
+      <legend className="mb-1 text-xs font-medium text-fg-muted">Stores</legend>
       {activePack.problem.entities.map((entity) => (
-        <label key={entity.name} className="flex items-center gap-2 text-sm text-zinc-800">
+        <label key={entity.name} className="flex items-center gap-2 text-sm text-fg">
           <input
             type="checkbox"
             checked={stored.has(entity.name)}
@@ -244,7 +244,7 @@ function DataBindings({ component }: { readonly component: Component }) {
             }}
           />
           {entity.name}
-          <span className="text-xs text-zinc-500">key: {entity.key}</span>
+          <span className="text-xs text-fg-subtle">key: {entity.key}</span>
         </label>
       ))}
     </fieldset>
@@ -268,7 +268,7 @@ function LabelInput({
   return (
     <Field label="Name">
       <input
-        className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+        className={INPUT_CLASS}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
