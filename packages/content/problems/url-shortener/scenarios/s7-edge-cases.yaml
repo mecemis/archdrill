@@ -8,9 +8,11 @@ story: |
   and nobody wants them in the table forever. Can an expired code be given to
   someone else? Phishers have found your service too: about one new link in
   500 points to a phishing or malware site, and it has to stop redirecting
-  within a minute. You can call a URL-safety API, with a quota of 5,000
-  requests a second. What happens to link creation when that API stops
-  answering?"
+  within a minute. Google Web Risk knows these sites. Its Lookup API checks
+  one URL per call: $0.50 per 1,000 calls, 6,000 calls a minute per project.
+  Its Update API lets you keep a copy of the lists and confirm only the URLs
+  that match it: $50 per 1,000 confirmations, 6,000 a minute. What happens
+  to link creation when Google stops answering?"
 focusOperations: [create-link, redirect, purge-expired, scan-link]
 optionalOperations: [purge-expired]
 workload:
@@ -109,9 +111,26 @@ checks:
       them. A link that nobody checks keeps sending visitors to a phishing
       page, and the shortener's domain ends up on blocklists itself.
     fix: >-
-      Check the URL with the URL-safety API: before the insert (answer 400 for
-      a malicious URL), or in a consumer of link-created that disables the
-      link when the API flags it.
+      Match the URL against a local copy of the threat lists and confirm a
+      match with the URL-safety API: right after the insert (disable the link
+      and answer 400 when it is malicious), or in a consumer of link-created
+      that disables the link when the API flags it.
+
+  - id: matches-confirmed
+    use: list-matches-confirmed
+    title: A match on the local list is confirmed before acting on it
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-1, FR-5]
+    params: {}
+    why: >-
+      The local lists hold 4-byte hash prefixes of over a million unsafe URLs,
+      so about one hash in 4,000 matches by chance, and each URL is checked as
+      several host and path variants. Acting on a match alone blocks innocent
+      links about as often as malicious ones.
+    fix: >-
+      After a match, ask the URL-safety API, and act on its verdict.
 
   - id: scan-disables-quickly
     use: latency-below
@@ -126,6 +145,23 @@ checks:
     fix: >-
       Keep the consumer close to the publish rate (enough workers, no long
       batches), and give it headroom so no backlog builds up.
+
+  - id: scans-succeed-at-peak
+    use: success-rate-above
+    title: New links are scanned at peak (99.9%)
+    dimension: security
+    weight: 2
+    severity: critical
+    requirements: [FR-5]
+    params: { operation: scan-link, environment: peak, min: 0.999 }
+    why: >-
+      A failed scan is delivered again later, and until it succeeds the link
+      works. A scanner that fails most of its scans never catches up, and the
+      phishing links among them stay live.
+    fix: >-
+      Keep the scanner and everything it calls within capacity at peak: match
+      URLs against a local copy of the threat lists, so only matches use the
+      API's quota.
 
   - id: scan-invalidates-caches
     use: invalidation-on-write
@@ -156,13 +192,13 @@ checks:
       after: 180
       withinSec: 60
     why: >-
-      A burst of new links can push the scanner past the API's quota. Failed
+      A burst of new links pushes per-URL lookups past the API's quota. Failed
       scans are delivered again, and those deliveries call the API too: a
       consumer without room to spare can stay overloaded by its own retries
       long after the burst has passed.
     fix: >-
-      Check URLs in batches so a burst stays within the quota, and give the
-      workers room to work through the backlog.
+      Match URLs against a local copy of the threat lists so only matches
+      reach the API, and give the workers room to work through the backlog.
 
   - id: scan-backlog-drains
     use: timeline-recovers
@@ -331,11 +367,11 @@ checks:
     params: { environment: peak, max: 0.85 }
     why: >-
       The URL-safety quota is a capacity like any other, but nobody can add
-      instances to it. Checking every link twice, or once per retry, uses it
-      up.
+      instances to it: 6,000 calls a minute is 100 a second, against 3,000 new
+      links a second at peak.
     fix: >-
-      Check each URL once (before the insert or in the consumer), and batch
-      the consumer's checks if you need more room.
+      Keep a local copy of the threat lists (the Update API) so only matches
+      reach the API, and confirm each match once.
 
   - id: creates-survive-scanner-outage
     use: success-rate-above
@@ -349,8 +385,9 @@ checks:
       A third-party API will go down, and you cannot fix it. If creation
       waits for it, your availability is at most theirs.
     fix: >-
-      Scan asynchronously, or call the API with a short timeout and let the
-      link through when it errors, publishing it for a scan later.
+      Scan asynchronously, or match locally so that only matches wait for the
+      API, and when a confirmation fails let the link through and publish it
+      for a scan later.
 
   - id: scanner-timeout
     use: dependency-timeout-bounded
@@ -374,10 +411,11 @@ checks:
     requirements: [NFR-1]
     params: { operation: create-link, environment: peak, percentile: p99, ms: 200 }
     why: >-
-      A synchronous check adds the API's round trip, tens of milliseconds over
-      the internet, to every create.
+      A synchronous lookup adds the API's round trip, tens of milliseconds
+      over the internet, to every create.
     fix: >-
-      Scan in a consumer, or keep the synchronous call's timeout short.
+      Match against a local copy of the lists, scan in a consumer, or keep the
+      synchronous call's timeout short.
 
   - id: safe-code-reuse
     use: decision-excludes
@@ -540,13 +578,16 @@ checks:
     fix: >-
       Publish link-created after the insert and scan in a consumer.
 hints:
+  - "How many lookups a month do 1,000 new links a second make, at $0.50 per 1,000? And how many of them would match a local copy of the lists?"
   - "Which parts of expiry belong on the read path, and which can wait for a background job?"
   - "When does a malicious link stop working if you scan it after creation? Count the caches."
-  - "Delete expired links in batches in a scheduled job, scan new links in a consumer of link-created that disables and invalidates, and answer 503 on errors so the queue retries."
+  - "Delete expired links in batches in a scheduled job. Scan new links in a consumer of link-created: match each URL against a local copy of the threat lists, confirm matches with the API, disable and invalidate malicious links, and answer 503 on errors so the queue retries."
 debrief: |
   Questions an interviewer would ask next:
 
   - The queue delivers a message twice. What does your consumer do the second time?
   - The publish fails after the insert succeeded. Is that link ever scanned? (Look up the transactional outbox.)
   - Should a link created while the URL-safety API was down be scanned later, and how would you find those links?
+  - Confirmations cost $50 per 1,000. At one malicious link in 500, what does confirming cost a month, and how would you bring it down? (The API says how long a verdict may be cached, and phishing campaigns reuse their URLs.)
+  - While Google is down, the local lists stop updating. How old may they get before a clean answer is no longer good enough?
   - Why not simply never reuse codes? How long would 7 characters last at 1,000 links a second?

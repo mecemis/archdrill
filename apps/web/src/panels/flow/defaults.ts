@@ -78,12 +78,18 @@ export interface ExitContext {
 }
 
 /**
+ * Outcomes that call for another step (a verdict to act on, a match to
+ * confirm), which a consumer must not simply finish on.
+ */
+const ACT_ON = new Set(["malicious", "match"]);
+
+/**
  * How a new step's other outcomes end by default, or null to leave the
  * outcome for the candidate to decide.
  */
 export function defaultExitStatus(outcome: string, ctx: ExitContext): number | null {
   const tone = outcomeTone(outcome);
-  if (ctx.background) return tone === "error" ? 503 : 200;
+  if (ctx.background) return ACT_ON.has(outcome) ? null : tone === "error" ? 503 : 200;
   const known = STATUS_BY_OUTCOME[outcome];
   if (known !== undefined) return known;
   if (tone === "positive") return successStatus(ctx.operation, ctx.problem, ctx.attempt);

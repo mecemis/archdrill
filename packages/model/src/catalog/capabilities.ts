@@ -32,6 +32,7 @@ export const CAPABILITIES = [
   "push-notifications",
   "payments",
   "external",
+  "threat-lists",
 ] as const;
 
 export const CapabilitySchema = z.enum(CAPABILITIES);

@@ -567,16 +567,36 @@ mutants:
       scenario: s7-edge-cases
       fails: [keeps-up, scan-disables-quickly]
 
-  - id: unbatched-scans
+  - id: lookup-every-url
     base: postgres-redis-cache-aside
     description: >-
-      The worker checks URLs one at a time; a bulk import exceeds the API's
-      quota, and the redeliveries of failed scans keep it exceeded afterwards.
+      The worker looks every new URL up with the Lookup API instead of
+      matching a local copy of the lists: 3,000 calls a second against a
+      quota of 100, and redeliveries of the failed scans on top.
     apply:
-      - updateStep: { operation: scan-link, stepId: check, batchSize: null }
+      - removeStep: { operation: scan-link, stepId: match, bypass: match }
+      - updateComponent: { id: safety, flavor: url-safety }
     expect:
       scenario: s7-edge-cases
-      fails: [scans-recover-after-import]
+      fails: [scans-succeed-at-peak, headroom-at-peak, scans-recover-after-import]
+
+  - id: unconfirmed-match
+    base: postgres-redis-cache-aside
+    description: The worker disables every link that matches the local lists without asking the API.
+    apply:
+      - linkOutcome: { operation: scan-link, stepId: match, outcome: match, target: disable }
+    expect:
+      scenario: s7-edge-cases
+      fails: [matches-confirmed]
+
+  - id: list-without-source
+    base: postgres-redis-cache-aside
+    description: The worker matches URLs against local lists, but the API it calls is the Lookup API, which provides none.
+    apply:
+      - updateComponent: { id: safety, flavor: url-safety }
+    expect:
+      scenario: s7-edge-cases
+      invalid: [step-logic-needs-component]
 
   - id: autoscaling-target-too-high
     base: postgres-redis-cache-aside
@@ -670,18 +690,20 @@ mutants:
 
   - id: fail-closed-check
     base: dynamodb-redis-cache-aside
-    description: When the URL-safety API errors, link creation fails with 503.
+    description: >-
+      When a confirmation fails, link creation fails with 503: one create in
+      500 matches the local lists, more failures than 99.9% allows.
     apply:
       - linkOutcome: { operation: create-link, stepId: check, outcome: error, target: c503 }
     expect:
       scenario: s7-edge-cases
       fails: [creates-survive-scanner-outage]
 
-  - id: batched-check-in-request
+  - id: batched-publish-in-request
     base: dynamodb-redis-cache-aside
-    description: The synchronous URL check waits for a batch of 50 requests.
+    description: The create waits until 50 links are ready to publish for a rescan.
     apply:
-      - updateStep: { operation: create-link, stepId: check, batchSize: 50 }
+      - updateStep: { operation: create-link, stepId: publish, batchSize: 50 }
     expect:
       scenario: s7-edge-cases
       invalid: [step-batch-in-request]

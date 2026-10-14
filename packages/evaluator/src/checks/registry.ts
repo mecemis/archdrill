@@ -38,7 +38,7 @@ import {
   retryOnlyIdempotent,
   stableUnderRetries,
 } from "./resilience";
-import { unsafeContentStopped } from "./safety";
+import { listMatchesConfirmed, unsafeContentStopped } from "./safety";
 import { autoscalingConfigured, overprovisioned } from "./scale";
 import { recognizeStrategy } from "./strategy";
 import { timelineHolds, timelineRecovers } from "./timeline";
@@ -73,6 +73,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     autoscalingConfigured,
     backlogStable,
     unsafeContentStopped,
+    listMatchesConfirmed,
     timelineHolds,
     timelineRecovers,
     noSyncWriteOnReadPath,

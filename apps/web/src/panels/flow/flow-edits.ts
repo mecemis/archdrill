@@ -4,6 +4,7 @@ import {
   type CatalogIndex,
   type Flow,
   feasibleOutcomes,
+  getLogic,
   reachableStepIds,
   type Step,
   type StepInput,
@@ -90,9 +91,9 @@ function defaultExits(
   step: StepInput,
   taken: Set<string>,
   created: Map<number, string>,
+  continuing: readonly string[] = continuingOutcomes(step),
 ): AnyCommand[] {
   if (step.type === "respond") return [];
-  const continuing = continuingOutcomes(step);
   const outcomes = feasibleOutcomes({ ...step, next: {} } as Step, ctx.attempt);
   return outcomes
     .filter((o) => !continuing.includes(o))
@@ -142,6 +143,32 @@ export function appendStep(ctx: EditContext, at: Position, step: StepInput): Any
   ];
 }
 
+/**
+ * The outcomes of a new step that lead into the step it is put in front of:
+ * usually the ones that carry on, but a decision that a call confirms (a
+ * match on a local list, before the API that provides the list) leads into
+ * that call with the outcome it confirms.
+ */
+function leadingInto(ctx: EditContext, step: StepInput, before: string): readonly string[] {
+  if (step.type === "logic") {
+    const logic = getLogic(step.logic);
+    const next = ctx.flow.steps[before];
+    const target =
+      next?.type === "call"
+        ? ctx.attempt.architecture.components.find((c) => c.id === next.target)
+        : undefined;
+    if (
+      logic.needs &&
+      logic.decidedBy &&
+      target &&
+      ctx.catalog.capabilities(target.kind, target.flavor).has(logic.needs.capability)
+    ) {
+      return [logic.decidedBy.outcome];
+    }
+  }
+  return continuingOutcomes(step);
+}
+
 /** Puts a step in front of another; the new step carries on into it. */
 export function insertBefore(
   ctx: EditContext,
@@ -150,7 +177,7 @@ export function insertBefore(
   step: StepInput,
 ): AnyCommand[] {
   if (step.type === "respond" || (at.kind === "after" && at.outcomes.length === 0)) return [];
-  const continuing = continuingOutcomes(step).filter((o) =>
+  const continuing = leadingInto(ctx, step, before).filter((o) =>
     feasibleOutcomes({ ...step, next: {} } as Step, ctx.attempt).includes(o),
   );
   const [first, ...rest] = continuing;
@@ -176,7 +203,7 @@ export function insertBefore(
       name: "linkOutcome" as const,
       args: { operation, stepId: id, outcome, target: before },
     })),
-    ...defaultExits(ctx, id, step, taken, created),
+    ...defaultExits(ctx, id, step, taken, created, continuing),
   ];
 }
 

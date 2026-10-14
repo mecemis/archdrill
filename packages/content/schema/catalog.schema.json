@@ -57,7 +57,8 @@
                 "persistent-connections",
                 "push-notifications",
                 "payments",
-                "external"
+                "external",
+                "threat-lists"
               ]
             }
           },
@@ -129,7 +130,8 @@
                       "persistent-connections",
                       "push-notifications",
                       "payments",
-                      "external"
+                      "external",
+                      "threat-lists"
                     ]
                   }
                 },

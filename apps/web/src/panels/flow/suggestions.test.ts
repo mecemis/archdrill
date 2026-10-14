@@ -1,5 +1,10 @@
 import type { Flow } from "@archdrill/model";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
+import {
+  asyncAttempt,
+  cacheAsideAttempt,
+  testCatalogIndex,
+  testProblem,
+} from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import type { Slot } from "../../state/ui-store";
 import { pathTo, type SuggestionInput, suggestNext } from "./suggestions";
@@ -58,6 +63,22 @@ describe("suggestNext", () => {
 
     expect(keys).toContain("logic:checkExpiry");
     expect(keys).not.toContain("logic:validateUrl");
+  });
+
+  it("confirms a match on the local threat lists with the API that provides them", () => {
+    const scanning = asyncAttempt({ localList: true });
+    const scan = testProblem.operations.find((o) => o.id === "scan-link");
+    const keys = suggestions(
+      { operation: "scan-link", attach: { to: "outcome", stepId: "match", outcome: "match" } },
+      {
+        attempt: scanning,
+        flow: scanning.flows.find((f) => f.operation === "scan-link") as Flow,
+        operation: scan as NonNullable<typeof scan>,
+        background: true,
+      },
+    );
+
+    expect(keys[0]).toBe("call:safety:external.check");
   });
 
   it("lets background work only finish or ask to be retried", () => {

@@ -3,7 +3,14 @@ import { ACTIONS } from "@archdrill/model";
 import { z } from "zod";
 import { evalPredicate, isSuccessPath, pathStatus } from "../predicates";
 import { pathEvidence } from "./paths";
-import { type CheckContext, defineCheck, failed, passed, requireOperation } from "./types";
+import {
+  type CheckContext,
+  defineCheck,
+  failed,
+  notApplicable,
+  passed,
+  requireOperation,
+} from "./types";
 
 /** A successful path that stores a new entity and answers 2xx. */
 function accepts(path: Path, entity: string): boolean {
@@ -19,9 +26,12 @@ function accepts(path: Path, entity: string): boolean {
   );
 }
 
+/** The URL-safety API cleared the URL, or the local threat list did not match it. */
 const checkedClean = (path: Path) =>
   path.steps.some(
-    (s) => s.kind === "call" && s.action === "external.check" && s.outcome === "clean",
+    (s) =>
+      (s.kind === "call" && s.action === "external.check" && s.outcome === "clean") ||
+      (s.kind === "logic" && s.logic === "matchThreatList" && s.outcome === "clean"),
   );
 
 const publishedEvents = (path: Path) =>
@@ -31,9 +41,17 @@ const publishedEvents = (path: Path) =>
       : [],
   );
 
-/** Events with a consumer that disables the entity when the safety check flags it. */
+/**
+ * Events with a consumer that disables the entity when the safety check flags
+ * it: the URL-safety API, or a match on the local threat list (whether it
+ * confirms the match first is a check of its own).
+ */
 function scannedEvents(ctx: CheckContext, entity: string): Map<string, string> {
   const scanned = new Map<string, string>();
+  const flagged = [
+    { action: ["external.check" as const], outcome: ["malicious"] },
+    { logic: ["matchThreatList" as const], outcome: ["match"] },
+  ];
   for (const analysis of ctx.analysis.operations.values()) {
     const trigger = analysis.operation.trigger;
     // Only a consumer that receives the event's messages scans anything.
@@ -41,15 +59,12 @@ function scannedEvents(ctx: CheckContext, entity: string): Map<string, string> {
     const disables = analysis.paths.some(
       (path) =>
         isSuccessPath(path, analysis.operation) &&
-        evalPredicate(
-          path,
-          {
-            hasSequence: [
-              { action: ["external.check"], outcome: ["malicious"] },
-              { action: ["store.update"], entity, outcome: ["ok"] },
-            ],
-          },
-          analysis.operation,
+        flagged.some((flag) =>
+          evalPredicate(
+            path,
+            { hasSequence: [flag, { action: ["store.update"], entity, outcome: ["ok"] }] },
+            analysis.operation,
+          ),
         ),
     );
     if (disables) scanned.set(trigger.event, analysis.operation.label);
@@ -105,5 +120,49 @@ export const unsafeContentStopped = defineCheck({
       evidence,
       details,
     };
+  },
+});
+
+/** Whether a path matched a URL on the local list and never asked the API about it after. */
+function actsOnUnconfirmedMatch(path: Path): boolean {
+  const match = path.steps.findIndex(
+    (s) => s.kind === "logic" && s.logic === "matchThreatList" && s.outcome === "match",
+  );
+  if (match < 0) return false;
+  return !path.steps
+    .slice(match + 1)
+    .some((s) => s.kind === "call" && s.action === "external.check");
+}
+
+/**
+ * A match on the local threat list is a hint, not a verdict: lists hold
+ * 4-byte hash prefixes, which other URLs share. Every path that matches asks
+ * the URL-safety API before it answers, stores or disables anything.
+ */
+export const listMatchesConfirmed = defineCheck({
+  id: "list-matches-confirmed",
+  description:
+    "Every path where a URL matches the local threat list confirms the match with the URL-safety API.",
+  params: z.strictObject({}),
+  run(_params, ctx) {
+    const analyses = [...ctx.analysis.operations.values()];
+    const matching = analyses.flatMap((a) =>
+      a.paths.filter((p) =>
+        p.steps.some((s) => s.kind === "logic" && s.logic === "matchThreatList"),
+      ),
+    );
+    if (matching.length === 0) {
+      return notApplicable("This design does not match URLs against a local threat list.");
+    }
+    const unconfirmed = matching.filter(actsOnUnconfirmedMatch);
+    if (unconfirmed.length === 0) {
+      return passed("Every match on the local threat list is confirmed with the URL-safety API.");
+    }
+    const { evidence, details } = pathEvidence(unconfirmed);
+    return failed(
+      `${unconfirmed.length === 1 ? "1 path acts" : `${unconfirmed.length} paths act`} on a local match without confirming it: innocent URLs that share a hash prefix are treated as malicious.`,
+      evidence,
+      details,
+    );
   },
 });

@@ -94,6 +94,43 @@ describe("unsafe-content-stopped", () => {
   });
 });
 
+describe("local threat lists", () => {
+  const confirmed = (attempt: Attempt) => runCheck("list-matches-confirmed", {}, attempt);
+  const unconfirmed = () =>
+    mutated(
+      "linkOutcome",
+      { operation: "scan-link", stepId: "match", outcome: "match", target: "disable" },
+      asyncAttempt({ localList: true }),
+    );
+
+  it("count a URL that matches nothing on the list as checked", () => {
+    const outcome = stopped(asyncAttempt({ localList: true }));
+
+    expect(outcome.status).toBe("pass");
+    expect(outcome.message).toMatch(/checked by Scan new link/);
+  });
+
+  it("pass when every match is confirmed with the URL-safety API", () => {
+    expect(confirmed(asyncAttempt({ localList: true })).status).toBe("pass");
+  });
+
+  it("fail when a match is acted on without asking the API", () => {
+    const outcome = confirmed(unconfirmed());
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toMatch(/without confirming it/);
+    expect(outcome.evidence).toContainEqual(expect.objectContaining({ operation: "scan-link" }));
+  });
+
+  it("still stop unsafe links when matches are disabled unconfirmed", () => {
+    expect(stopped(unconfirmed()).status).toBe("pass");
+  });
+
+  it("do not apply to a design that asks the API about every URL", () => {
+    expect(confirmed(asyncAttempt()).status).toBe("n/a");
+  });
+});
+
 describe("backlog-stable", () => {
   const workload = (rates: Record<string, number>) =>
     WorkloadSchema.parse({

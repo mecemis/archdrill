@@ -26,8 +26,24 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "startupSec", label: "Startup" },
 ];
 
-/** A price as the source states it: $1.424, $0.115, $0.0225, never rounded away. */
-const price = (value: number) => (value === 0 ? "$0" : `$${Number(value.toPrecision(4))}`);
+/** A price as the source states it: $1.424, $0.115, $0.0225, $0.50, never rounded away. */
+function price(value: number): string {
+  if (value === 0) return "$0";
+  const digits = String(Number(value.toPrecision(4)));
+  // Cents read as cents: $0.50, not $0.5.
+  return `$${/\.\d$/.test(digits) ? `${digits}0` : digits}`;
+}
+
+/** Per-request prices as vendors quote them: per million when cheap, per 1,000 otherwise. */
+export function requestPrice(cost: NonNullable<Flavor["requestCost"]>): string {
+  const per = (perMillion: number) =>
+    perMillion >= 100
+      ? `${price(perMillion / 1000)} per 1,000`
+      : `${price(perMillion)} per million`;
+  return cost.readPerMillion === cost.writePerMillion
+    ? `${per(cost.readPerMillion)} calls`
+    : `${per(cost.readPerMillion)} reads, ${per(cost.writePerMillion)} writes`;
+}
 
 /** A number as it reads in the catalog, or null when the component has none. */
 function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): string | null {
@@ -42,9 +58,7 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
     case "costPerHour":
       return size ? `${price(size.costPerHour)} an hour` : null;
     case "requestCost":
-      return flavor.requestCost
-        ? `${price(flavor.requestCost.readPerMillion)} per million reads, ${price(flavor.requestCost.writePerMillion)} per million writes`
-        : null;
+      return flavor.requestCost ? requestPrice(flavor.requestCost) : null;
     case "storagePricePerGbMonth":
       return flavor.storagePricePerGbMonth === undefined
         ? null

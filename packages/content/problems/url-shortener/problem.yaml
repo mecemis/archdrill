@@ -98,7 +98,7 @@ events:
   - { id: link-created, label: Link created, entity: Link }
   - { id: link-clicked, label: Link clicked, entity: Link }
 logic:
-  [checkExpiry, validateUrl, checkStatus, hasCustomAlias, generateRandomCode, hashUrl, rehashWithSalt, encodeBase62, obfuscateId]
+  [checkExpiry, validateUrl, checkStatus, hasCustomAlias, generateRandomCode, hashUrl, rehashWithSalt, encodeBase62, obfuscateId, matchThreatList]
 decisionPoints:
   - id: code-strategy
     question: How are short codes generated?

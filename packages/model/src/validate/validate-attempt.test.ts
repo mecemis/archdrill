@@ -429,6 +429,22 @@ describe("validateAttempt for asynchronous work", () => {
     expect(errors(asyncAttempt())).toEqual([]);
   });
 
+  it("accepts matching a local threat list from an API that provides the lists", () => {
+    expect(errors(asyncAttempt({ localList: true }))).toEqual([]);
+  });
+
+  it("asks for an API that provides threat lists before matching against a local copy", () => {
+    const attempt = mutate(
+      "updateComponent",
+      { id: "safety", flavor: "url-safety" },
+      asyncAttempt({ localList: true }),
+    );
+
+    const issue = errors(attempt).find((i) => i.code === "step-logic-needs-component");
+    expect(issue?.location).toEqual({ type: "step", operation: "scan-link", stepId: "match" });
+    expect(issue?.message).toMatch(/needs a URL-safety API that provides threat lists.*"Worker"/);
+  });
+
   it("asks a consumer to connect to a queue that receives its event", () => {
     const attempt = mutate("removeConnection", { id: "worker--queue" }, asyncAttempt());
 

@@ -46,7 +46,7 @@ No score in the corpus changed.
 
 Recorded where a reader sees them (in the model text), and planned next:
 
-- **URL-safety API.** Web Risk's Lookup API costs $0.50 per 1,000 calls beyond 100,000 a month. Real designs avoid this with a local threat list kept current by the Update API. The catalog prices neither yet.
+- **URL-safety API (closed in M21).** Both Web Risk APIs now carry their published prices and default quotas: the Lookup API at $0.50 per 1,000 calls, and local lists from the Update API with confirmations at $50 per 1,000. S7 was reworked around them.
 - **Push notifications.** FCM's default quota is 600,000 messages a minute per project and counts every device. The catalog assumes a raised quota counted per multicast request.
 - **Card payments.** Stripe's live-mode default is 100 requests a second per account. The payments problem assumes a contract quota of 5,000.
 - **Load balancer.** ALB bills capacity units (LCU) by connections and processed bytes. The catalog charges the hourly fee only, until requests have sizes.

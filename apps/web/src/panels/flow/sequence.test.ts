@@ -1,5 +1,10 @@
 import { type Attempt, applyCommand, type Flow } from "@archdrill/model";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
+import {
+  asyncAttempt,
+  cacheAsideAttempt,
+  testCatalogIndex,
+  testProblem,
+} from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import type { AnyCommand } from "../../state/attempt-store";
 import {
@@ -76,6 +81,68 @@ describe("sequenceOf", () => {
     ]);
 
     expect(outline(sequenceOf(flowOf(attempt), attempt))).toContain("error→#1");
+  });
+});
+
+describe("flow edits in a consumer", () => {
+  it("leads a local-list match into the API call put after it, and finishes when clean", () => {
+    let attempt = apply(asyncAttempt({ localList: true }), [
+      { name: "removeStep", args: { operation: "scan-link", stepId: "match", bypass: "match" } },
+    ]);
+    const scan = testProblem.operations.find((o) => o.id === "scan-link");
+    const scanFlow = () => attempt.flows.find((f) => f.operation === "scan-link") as Flow;
+    attempt = apply(
+      attempt,
+      insertBefore(
+        {
+          flow: scanFlow(),
+          attempt,
+          problem: testProblem,
+          operation: scan as NonNullable<typeof scan>,
+          catalog: testCatalogIndex,
+          background: true,
+        },
+        { kind: "root" },
+        "check",
+        { type: "logic", logic: "matchThreatList" },
+      ),
+    );
+
+    const match = scanFlow().steps["match-threat-list"];
+    expect(scanFlow().root).toBe("match-threat-list");
+    expect(match?.type === "logic" && match.next.match).toBe("check");
+    expect(match?.type === "logic" && scanFlow().steps[match.next.clean ?? ""]).toEqual({
+      type: "respond",
+      status: 200,
+    });
+  });
+
+  it("leaves a match open for the next step instead of finishing on it", () => {
+    let attempt = apply(asyncAttempt({ localList: true }), [
+      { name: "removeFlow", args: { operation: "scan-link" } },
+      { name: "createFlow", args: { operation: "scan-link", handler: "worker" } },
+    ]);
+    const scan = testProblem.operations.find((o) => o.id === "scan-link");
+    const scanFlow = () => attempt.flows.find((f) => f.operation === "scan-link") as Flow;
+    attempt = apply(
+      attempt,
+      appendStep(
+        {
+          flow: scanFlow(),
+          attempt,
+          problem: testProblem,
+          operation: scan as NonNullable<typeof scan>,
+          catalog: testCatalogIndex,
+          background: true,
+        },
+        { kind: "root" },
+        { type: "logic", logic: "matchThreatList" },
+      ),
+    );
+
+    expect(outline(sequenceOf(scanFlow(), attempt))).toBe(
+      "match-threat-list(clean)[match→?] > open(clean)",
+    );
   });
 });
 

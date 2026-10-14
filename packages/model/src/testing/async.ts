@@ -11,22 +11,35 @@ export interface AsyncOptions {
   readonly workers?: number;
   /** Batch size of the purge job's deletes. */
   readonly purgeBatch?: number;
+  /** Match URLs against local threat lists first, and confirm only matches with the API. */
+  readonly localList?: boolean;
 }
 
 /**
  * The KGS create path publishes link-created after the insert. A worker
- * consumes it from a queue, checks the URL with a URL-safety API, disables
- * and evicts a malicious link, and answers 503 on errors so the message is
+ * consumes it from a queue, checks the URL with a URL-safety API (or, with a
+ * local list, matches it locally and confirms only matches), disables and
+ * evicts a malicious link, and answers 503 on errors so the message is
  * delivered again. The same worker purges expired links.
  */
-export function asyncAttempt({ workers = 2, purgeBatch }: AsyncOptions = {}): Attempt {
+export function asyncAttempt({
+  workers = 2,
+  purgeBatch,
+  localList = false,
+}: AsyncOptions = {}): Attempt {
   let a = createLinkAttempt("kgs", 100);
   const component = (id: string, kind: string, flavor: string, label: string, size: string) => {
     a = step(a, "addComponent", { id, kind, flavor, label, size, position: { x: 0, y: 0 } });
   };
   component("queue", "queue", "managed-queue", "Link events", "m");
   component("worker", "service", "generic", "Worker", "m");
-  component("safety", "external-api", "url-safety", "URL safety", "quota");
+  component(
+    "safety",
+    "external-api",
+    localList ? "url-safety-list" : "url-safety",
+    "URL safety",
+    "quota",
+  );
   a = step(a, "updateComponent", { id: "worker", replicas: workers });
   for (const [from, to] of [
     ["api", "queue"],
@@ -86,6 +99,21 @@ export function asyncAttempt({ workers = 2, purgeBatch }: AsyncOptions = {}): At
     ["evict", "error", "retry"],
   ] as const) {
     a = step(a, "linkOutcome", { operation: "scan-link", stepId, outcome, target });
+  }
+  if (localList) {
+    a = step(a, "addStep", {
+      operation: "scan-link",
+      id: "match",
+      step: { type: "logic", logic: "matchThreatList" },
+      attach: { to: "root" },
+      continueWith: { outcome: "match" },
+    });
+    a = step(a, "linkOutcome", {
+      operation: "scan-link",
+      stepId: "match",
+      outcome: "clean",
+      target: "done",
+    });
   }
 
   a = step(a, "createFlow", { operation: "purge-expired", handler: "worker" });

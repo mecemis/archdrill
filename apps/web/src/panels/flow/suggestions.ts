@@ -202,6 +202,23 @@ export function suggestNext(input: SuggestionInput): Suggestion[] {
     .slice(0, MAX_LOGIC)
     .map((id) => ({ key: `logic:${id}`, kind: "logic", step: { type: "logic", logic: id } }));
 
+  // A decision that rests on another component (a local list) is confirmed by calling it.
+  const decision = previous?.type === "logic" ? getLogic(previous.logic) : undefined;
+  if (decision?.needs && outcome === decision.decidedBy?.outcome) {
+    const capability = decision.needs.capability;
+    const confirms = ({ step }: Suggestion) => {
+      if (step.type !== "call") return false;
+      const target = attempt.architecture.components.find((c) => c.id === step.target);
+      return (
+        target !== undefined && catalog.capabilities(target.kind, target.flavor).has(capability)
+      );
+    };
+    return [...calls.filter(confirms), ...calls.filter((c) => !confirms(c)), ...responds].slice(
+      0,
+      MAX_SUGGESTIONS,
+    );
+  }
+
   // Outcomes that usually end the request lead with their response.
   const endsHere =
     outcome !== null &&
