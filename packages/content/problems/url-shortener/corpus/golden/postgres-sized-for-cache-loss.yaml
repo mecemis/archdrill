@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-sized-for-cache-loss
+title: PostgreSQL sized to survive cache loss
 description: >-
   ALB → Link API (25 × 8 vCPU) → Redis cache-aside (3 shards × 2 replicas,
   20 ms timeout behind a circuit breaker) → PostgreSQL sized to serve the

@@ -17,6 +17,7 @@ import { operationById, respondLabel, runsInBackground } from "../../state/trigg
 import { type Slot, useUi } from "../../state/ui-store";
 import { COMMON_STATUSES } from "../../ui/outcome";
 import { Button, Field, Select } from "../../ui/primitives";
+import { addStepToSlot } from "./add-step";
 import { applicableParams, StepParams, type TunableValues } from "./StepParams";
 import { componentLabel, stepTitle } from "./step-label";
 
@@ -102,12 +103,7 @@ export function AddStepForm({ slot, flow }: { readonly slot: Slot; readonly flow
         });
       }
     } else if (draft) {
-      dispatch("addStep", {
-        operation: slot.operation,
-        step: draft,
-        attach: slot.attach,
-        ...(inserting && continueWith ? { continueWith: { outcome: continueWith } } : {}),
-      });
+      addStepToSlot(slot, draft, inserting ? continueWith : undefined);
     }
     useUi.getState().armSlot(null);
   };

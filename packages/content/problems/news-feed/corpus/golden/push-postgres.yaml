@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: push-postgres
+title: Fan-out on write with PostgreSQL
 description: >-
   The same services with posts in sharded PostgreSQL and every post copied
   into its followers' timelines, celebrities included. Valid until accounts

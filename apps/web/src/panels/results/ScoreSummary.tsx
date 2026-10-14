@@ -1,7 +1,9 @@
 import type { Readiness, ScenarioResult } from "@archdrill/evaluator";
+import { ListChecks } from "lucide-react";
 import { activePack } from "../../state/content";
 import { useEvaluationPending } from "../../state/evaluation";
-import { Badge } from "../../ui/primitives";
+import { useOnboarding } from "../../state/onboarding";
+import { Badge, Button } from "../../ui/primitives";
 
 type Band = "not-passing" | "passing" | "strong" | "excellent";
 
@@ -53,7 +55,7 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 function ScoreRing({ score, band }: { readonly score: number; readonly band: Band }) {
   return (
-    <div className="relative h-16 w-16 shrink-0">
+    <div className="relative h-16 w-16 shrink-0" data-tour="score">
       <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90" aria-hidden="true">
         <circle cx="32" cy="32" r={RING_RADIUS} fill="none" stroke="var(--track)" strokeWidth="6" />
         <circle
@@ -99,6 +101,7 @@ export function ScoreChip({ result }: { readonly result: ScenarioResult | undefi
 
 export function ScoreSummary({ result }: { readonly result: ScenarioResult | undefined }) {
   const pending = useEvaluationPending();
+  const guideOpen = useOnboarding((s) => s.guideOpen);
   if (!result) return null;
   if (result.status === "invalid") {
     return (
@@ -115,6 +118,10 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
     return (
       <div className="flex flex-col gap-2 p-4">
         <p className="text-sm font-semibold text-fg">Waiting for flows</p>
+        <p className="text-xs text-fg-subtle">
+          The score appears once every operation below has a flow whose branches all end with a
+          response.
+        </p>
         <ul className="flex flex-col gap-1">
           {result.operations.map(({ operation, status }) => {
             const op = activePack.problem.operations.find((o) => o.id === operation);
@@ -126,6 +133,16 @@ export function ScoreSummary({ result }: { readonly result: ScenarioResult | und
             );
           })}
         </ul>
+        {!guideOpen && (
+          <Button
+            size="sm"
+            className="self-start"
+            onClick={() => useOnboarding.getState().setGuideOpen(true)}
+          >
+            <ListChecks className="h-3.5 w-3.5" />
+            Guide me
+          </Button>
+        )}
       </div>
     );
   }

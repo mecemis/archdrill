@@ -3,6 +3,20 @@ import { defineConfig } from "@playwright/test";
 const DEV_PORT = 5198;
 const PRODUCTION_PORT = 5197;
 
+/**
+ * Browsers start as returning visitors, so the first-visit welcome screen
+ * does not cover what a test works with; the onboarding test starts fresh.
+ */
+const returningVisitor = (port: number) => ({
+  cookies: [],
+  origins: [
+    {
+      origin: `http://localhost:${port}`,
+      localStorage: [{ name: "archdrill.welcomed", value: "1" }],
+    },
+  ],
+});
+
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: false,
@@ -19,13 +33,16 @@ export default defineConfig({
     {
       name: "dev",
       testIgnore: /production\.spec\.ts/,
-      use: { baseURL: `http://localhost:${DEV_PORT}` },
+      use: { baseURL: `http://localhost:${DEV_PORT}`, storageState: returningVisitor(DEV_PORT) },
     },
     {
       // The production build, served the way `pnpm serve` serves it.
       name: "production",
       testMatch: /production\.spec\.ts/,
-      use: { baseURL: `http://localhost:${PRODUCTION_PORT}` },
+      use: {
+        baseURL: `http://localhost:${PRODUCTION_PORT}`,
+        storageState: returningVisitor(PRODUCTION_PORT),
+      },
     },
   ],
   webServer: [

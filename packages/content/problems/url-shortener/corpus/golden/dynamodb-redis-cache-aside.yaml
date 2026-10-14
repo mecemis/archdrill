@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: dynamodb-redis-cache-aside
+title: DynamoDB with a Redis cache
 description: >-
   ALB → Link API (8 vCPU, autoscaling from 10 to 120 instances) with a
   10-second near cache → Redis cache-aside (3 shards × 2 replicas) →

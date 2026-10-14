@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-redis-fixed-fleet
+title: PostgreSQL and Redis on a fixed fleet
 description: >-
   The same cache-aside design with fixed fleets and no near cache: ALB →
   Redirect API (25 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis (3 shards × 2

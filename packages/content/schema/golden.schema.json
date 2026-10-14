@@ -7,6 +7,10 @@
       "type": "string",
       "minLength": 1
     },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
     "description": {
       "type": "string",
       "minLength": 1
@@ -438,5 +442,5 @@
       "required": ["schemaVersion", "problemId", "problemVersion", "architecture"]
     }
   },
-  "required": ["id", "description", "expect", "attempt"]
+  "required": ["id", "title", "description", "expect", "attempt"]
 }

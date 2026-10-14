@@ -8,9 +8,16 @@ async function connect(page: Page, from: string, to: string) {
 }
 
 async function fillNextSlot(page: Page, fill: () => Promise<void>) {
-  await page.getByTestId("step-tree").getByRole("button", { name: "Add step" }).first().click();
+  await page
+    .getByTestId("step-tree")
+    .getByRole("button", { name: "Add step", exact: true })
+    .first()
+    .click();
   await fill();
-  await page.getByTestId("add-step-form").getByRole("button", { name: "Add step" }).click();
+  await page
+    .getByTestId("add-step-form")
+    .getByRole("button", { name: "Add step", exact: true })
+    .click();
 }
 
 function respond(page: Page, status: string) {
@@ -23,7 +30,11 @@ function respond(page: Page, status: string) {
 
 test("builds a read path from an empty canvas and gets it evaluated", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    // Still a returning visitor: the welcome screen stays closed.
+    localStorage.setItem("archdrill.welcomed", "1");
+  });
   await page.reload();
 
   await page.getByRole("tab", { name: "Components" }).click();
@@ -46,7 +57,10 @@ test("builds a read path from an empty canvas and gets it evaluated", async ({ p
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
   await page.getByRole("button", { name: "Add the first step" }).click();
-  await page.getByTestId("add-step-form").getByRole("button", { name: "Add step" }).click();
+  await page
+    .getByTestId("add-step-form")
+    .getByRole("button", { name: "Add step", exact: true })
+    .click();
   await fillNextSlot(page, () =>
     page.getByTestId("add-step-form").getByRole("button", { name: "Logic" }).click(),
   );
@@ -75,7 +89,10 @@ test("points at the gate that a broken flow fails", async ({ page }) => {
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
   await page.getByRole("button", { name: "Add the first step" }).click();
-  await page.getByTestId("add-step-form").getByRole("button", { name: "Add step" }).click();
+  await page
+    .getByTestId("add-step-form")
+    .getByRole("button", { name: "Add step", exact: true })
+    .click();
   await fillNextSlot(page, respond(page, "302")); // found: redirect without checking expiry
 
   await expect(page.getByText("Not passing", { exact: true })).toBeVisible();

@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: redis-sliding-counter
+title: Sliding window counter in Redis
 description: >-
   ALB → API servers (8 vCPU, 20 to 120 instances) that look up a block marker
   in an in-process cache, count the request with an atomic increment in Redis

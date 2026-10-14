@@ -218,8 +218,24 @@ input[type="range"] {
   animation: health-pulse 2.2s ease-in-out infinite;
 }
 
+/* The guide's spotlight breathes around the control it points at. */
+@keyframes spotlight-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+}
+
+.spotlight-ring {
+  animation: spotlight-glow 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .health-critical {
+  .health-critical,
+  .spotlight-ring {
     animation: none;
   }
 

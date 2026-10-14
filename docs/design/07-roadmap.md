@@ -410,6 +410,18 @@ Browser tests cover themes, panels and the drawer.
 
 Unlike a decorative animation, every cue comes from the simulation: the shown environment or timeline moment, and the scenario's findings.
 
+## M20: Onboarding and simpler flows (as built)
+
+✅ Delivered:
+- a first-visit welcome;
+- a self-ticking getting-started guide with spotlights;
+- example designs in a help menu;
+- one-click step suggestions under every open branch;
+- automatic entity binding;
+- answering all open errors at once.
+
+A first scenario now takes a handful of clicks from an empty canvas to a score.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

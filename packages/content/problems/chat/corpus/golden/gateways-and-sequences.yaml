@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: gateways-and-sequences
+title: Connection servers with sequence numbers
 description: >-
   App users hold WebSockets on connection servers (80 to 200 instances,
   scaled for connections) that route requests to a chat service. Sending

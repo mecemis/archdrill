@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: hybrid-fan-out
+title: Hybrid fan-out
 description: >-
   ALB → a post service that stores the post and the author's recent posts in
   Cassandra and publishes post-created to Kafka, and a timeline service that
