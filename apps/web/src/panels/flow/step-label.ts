@@ -1,4 +1,4 @@
-import { ACTIONS, type Attempt, LOGIC, type Step } from "@archdrill/model";
+import { ACTIONS, type Attempt, LOGIC, type Step, type StepInput } from "@archdrill/model";
 import { activePack } from "../../state/content";
 import { eventLabel, respondLabel } from "../../state/triggers";
 
@@ -10,25 +10,34 @@ export function componentLabel(attempt: Attempt, id: string): string {
  * One-line description of a step, e.g. `Redis · get Link`. In consumers and
  * jobs a final status says whether the item is done or will be tried again.
  */
+/** A call's settings worth seeing at a glance: "TTL 3600s", "batch 1,000", "outbox"… */
+export function stepDetails(step: Step | StepInput): string[] {
+  if (step.type !== "call") return [];
+  const details: string[] = [];
+  if (step.each !== undefined) {
+    const count = activePack.problem.counts.find((c) => c.id === step.each);
+    details.push(`each of ${count?.label ?? step.each}`);
+  }
+  if (step.ttlSec !== undefined) details.push(`TTL ${step.ttlSec}s`);
+  if (step.aggregateSec !== undefined) details.push(`per ${step.aggregateSec}s`);
+  if (step.batchSize !== undefined) details.push(`batch ${step.batchSize.toLocaleString("en-US")}`);
+  if (step.counterShards !== undefined) details.push(`${step.counterShards} counter shards`);
+  if (step.coalesce) details.push("coalesced");
+  if (step.fireAndForget) details.push("fire-and-forget");
+  else if (step.outbox) details.push("outbox");
+  if (step.idempotencyKey) details.push("idempotency key");
+  if (step.exactlyOnce) details.push("exactly once");
+  return details;
+}
+
 export function stepTitle(step: Step, attempt: Attempt, background = false): string {
   switch (step.type) {
     case "call": {
       const about = step.event === undefined ? (step.entity ?? "") : eventLabel(step.event);
       const action = `${ACTIONS[step.action].label} ${about}`.trim();
-      const ttl = step.ttlSec === undefined ? "" : ` (TTL ${step.ttlSec}s)`;
-      const batch =
-        step.batchSize === undefined ? "" : ` (batch ${step.batchSize.toLocaleString("en-US")})`;
-      const coalesced = step.coalesce ? " (coalesced)" : "";
-      const window = step.aggregateSec === undefined ? "" : ` (per ${step.aggregateSec}s)`;
-      const spread =
-        step.counterShards === undefined ? "" : ` (${step.counterShards} counter shards)`;
-      const handoff = step.fireAndForget ? " (fire-and-forget)" : step.outbox ? " (outbox)" : "";
-      const keyed = step.idempotencyKey ? " (idempotency key)" : "";
-      const fan =
-        step.each === undefined
-          ? ""
-          : ` (each of ${activePack.problem.counts.find((c) => c.id === step.each)?.label ?? step.each})`;
-      const details = `${fan}${ttl}${window}${batch}${spread}${coalesced}${handoff}${keyed}`;
+      const details = stepDetails(step)
+        .map((d) => ` (${d})`)
+        .join("");
       return `${componentLabel(attempt, step.target)} · ${action}${details}`;
     }
     case "logic":

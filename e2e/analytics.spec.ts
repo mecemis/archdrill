@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { stepMenu } from "./flow";
 import { importGolden } from "./golden";
 
 test("counts clicks without touching the redirect path", async ({ page }) => {
@@ -14,7 +15,8 @@ test("shows what writing every click costs a viral link", async ({ page }) => {
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByLabel("Operation").selectOption("record-click");
 
-  await page.getByRole("button", { name: "Edit this step's settings" }).click();
+  await stepMenu(page, "Write LinkStats to Click stats");
+  await page.getByRole("button", { name: /^Settings/ }).click();
   const settings = page.getByTestId("step-settings");
   await settings.getByLabel(/Aggregation window/).fill("");
   await settings.getByLabel(/Batch size/).fill("1");

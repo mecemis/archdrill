@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { stepMenu } from "./flow";
 import { importGolden } from "./golden";
 
 test("switches problems, each with its own design", async ({ page }) => {
@@ -28,12 +29,8 @@ test("shows a runaway client saturating the shard that counts it", async ({ page
   await page.getByRole("tab", { name: "Flow" }).click();
 
   // Count every request in Redis again, rejected or not.
-  await page
-    .getByText("Local state · get Block", { exact: true })
-    .locator("..")
-    .getByRole("button", { name: "Remove step" })
-    .click();
-  await page.getByRole("button", { name: /^…on miss:/ }).click();
+  await stepMenu(page, "Look up Block in Local state");
+  await page.getByRole("button", { name: "Remove step" }).click();
 
   await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
   await expect(page.getByText("Nothing runs above 85% with a runaway client")).toBeVisible();

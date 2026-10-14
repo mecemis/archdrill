@@ -12,8 +12,8 @@ import { useAttemptStore } from "../../state/store";
 import { eventLabel, triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
 import { Button, Field, SectionTitle, Select } from "../../ui/primitives";
-import { answerOpenErrors, ERROR_STATUS, openErrorSlots, openSlots } from "./add-step";
-import { StepTree } from "./StepTree";
+import { openSlots } from "./add-step";
+import { FlowSequence } from "./FlowSequence";
 import { componentLabel } from "./step-label";
 
 export function FlowPanel() {
@@ -79,7 +79,7 @@ export function FlowPanel() {
             <SectionTitle>Steps</SectionTitle>
             {flow.root === null && <FlowExplainer />}
             <BranchProgress flow={flow} attempt={attempt} />
-            <StepTree flow={flow} />
+            <FlowSequence flow={flow} />
           </section>
           <Button
             variant="ghost"
@@ -130,19 +130,18 @@ function FlowExplainer() {
     <p className="flex gap-2 rounded-lg border border-info-line bg-info-soft px-3 py-2 text-xs text-info-fg">
       <Info className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
       <span>
-        A flow is what the service does for this request: the components it calls, in order, and
-        what happens on each outcome (found, not found, error…). Every branch ends with a response.
-        Pick a suggestion under each branch, or choose any step with Add step.
+        A flow is what the service does for this request, step by step from top to bottom. Pick what
+        it does first from the list below. Outcomes that end the request early (not found, an
+        error…) get the usual response, which you can change under each step.
       </span>
     </p>
   );
 }
 
-/** How many branches still lead nowhere, and a shortcut for the unanswered errors. */
+/** How many branches still lead nowhere. */
 function BranchProgress({ flow, attempt }: { readonly flow: Flow; readonly attempt: Attempt }) {
   if (flow.root === null) return null;
   const open = openSlots(flow, attempt).length;
-  const errors = openErrorSlots(flow, attempt).length;
   if (open === 0) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-ok-fg">
@@ -156,11 +155,6 @@ function BranchProgress({ flow, attempt }: { readonly flow: Flow; readonly attem
       <span>
         {open} open branch{open === 1 ? "" : "es"} left
       </span>
-      {errors > 0 && (
-        <Button size="sm" variant="secondary" onClick={() => answerOpenErrors(flow)}>
-          Answer {errors === 1 ? "the open error" : `all ${errors} open errors`} with {ERROR_STATUS}
-        </Button>
-      )}
     </div>
   );
 }

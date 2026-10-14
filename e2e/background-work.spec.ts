@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { stepMenu } from "./flow";
 import { importGolden } from "./golden";
 
 test("imports a design and evaluates it in every scenario", async ({ page }) => {
@@ -17,9 +18,8 @@ test("shows what dropping the safety scan costs, and undo brings it back", async
 
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByLabel("Operation").selectOption("create-link");
-  const publish = page.getByText("Link events · publish Link created (outbox)", { exact: true });
-  await publish.locator("..").getByRole("button", { name: "Remove step" }).click();
-  // An outbox publish has one way on, so removing it needs no choice.
+  await stepMenu(page, "Publish Link created to Link events");
+  await page.getByRole("button", { name: "Remove step" }).click();
 
   await expect(page.getByTestId("scenario-score")).toHaveText("40");
   await expect(page.getByText("Links to malicious sites are stopped")).toBeVisible();
