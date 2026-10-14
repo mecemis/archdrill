@@ -1,37 +1,12 @@
 /// <reference path="../src/yaml.d.ts" />
-import { AttemptSchema, isCommandName } from "@archdrill/model";
+import { isCommandName } from "@archdrill/model";
 import { z } from "zod";
-import fixedGateways from "../problems/chat/corpus/golden/fixed-gateways.yaml";
-import gatewaysAndSequences from "../problems/chat/corpus/golden/gateways-and-sequences.yaml";
 import chatMutants from "../problems/chat/corpus/mutants.yaml";
-import hybridFanOut from "../problems/news-feed/corpus/golden/hybrid-fan-out.yaml";
-import pushPostgres from "../problems/news-feed/corpus/golden/push-postgres.yaml";
 import newsFeedMutants from "../problems/news-feed/corpus/mutants.yaml";
-import outboxSaga from "../problems/payments/corpus/golden/outbox-saga.yaml";
-import publishAfterCommit from "../problems/payments/corpus/golden/publish-after-commit.yaml";
 import paymentsMutants from "../problems/payments/corpus/mutants.yaml";
-import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sliding-counter.yaml";
-import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
 import rateLimiterMutants from "../problems/rate-limiter/corpus/mutants.yaml";
-import dynamodbDirect from "../problems/url-shortener/corpus/golden/dynamodb-direct.yaml";
-import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redis-cache-aside.yaml";
-import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
-import postgresHash from "../problems/url-shortener/corpus/golden/postgres-hash-based.yaml";
-import postgresRedisCacheAside from "../problems/url-shortener/corpus/golden/postgres-redis-cache-aside.yaml";
-import postgresFixedFleet from "../problems/url-shortener/corpus/golden/postgres-redis-fixed-fleet.yaml";
-import postgresSized from "../problems/url-shortener/corpus/golden/postgres-sized-for-cache-loss.yaml";
 import urlShortenerMutants from "../problems/url-shortener/corpus/mutants.yaml";
-
-export const GoldenSchema = z.object({
-  id: z.string().min(1),
-  description: z.string().min(1),
-  /** Scenario id → minimum score the design must reach without failing a gate. */
-  expect: z.record(z.string(), z.object({ minScore: z.number().min(0).max(100) })),
-  /** Scenarios this design is expected not to pass: valid elsewhere, but not an answer here. */
-  notPassing: z.array(z.string()).default([]),
-  attempt: AttemptSchema,
-});
-export type Golden = z.infer<typeof GoldenSchema>;
+import { type Golden, GoldenSchema, goldenDesigns } from "../src/examples";
 
 const CommandStepSchema = z
   .record(z.string(), z.record(z.string(), z.unknown()))
@@ -68,38 +43,32 @@ export interface ProblemCorpus {
   readonly mutants: readonly Mutant[];
 }
 
+export { type Golden, GoldenSchema };
+
 export const corpora: readonly ProblemCorpus[] = [
   {
     problemId: "url-shortener",
-    golden: [
-      postgresRedisCacheAside,
-      dynamodbDirect,
-      dynamodbRedis,
-      mysqlMemcached,
-      postgresHash,
-      postgresSized,
-      postgresFixedFleet,
-    ].map((g) => GoldenSchema.parse(g)),
+    golden: goldenDesigns["url-shortener"] ?? [],
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(urlShortenerMutants).mutants,
   },
   {
     problemId: "rate-limiter",
-    golden: [redisSlidingCounter, redisTokenBucket].map((g) => GoldenSchema.parse(g)),
+    golden: goldenDesigns["rate-limiter"] ?? [],
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(rateLimiterMutants).mutants,
   },
   {
     problemId: "news-feed",
-    golden: [hybridFanOut, pushPostgres].map((g) => GoldenSchema.parse(g)),
+    golden: goldenDesigns["news-feed"] ?? [],
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(newsFeedMutants).mutants,
   },
   {
     problemId: "chat",
-    golden: [gatewaysAndSequences, fixedGateways].map((g) => GoldenSchema.parse(g)),
+    golden: goldenDesigns.chat ?? [],
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(chatMutants).mutants,
   },
   {
     problemId: "payments",
-    golden: [outboxSaga, publishAfterCommit].map((g) => GoldenSchema.parse(g)),
+    golden: goldenDesigns.payments ?? [],
     mutants: z.object({ mutants: z.array(MutantSchema) }).parse(paymentsMutants).mutants,
   },
 ];

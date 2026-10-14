@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: dynamodb-direct
+title: DynamoDB without a cache
 description: >-
   ALB → stateless Link API (25 × 8 vCPU) → DynamoDB, no cache. A valid
   answer to the read path: correct, redundant and simple. It does not pass

@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-hash-based
+title: Hash-based codes on PostgreSQL
 description: >-
   ALB → Link API (6 × 8 vCPU) → PostgreSQL (2 shards × 2 replicas). Codes
   are 8-character hashes of the long URL; a collision with a different URL

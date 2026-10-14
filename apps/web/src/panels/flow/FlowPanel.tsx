@@ -1,11 +1,18 @@
-import { type Attempt, canHandle, findOperationRoute, type Operation } from "@archdrill/model";
-import { AlertTriangle } from "lucide-react";
+import {
+  type Attempt,
+  canHandle,
+  type Flow,
+  findOperationRoute,
+  type Operation,
+} from "@archdrill/model";
+import { AlertTriangle, CircleCheck, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
 import { eventLabel, triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
 import { Button, Field, SectionTitle, Select } from "../../ui/primitives";
+import { answerOpenErrors, ERROR_STATUS, openErrorSlots, openSlots } from "./add-step";
 import { StepTree } from "./StepTree";
 import { componentLabel } from "./step-label";
 
@@ -70,6 +77,8 @@ export function FlowPanel() {
           )}
           <section className="flex flex-col gap-2">
             <SectionTitle>Steps</SectionTitle>
+            {flow.root === null && <FlowExplainer />}
+            <BranchProgress flow={flow} attempt={attempt} />
             <StepTree flow={flow} />
           </section>
           <Button
@@ -115,6 +124,47 @@ function RouteNote({
   );
 }
 
+/** What a flow is, for someone about to build their first one. */
+function FlowExplainer() {
+  return (
+    <p className="flex gap-2 rounded-lg border border-info-line bg-info-soft px-3 py-2 text-xs text-info-fg">
+      <Info className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>
+        A flow is what the service does for this request: the components it calls, in order, and
+        what happens on each outcome (found, not found, error…). Every branch ends with a response.
+        Pick a suggestion under each branch, or choose any step with Add step.
+      </span>
+    </p>
+  );
+}
+
+/** How many branches still lead nowhere, and a shortcut for the unanswered errors. */
+function BranchProgress({ flow, attempt }: { readonly flow: Flow; readonly attempt: Attempt }) {
+  if (flow.root === null) return null;
+  const open = openSlots(flow, attempt).length;
+  const errors = openErrorSlots(flow, attempt).length;
+  if (open === 0) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-ok-fg">
+        <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+        Every branch ends with a response.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+      <span>
+        {open} open branch{open === 1 ? "" : "es"} left
+      </span>
+      {errors > 0 && (
+        <Button size="sm" variant="secondary" onClick={() => answerOpenErrors(flow)}>
+          Answer {errors === 1 ? "the open error" : `all ${errors} open errors`} with {ERROR_STATUS}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 const CREATE_PROMPTS: Readonly<Record<Operation["trigger"]["type"], string>> = {
   request: "Which service handles this request?",
   event: "Which service consumes these messages?",
@@ -152,6 +202,7 @@ function CreateFlow({
       <Button
         variant="primary"
         className="self-start"
+        data-tour="start-flow"
         onClick={() => dispatch("createFlow", { operation: operation.id, handler: selected })}
       >
         Start the flow

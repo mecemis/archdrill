@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: redis-token-bucket
+title: Token bucket in Redis
 description: >-
   The same fleet with a token bucket per key in Redis and no block marker:
   every request, rejected or not, is counted in Redis. When Redis fails, the

@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: outbox-saga
+title: Transactional outbox and a saga
 description: >-
   An order service creates the order with a conditional insert on the
   client's order id, reserves the items, and charges with the order id as the

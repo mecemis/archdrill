@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: fixed-gateways
+title: A fixed fleet of connection servers
 description: >-
   The same design with a fixed fleet of 115 connection servers and one
   notification request per device. Valid for one-to-one and small groups;

@@ -10,6 +10,7 @@ import { NEXT_CHOICE, type ThemeChoice, useTheme } from "../state/theme";
 import { useUi } from "../state/ui-store";
 import { Button, FOCUS_RING, IconButton, Select } from "../ui/primitives";
 import { ExchangeButtons } from "./ExchangeButtons";
+import { HelpMenu } from "./onboarding/HelpMenu";
 
 /** Status dot colour for a scenario's result. */
 function dotClass(result: ScenarioResult | undefined): string {
@@ -162,6 +163,7 @@ export function Header() {
           <Redo2 className="h-4 w-4" />
         </IconButton>
         <ThemeToggle />
+        <HelpMenu />
         <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" />
         {confirmReset ? (
           <>

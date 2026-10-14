@@ -26,7 +26,24 @@ function* gridSpiral(): Generator<Position> {
   }
 }
 
-/** First grid cell near the centre of the visible canvas that no node occupies. */
+interface Area {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** Cards floating over the canvas (the guide), in canvas coordinates: new nodes stay clear of them. */
+function overlayAreas(toFlow: (point: Position) => Position): Area[] {
+  return [...document.querySelectorAll("[data-canvas-overlay]")].map((element) => {
+    const rect = element.getBoundingClientRect();
+    const topLeft = toFlow({ x: rect.left, y: rect.top });
+    const bottomRight = toFlow({ x: rect.right, y: rect.bottom });
+    return { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y };
+  });
+}
+
+/** First grid cell near the centre of the visible canvas that no node or floating card occupies. */
 function freeSpotNearCentre(
   toFlow: (point: Position) => Position,
   taken: readonly Position[],
@@ -35,12 +52,21 @@ function freeSpotNearCentre(
   const centre = rect
     ? toFlow({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
     : { x: 0, y: 0 };
+  const covered = overlayAreas(toFlow);
   const origin = { x: centre.x - NODE_HALF_WIDTH, y: centre.y - NODE_HALF_HEIGHT };
   for (const offset of gridSpiral()) {
     const spot = { x: origin.x + offset.x * CELL.x, y: origin.y + offset.y * CELL.y };
-    const free = taken.every(
-      (p) => Math.abs(p.x - spot.x) >= CELL.x - 20 || Math.abs(p.y - spot.y) >= CELL.y - 15,
-    );
+    const free =
+      taken.every(
+        (p) => Math.abs(p.x - spot.x) >= CELL.x - 20 || Math.abs(p.y - spot.y) >= CELL.y - 15,
+      ) &&
+      covered.every(
+        (area) =>
+          spot.x + 2 * NODE_HALF_WIDTH < area.left ||
+          spot.x > area.right ||
+          spot.y + 2 * NODE_HALF_HEIGHT < area.top ||
+          spot.y > area.bottom,
+      );
     if (free) return spot;
   }
   return origin;
@@ -75,7 +101,7 @@ export function Palette() {
   })).filter((group) => group.entries.length > 0);
 
   return (
-    <div className="flex flex-col gap-4 p-3">
+    <div className="flex flex-col gap-4 p-3" data-tour="palette">
       <div className="relative">
         <Search
           className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-fg-subtle"
@@ -125,6 +151,7 @@ export function Palette() {
               }}
               title={flavor.description}
               aria-label={flavor.label}
+              data-tour={kind.id === "service" ? "palette-service" : undefined}
               className={`group flex cursor-grab items-start gap-2.5 rounded-xl border border-line bg-surface p-2 text-left shadow-card transition-colors hover:border-accent-line hover:bg-accent-soft active:cursor-grabbing ${FOCUS_RING}`}
             >
               <KindChip kind={kind.id} />

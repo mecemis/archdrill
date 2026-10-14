@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: publish-after-commit
+title: Publishing after the commit
 description: >-
   The same checkout publishing order-confirmed in its own call after the
   confirmation commits, answering 503 if the publish fails. Sound for money

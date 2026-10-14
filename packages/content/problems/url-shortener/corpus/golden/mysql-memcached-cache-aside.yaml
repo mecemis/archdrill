@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: mysql-memcached-cache-aside
+title: MySQL with a Memcached cache
 description: >-
   NGINX (8 × 4 vCPU) → Link API (25 × 8 vCPU) → Memcached (6 nodes, no replication)
   → MySQL (2 shards × 3 replicas). A cache node that fails only costs its

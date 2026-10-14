@@ -12,9 +12,11 @@ import {
 } from "@xyflow/react";
 import { Activity } from "lucide-react";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GuideCard } from "../panels/onboarding/GuideCard";
 import { catalogIndex } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { useLayout } from "../state/layout";
+import { useOnboarding } from "../state/onboarding";
 import { useAttemptStore } from "../state/store";
 import { useTheme } from "../state/theme";
 import { useCanvasLoad } from "../state/timeline-view";
@@ -91,6 +93,7 @@ function CanvasInner() {
   const { analysis, scenarios } = useEvaluation();
   const scenarioId = useUi((s) => s.scenarioId);
   const animateTraffic = useLayout((s) => s.animateTraffic);
+  const guideOpen = useOnboarding((s) => s.guideOpen);
   const operationId = useUi((s) => s.operation);
   const selection = useUi((s) => s.selection);
   const slotArmed = useUi((s) => s.slot !== null);
@@ -227,7 +230,12 @@ function CanvasInner() {
           </IconButton>
         </Panel>
       )}
-      {attempt.architecture.components.length <= 1 && !moment && (
+      {guideOpen && (
+        <Panel position="bottom-right" className="!mb-6">
+          <GuideCard />
+        </Panel>
+      )}
+      {attempt.architecture.components.length <= 1 && !moment && !guideOpen && (
         <Panel position="top-center">
           <p className="rounded-xl border border-line bg-elevated px-4 py-2.5 text-sm text-fg-muted shadow-pop">
             Start from <span className="font-semibold text-fg">Components</span> on the left: drag a

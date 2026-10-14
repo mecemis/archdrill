@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../../../schema/golden.schema.json
 id: postgres-redis-cache-aside
+title: PostgreSQL with a Redis cache
 description: >-
   ALB → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
   (2 vCPU, 2 to 12 instances) → Redis

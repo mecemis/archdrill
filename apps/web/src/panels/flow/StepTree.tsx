@@ -1,21 +1,27 @@
 import {
   type Attempt,
+  BUILT_IN_FACTS,
   type Flow,
   feasibleOutcomes,
+  hasFact,
   liveStepIds,
   type Step,
 } from "@archdrill/model";
-import { CornerDownRight, Plus, SlidersHorizontal, Trash2, Unlink } from "lucide-react";
+import { CornerDownRight, GitFork, Plus, SlidersHorizontal, Trash2, Unlink } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { stepNumbers } from "../../canvas/projection";
+import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
-import { operationById, runsInBackground } from "../../state/triggers";
+import { operationById, respondLabel, runsInBackground } from "../../state/triggers";
 import { type Attach, type Slot, useUi } from "../../state/ui-store";
+import { KindChip } from "../../ui/icons";
 import { OutcomeChip } from "../../ui/outcome";
-import { Button } from "../../ui/primitives";
+import { Button, FOCUS_RING } from "../../ui/primitives";
 import { AddStepForm } from "./AddStepForm";
+import { addStepToSlot } from "./add-step";
 import { hasTunableParams, paramsUpdate, StepParams, type TunableValues } from "./StepParams";
 import { stepTitle } from "./step-label";
+import { type Suggestion, suggestNext } from "./suggestions";
 
 interface TreeContext {
   readonly flow: Flow;
@@ -306,7 +312,81 @@ function distinctContinuations(
   return result;
 }
 
+/** Facts any of the operation's requests can have, across the scenarios' workloads. */
+function operationFacts(operation: string): Set<string> {
+  const facts = new Set<string>();
+  for (const scenario of activePack.scenarios) {
+    for (const cls of scenario.workload?.operations[operation]?.classes ?? []) {
+      for (const fact of [...BUILT_IN_FACTS, ...cls.facts]) {
+        if (hasFact(cls, fact)) facts.add(fact);
+      }
+    }
+  }
+  return facts;
+}
+
+/** The entity an operation works on, from the scenarios' workloads. */
+function operationEntity(operation: string): string {
+  for (const scenario of activePack.scenarios) {
+    const entity = scenario.workload?.operations[operation]?.entity;
+    if (entity) return entity;
+  }
+  return activePack.problem.entities[0]?.name ?? "";
+}
+
+const RESPOND_TONES = (status: number) =>
+  status >= 500
+    ? "border-bad-line text-bad-fg hover:bg-bad-soft"
+    : status >= 400
+      ? "border-warn-line text-warn-fg hover:bg-warn-soft"
+      : "border-ok-line text-ok-fg hover:bg-ok-soft";
+
+function SuggestionChip({
+  suggestion,
+  slot,
+  background,
+}: {
+  readonly suggestion: Suggestion;
+  readonly slot: Slot;
+  readonly background: boolean;
+}) {
+  const attempt = useAttemptStore((s) => s.attempt);
+  const { step } = suggestion;
+  const label =
+    step.type === "respond"
+      ? `Respond ${respondLabel(step.status, background)}`
+      : stepTitle({ ...step, next: {} } as Step, attempt, background);
+  const kind =
+    step.type === "call"
+      ? attempt.architecture.components.find((c) => c.id === step.target)?.kind
+      : undefined;
+  const tone =
+    step.type === "respond"
+      ? RESPOND_TONES(step.status)
+      : "border-line text-fg hover:border-accent-line hover:bg-accent-soft";
+  return (
+    <button
+      type="button"
+      onClick={() => addStepToSlot(slot, step)}
+      aria-label={`Add step: ${label}`}
+      title={`Add: ${label}`}
+      className={`flex max-w-full items-center gap-1.5 rounded-lg border bg-surface px-2 py-1 text-xs font-medium shadow-card transition-colors ${FOCUS_RING} ${tone}`}
+    >
+      {kind && <KindChip kind={kind} size="xs" />}
+      {step.type === "logic" && (
+        <GitFork className="h-3.5 w-3.5 text-fg-subtle" aria-hidden="true" />
+      )}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * An open branch: one-click suggestions for what usually comes next, and
+ * the full form for anything else.
+ */
 function SlotControl({ slot, flow, label }: { slot: Slot; flow: Flow; label: string }) {
+  const attempt = useAttemptStore((s) => s.attempt);
   const armed = useUi((s) => s.slot);
   const isArmed =
     armed !== null &&
@@ -314,15 +394,37 @@ function SlotControl({ slot, flow, label }: { slot: Slot; flow: Flow; label: str
     armed.operation === slot.operation &&
     JSON.stringify(armed.attach) === JSON.stringify(slot.attach);
   if (isArmed) return <AddStepForm slot={slot} flow={flow} />;
+  const operation = operationById(slot.operation);
+  const background = runsInBackground(operation);
+  const suggestions = operation
+    ? suggestNext({
+        attempt,
+        flow,
+        slot,
+        problem: activePack.problem,
+        operation,
+        catalog: catalogIndex,
+        background,
+        defaultEntity: operationEntity(slot.operation),
+        facts: operationFacts(slot.operation),
+      })
+    : [];
   return (
-    <button
-      type="button"
-      onClick={() => useUi.getState().armSlot(slot)}
-      className="flex items-center gap-1 self-start rounded-md border border-dashed border-warn-line px-2 py-1 text-xs font-medium text-warn-fg hover:bg-warn-soft"
-    >
-      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-      {label}
-    </button>
+    <div className="flex flex-wrap items-center gap-1.5" data-tour="open-slot">
+      {suggestions.map((s) => (
+        <SuggestionChip key={s.key} suggestion={s} slot={slot} background={background} />
+      ))}
+      <button
+        type="button"
+        onClick={() => useUi.getState().armSlot(slot)}
+        className={`flex items-center gap-1 rounded-lg border border-dashed border-line-strong px-2 py-1 text-xs font-medium text-fg-muted hover:border-accent hover:text-accent-fg ${FOCUS_RING}`}
+        title="Choose any step: a call, a decision, a response, or a jump to an existing step"
+        {...(slot.attach.to === "root" ? { "data-tour": "first-step" } : {})}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        {label}
+      </button>
+    </div>
   );
 }
 

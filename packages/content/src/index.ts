@@ -109,3 +109,5 @@ export const problemPacks: readonly ProblemPack[] = [
 export function getProblemPack(problemId: string): ProblemPack | undefined {
   return problemPacks.find((pack) => pack.problem.id === problemId);
 }
+
+export { examplesFor, type Golden, GoldenSchema, goldenDesigns } from "./examples";
