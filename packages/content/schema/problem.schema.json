@@ -337,6 +337,7 @@
           "checkLimit",
           "checkLocalLimit",
           "isCelebrity",
+          "matchThreatList",
           "obfuscateId"
         ]
       }

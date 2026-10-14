@@ -245,6 +245,22 @@ export const testCatalog: Catalog = CatalogSchema.parse({
           },
           defaultSize: "quota",
         },
+        {
+          id: "url-safety-list",
+          label: "URL-safety API (local lists)",
+          description: "Provides threat lists to match locally and confirms matches.",
+          capabilities: ["threat-lists"],
+          managedRedundancy: true,
+          sizes: {
+            quota: {
+              label: "quota",
+              capacityPerSec: { read: 100 },
+              latencyMs: { base: 50, cv: 0.5 },
+              costPerHour: 0,
+            },
+          },
+          defaultSize: "quota",
+        },
       ],
     },
   ],

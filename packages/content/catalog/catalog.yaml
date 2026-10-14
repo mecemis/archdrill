@@ -709,29 +709,73 @@ kinds:
     holdsData: false
     flavors:
       - id: url-safety
-        label: URL-safety API
-        description: Checks URLs against lists of phishing and malware sites (for example Google Safe Browsing or Web Risk).
+        label: URL-safety API (lookup)
+        description: Checks one URL per call against lists of phishing and malware sites (for example Google Web Risk's Lookup API).
         managedRedundancy: true
+        requestCost: { readPerMillion: 500, writePerMillion: 500 }
         sizes:
           quota:
-            label: 5,000 requests/s quota
-            capacityPerSec: { read: 5000 }
+            label: 6,000 calls/min (default quota)
+            capacityPerSec: { read: 100 }
             latencyMs: { base: 50, cv: 0.6 }
             costPerHour: 0
             provenance:
-              costPerHour:
-                model: Not priced yet. The Lookup API costs $0.50 per 1,000 calls beyond 100,000 a month (by quote above 10 million), which a real design avoids with a local threat list kept current by the Update API. Pricing both is planned.
-                basis:
-                  - web-risk-pricing
               capacityPerSec:
-                model: A quota of 5,000 requests a second for the project, as raised for this design; an assumption.
-                basis: []
+                published: web-risk-quotas
+                note: 6,000 lookups (uris.search) a minute per project, shared by everything that calls it.
               latencyMs:
                 model: Tens of milliseconds over the internet; an assumption.
                 basis: []
         defaultSize: quota
-        notes: The quota is fixed per project; calls above it are rejected (HTTP 429). Each answer takes tens of milliseconds over the internet.
-        standsFor: Google Web Risk (Lookup API)
+        notes: The simplest way to check a URL, and the costliest at volume. Every URL is a call over the internet, billed and counted against a quota of 100 a second; calls above it are rejected (HTTP 429). For many URLs a second, keep a local copy of the lists instead (the local-lists flavor).
+        standsFor: Google Web Risk Lookup API (uris.search)
+        provenance:
+          costPerHour:
+            model: Nothing by the hour; every call is billed.
+            basis:
+              - web-risk-pricing
+          requestCost:
+            published: web-risk-pricing
+            note: $0.50 per 1,000 calls beyond the first 100,000 a month, which are free.
+      - id: url-safety-list
+        label: URL-safety API (local lists)
+        description: Lets a service keep a local copy of the lists of phishing and malware sites and confirms only the URLs that match it (for example Google Web Risk's Update API).
+        capabilities: [threat-lists]
+        managedRedundancy: true
+        requestCost: { readPerMillion: 50000, writePerMillion: 50000 }
+        sizes:
+          quota:
+            label: 6,000 confirmations/min (default quota)
+            capacityPerSec: { read: 100 }
+            latencyMs: { base: 50, cv: 0.6 }
+            costPerHour: 0
+            provenance:
+              capacityPerSec:
+                published: web-risk-quotas
+                note: 6,000 confirmations (hashes.search) a minute per project. Downloading list updates has a quota of its own, 600 a minute.
+              latencyMs:
+                model: Tens of milliseconds over the internet; an assumption.
+                basis: []
+        defaultSize: quota
+        notes: >-
+          The service downloads the lists as 4-byte hash prefixes and keeps them
+          current every few minutes, for free. It matches each URL against its
+          copy first (the step "Match the URL against the local threat lists", no network call)
+          and calls here only to confirm a match, so the quota and the price
+          apply to matches alone. A confirmation costs a hundred times a lookup:
+          the design pays off while matches are rare. Clients may cache a
+          verdict for as long as the API says, which the cost here does not
+          count. While the API is down the local copy stops updating but keeps
+          answering.
+        standsFor: Google Web Risk Update API (threatLists.computeDiff, hashes.search)
+        provenance:
+          costPerHour:
+            model: Nothing by the hour, and downloading list updates is free; every confirmation is billed.
+            basis:
+              - web-risk-pricing
+          requestCost:
+            published: web-risk-pricing
+            note: $50 per 1,000 confirmations (hashes.search). Once a project downloads the lists, its lookups are billed at this price too.
       - id: push-provider
         label: Push notifications
         description: Mobile push services (Apple Push Notification service, Firebase Cloud Messaging) that deliver notifications to devices without an open connection.
@@ -953,4 +997,10 @@ sources:
     url: https://cloud.google.com/web-risk/pricing
     publisher: Google Cloud
     kind: price
+    retrieved: 2026-10-14
+  - id: web-risk-quotas
+    title: Web Risk quotas
+    url: https://docs.cloud.google.com/web-risk/quotas
+    publisher: Google Cloud
+    kind: quota
     retrieved: 2026-10-14

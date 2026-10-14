@@ -107,7 +107,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 | `no-single-point-of-failure`, `unused-components`, `ingress-has-capability` | Topology |
 | `overprovisioned`, `autoscaling-configured` | Fleet sizing |
 | `recognize-strategy`, `decision-excludes` | Approaches and decisions |
-| `unsafe-content-stopped` | New content is checked before or after it is stored |
+| `unsafe-content-stopped`, `list-matches-confirmed` | New content is checked before or after it is stored; a match on a local threat list is confirmed with the API before anything acts on it |
 | `no-sync-write-on-read-path`, `publishes-without-waiting`, `event-consumed`, `idempotent-consumer-writes` | Reads stay reads; events are published without waiting and consumed; increments survive redelivery |
 | `limits-are-global` | Rate limits are checked against a count every server shares |
 | `no-dual-write` | An event is written with the data it reports (transactional outbox) |

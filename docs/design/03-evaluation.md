@@ -114,6 +114,8 @@ Checks are written in TypeScript in `packages/evaluator`, are parameterised from
 
 **As built (M6)**, `unsafe-content-stopped(operation, entity)` follows every path that stores new content: it passes when each one checked the content first (`external.check` answered `clean`) or published an event whose consumer checks it and disables the entity, gives partial credit when some paths (typically a failed check) let content through unchecked, and names those paths. `backlog-stable(environment)` asks every consumer and job to keep up. `latency-below` reads as lag for consumers and jobs and fails when they fall behind. `status-for-condition` can expect the status a decision chose (`decision: expired-status`), and `decision-excludes` can apply only when another decision went a certain way (`when`). Checks about a consumer the design does not have (an optional consumer without a flow) do not apply.
 
+**As built (M21)**, a URL that matched nothing on a local copy of the threat lists (`matchThreatList` answered `clean`) counts as checked, and a consumer that disables a link after a local match counts as a scanner. `list-matches-confirmed` then asks that every path where a URL matched the local lists asks the URL-safety API before it answers, stores or disables anything: a 4-byte hash prefix is shared by innocent URLs.
+
 **As built (M8)**, two checks read timelines:
 
 - **`timeline-holds(timeline, metric, operation?, threshold, from?, to?, graceSec)`** asks that a success rate, a p99 or the busiest utilisation stays within bounds over a window. Credit drops with the time spent out of bounds beyond the grace period, and the finding lists when that happened.

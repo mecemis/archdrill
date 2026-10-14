@@ -12,9 +12,9 @@ description: >-
   average-day minimum and a spike maximum, and a gateway rate-limits
   creation. Cache calls time out after 20 ms behind a
   circuit breaker; a KGS hands out keys in batches. New links are published
-  to a managed queue; a worker scans them with the URL-safety API in batches
-  of 100, disables
-  and evicts malicious ones, and purges expired links in batches. Redirects
+  to a managed queue; a worker matches them against a local copy of the
+  threat lists, confirms matches with the URL-safety API, disables and
+  evicts malicious ones, and purges expired links in batches. Redirects
   publish clicks fire-and-forget to Kafka in batches of 100; Flink sums them
   per link over 10-second windows and writes the windows' totals to
   Cassandra in batches of 1,000.
@@ -69,7 +69,7 @@ attempt:
         size: s
         replicas: 2
         autoscale: { max: 8, targetUtilization: 0.7 }
-      - { id: safety, kind: external-api, flavor: url-safety, label: URL safety, size: quota }
+      - { id: safety, kind: external-api, flavor: url-safety-list, label: URL safety, size: quota }
       - { id: clicks, kind: queue, flavor: kafka, label: Clicks, size: m, replicas: 8 }
       - id: click-counter
         kind: stream-processor
@@ -282,13 +282,16 @@ attempt:
         d503: { type: respond, status: 503 }
     - operation: scan-link
       handler: worker
-      root: check
+      root: match
       steps:
+        match:
+          type: logic
+          logic: matchThreatList
+          next: { clean: s200, match: check }
         check:
           type: call
           target: safety
           action: external.check
-          batchSize: 100
           next: { clean: s200, malicious: disable, error: s503 }
         disable:
           type: call

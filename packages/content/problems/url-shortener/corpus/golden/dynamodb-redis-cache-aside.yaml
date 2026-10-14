@@ -6,10 +6,10 @@ description: >-
   10-second near cache → Redis cache-aside (3 shards × 2 replicas) →
   DynamoDB. The cache turns most per-request charges into memory hits; no
   negative caching, so unknown codes still reach the table. On-demand DynamoDB absorbs the full read peak when the cache is gone, at a price.
-  Every new link is checked with the URL-safety API right after the insert:
-  a malicious one is disabled and answered with 400, and when the API fails
-  the link is accepted and published for a batched rescan by the same
-  service. Links are written with a TTL, so DynamoDB deletes expired ones by
+  Every new link is matched against a local copy of the threat lists right
+  after the insert, and a match is confirmed with the URL-safety API: a
+  malicious link is disabled and answered with 400, and when the API fails
+  the link is accepted and published for a rescan by the same service. Links are written with a TTL, so DynamoDB deletes expired ones by
   itself; there is no purge job.
 expect:
   s5-hot-keys: { minScore: 90 }
@@ -43,7 +43,7 @@ attempt:
         size: on-demand
         data: [{ entity: Link }]
       - { id: link-events, kind: queue, flavor: managed-queue, label: Link events, size: on-demand }
-      - { id: safety, kind: external-api, flavor: url-safety, label: URL safety, size: quota }
+      - { id: safety, kind: external-api, flavor: url-safety-list, label: URL safety, size: quota }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
       - { id: lb--link-api, from: lb, to: link-api }
@@ -130,7 +130,7 @@ attempt:
           action: store.insertIfAbsent
           entity: Link
           ttlSec: 31536000
-          next: { ok: check, conflict: c409, error: c503 }
+          next: { ok: match, conflict: c409, error: c503 }
         generate:
           type: logic
           logic: generateRandomCode
@@ -141,7 +141,7 @@ attempt:
           action: store.insertIfAbsent
           entity: Link
           ttlSec: 31536000
-          next: { ok: check, conflict: generate-retry, error: c503 }
+          next: { ok: match, conflict: generate-retry, error: c503 }
         generate-retry:
           type: logic
           logic: generateRandomCode
@@ -152,7 +152,11 @@ attempt:
           action: store.insertIfAbsent
           entity: Link
           ttlSec: 31536000
-          next: { ok: check, conflict: c503, error: c503 }
+          next: { ok: match, conflict: c503, error: c503 }
+        match:
+          type: logic
+          logic: matchThreatList
+          next: { clean: c201, match: check }
         check:
           type: call
           target: safety
@@ -195,13 +199,16 @@ attempt:
         d503: { type: respond, status: 503 }
     - operation: scan-link
       handler: link-api
-      root: check
+      root: match
       steps:
+        match:
+          type: logic
+          logic: matchThreatList
+          next: { clean: s200, match: check }
         check:
           type: call
           target: safety
           action: external.check
-          batchSize: 50
           next: { clean: s200, malicious: disable, error: s503 }
         disable:
           type: call

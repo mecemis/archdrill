@@ -210,6 +210,8 @@ Attempt
 
 Two capabilities arrive with them: `async-buffer` (a queue: a managed queue or Kafka) and `external` (a third-party API, here a URL-safety API with a request quota). `external.check` answers `clean`, `malicious` or `error`, and request classes can be `malicious`. A batch size on a step that is not an id allocation collects items: the step waits for the batch, so only consumers and jobs may use one.
 
+**As built (M21).** `external.check` checks one URL per call, as Web Risk does; it takes no batch size. A flavor that provides `threat-lists` (Web Risk's Update API) lets a service keep a local copy of the lists. The decision `matchThreatList` (`clean` or `match`, decided by `malicious`) looks a URL up in that copy without a network call; it needs the handler to be connected to such a flavor (`step-logic-needs-component`). A decision can declare such a need with `needs: { capability, what }`.
+
 **As built (M8).** A workload may define `timelines`. Each one has:
 - `id`, `label`, `durationSec`, `stepSec` (default 1), starting `rates`, and optional `classShares`;
 - `events`, each one of:

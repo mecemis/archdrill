@@ -13,6 +13,7 @@ import {
   CONDITIONAL_OUTCOMES,
 } from "../catalog/actions";
 import { canHandle } from "../catalog/capabilities";
+import { getLogic, type LogicId } from "../catalog/logic";
 import type { CatalogIndex } from "../catalog/schema";
 import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
@@ -256,8 +257,39 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
         ),
       );
     }
+    if (step.type === "logic") issues.push(...logicNeeds(flow, stepId, step.logic, attempt, ctx));
   }
   return issues;
+}
+
+/** A decision that rests on another component (a downloaded list) needs that component connected. */
+function logicNeeds(
+  flow: Flow,
+  stepId: string,
+  logic: LogicId,
+  attempt: Attempt,
+  ctx: ValidationContext,
+): Issue[] {
+  const needs = getLogic(logic).needs;
+  if (!needs) return [];
+  const components = attempt.architecture.components;
+  const connected = attempt.architecture.connections.some((connection) => {
+    if (connection.from !== flow.handler) return false;
+    const target = components.find((c) => c.id === connection.to);
+    return (
+      target !== undefined &&
+      ctx.catalog.capabilities(target.kind, target.flavor).has(needs.capability)
+    );
+  });
+  if (connected) return [];
+  const handler = components.find((c) => c.id === flow.handler)?.label ?? flow.handler;
+  return [
+    error(
+      "step-logic-needs-component",
+      `Step ${stepId} (${getLogic(logic).label}) needs ${needs.what}. Connect "${handler}" to one.`,
+      { type: "step", operation: flow.operation, stepId },
+    ),
+  ];
 }
 
 function validateFlowGraph(flow: Flow, attempt: Attempt): Issue[] {

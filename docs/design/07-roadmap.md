@@ -428,10 +428,12 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
 
 **Part 1, sources (as built).** Every catalog number is published (cited, with the date read) or a model (reasoning and basis), and each size names the real offering it stands for ([ADR 0009](../adr/0009-every-number-has-a-source.md)). Tests enforce the coverage, and the inspector shows it. Prices and memory now match their sources; no score in the corpus changed.
 
+**Part 2, the URL-safety API (as built).** Web Risk as Google publishes it: the Lookup API at $0.50 per 1,000 calls and 6,000 calls a minute, and local threat lists from the Update API, where only matches are confirmed, at $50 per 1,000. A new decision matches a URL against the local copy; it needs the lists' provider connected, and a new check asks that matches are confirmed before acting. Batched checks are gone, since Web Risk has none. S7 now teaches why per-URL lookups cannot carry 1,000 links a second, and a new critical check catches a scanner that fails most of its scans. Both goldens still score 100, and all 81 URL-shortener mutants are caught (122 across the corpus).
+
 **Next:**
 - **Calibration.** Reference points the engine must reproduce within a tolerance: pgbench reads per vCPU, etcd writes, Redis commands per node.
 - **Work units and sizes.** Requests carry payload sizes and operations carry work units: a 20 KB DynamoDB read costs five read units; bandwidth, data transfer and ALB capacity units follow.
-- **The gaps ADR 0009 lists:** the URL-safety API's real price (and a local threat list), FCM's per-device quota, and Stripe's default rate limit, each with the content changes they bring.
+- **The remaining gaps ADR 0009 lists:** FCM's per-device quota and Stripe's default rate limit, each with the content changes they bring.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

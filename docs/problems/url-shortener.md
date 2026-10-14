@@ -359,6 +359,19 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - `scan-backlog-drains`: the scan backlog is gone within two minutes.
   The Postgres golden checks URLs in batches of 100. The `unbatched-scans` mutant exceeds the API quota, and the redeliveries of failed scans keep it exceeded after the import: a metastable failure.
 
+**As built (M21): Web Risk as published.** The URL-safety API now has two flavors with Google's published prices and default quotas:
+
+| Flavor | Stands for | Price | Default quota |
+|---|---|---|---|
+| `url-safety` (lookup) | Web Risk Lookup API (`uris.search`), one URL per call | $0.50 per 1,000 calls | 6,000 calls a minute |
+| `url-safety-list` (local lists) | Web Risk Update API: lists downloaded for free, matches confirmed with `hashes.search` | $50 per 1,000 confirmations | 6,000 confirmations a minute |
+
+- At 1,000 creates a second, looking every URL up is about 2.6 billion calls a month (about $1.3 million) and thirty times the quota at peak. A local copy of the lists checks every URL in the service, and only the one URL in 500 that matches reaches the API: 6 a second at peak.
+- The new decision `match local threat lists` needs a connection to the local-lists flavor. A match is only a hint, since innocent URLs share 4-byte prefixes, so `matches-confirmed` asks for a confirmation before any path acts on it.
+- `scans-succeed-at-peak` (critical) asks that 99.9% of scans succeed at peak: a scanner that fails most of its scans leaves phishing links live.
+- Both goldens match locally and confirm matches; there are no more batched checks, since Web Risk has no batch calls. The `unbatched-scans` mutant became `lookup-every-url` (the worker looks every URL up: over the quota at peak and after the import), and two mutants were added: `unconfirmed-match` and `list-without-source`.
+- What the costs show: confirmations at list price cost about $790,000 a month at peak rates. Clients may cache verdicts for as long as the API allows, and campaigns reuse URLs, which the model leaves out; the debrief asks how to bring the figure down.
+
 ---
 
 ## S8: Click analytics

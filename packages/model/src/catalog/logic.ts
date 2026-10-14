@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Capability } from "./capabilities";
 
 /**
  * Which outcome a request takes, decided by a fact about it: requests whose
@@ -16,6 +17,11 @@ export interface LogicDef {
   readonly description: string;
   /** For two-way decisions: the fact about the request that decides them. */
   readonly decidedBy?: FactRule;
+  /**
+   * A component the handler must be connected to for the decision to mean
+   * anything, such as the service a local list is downloaded from.
+   */
+  readonly needs?: { readonly capability: Capability; readonly what: string };
 }
 
 export const LOGIC = {
@@ -86,6 +92,17 @@ export const LOGIC = {
     description:
       "Branch on whether the post's author has millions of followers, too many to copy the post to each of them.",
     decidedBy: { fact: "celebrity", outcome: "celebrity" },
+  },
+  matchThreatList: {
+    label: "match local threat lists",
+    outcomes: ["clean", "match"],
+    description:
+      "Look the URL up in a local copy of the threat lists: hash prefixes the URL-safety API's Update API keeps current. No network call. A match is only a hint, since prefixes collide; confirm it with the API before acting on it.",
+    decidedBy: { fact: "malicious", outcome: "match" },
+    needs: {
+      capability: "threat-lists",
+      what: "a URL-safety API that provides threat lists to download (the Update API)",
+    },
   },
   obfuscateId: {
     label: "obfuscate id",

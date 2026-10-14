@@ -233,10 +233,9 @@ export const ACTIONS = {
     effect: "read",
     outcomes: ["clean", "malicious", "error"],
     params: [],
-    optionalParams: ["batchSize"],
     decidedBy: { fact: "malicious", outcome: "malicious" },
     description:
-      "Ask an external URL-safety service whether a URL is malicious. It has a request quota; with a batch size, one call checks that many URLs.",
+      "Ask a URL-safety API whether a URL is malicious. Each call checks one URL, counts against the project's quota and is billed.",
   },
   "ids.allocate": {
     label: "allocate id",

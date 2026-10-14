@@ -37,6 +37,7 @@ export const ISSUE_CODES = [
   "step-batch-in-request",
   "step-aggregate-in-request",
   "step-logic-not-offered",
+  "step-logic-needs-component",
   "step-unknown-count",
   "step-outbox-without-transaction",
   "step-exactly-once-unsupported",
