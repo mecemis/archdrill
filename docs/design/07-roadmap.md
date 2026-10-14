@@ -368,7 +368,9 @@ Milestones:
 - **Facts beat flags.** Moving URL-specific flags out of the engine into facts that logic and calls name took one milestone. After that, every new problem needed only the engine features its lesson called for: fan-outs, connections, outboxes.
 - **Every new mechanism found a modelling gap.** A short-TTL block marker exposed that cache entries need writes that land, while long TTLs persist through a fault. Fan-outs needed per-class latency. Batched writes needed per-item billing.
 - **Content tests catch content mistakes early.** Probing every golden in every scenario before writing mutants exposed several problems: thresholds a scraper could not cross, budgets the shared design blew, and checks that flagged legitimate fallback paths.
-- **The analytic budget needs watching.** Each milestone added a few percent to the hottest loop; calls across modules in that loop cost more than expected under the test runner.
+- **The analytic budget needs watching.** Each milestone added a few percent to the hottest loop, and calls across modules in that loop cost more than expected under the test runner. By M16 the CI runner sat at its budget.
+  - Paths come from a depth-first walk and share the step objects of a common prefix, so each prefix's probability is now computed once per class.
+  - That took analytic p50 from 92 to 66 ms and timelines from 530 to 390 ms, with identical results.
 
 | Problem | Patterns |
 |---|---|
