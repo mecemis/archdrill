@@ -30,6 +30,7 @@ function CompareFile() {
         notify(`That design is for another problem (${attempt.problemId}).`, "error");
         return;
       }
+      // Throws, before anything is stored, when the design cannot be evaluated.
       useBaseline.getState().pin(attempt, file.name);
     } catch (error) {
       notify(error instanceof Error ? error.message : "The file could not be read.", "error");

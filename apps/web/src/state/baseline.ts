@@ -18,15 +18,26 @@ function evaluated(baseline: Attempt | null): AttemptEvaluation | null {
   return baseline ? evaluateAttempt(baseline, { ...activePack, catalog: catalogIndex }) : null;
 }
 
-const initial = loadBaseline(activePack.problem.id);
+/** The stored baseline and its evaluation; one that no longer evaluates is dropped. */
+function restored(): Pick<BaselineState, "baseline" | "evaluation"> {
+  const baseline = loadBaseline(activePack.problem.id);
+  try {
+    return { baseline, evaluation: evaluated(baseline) };
+  } catch (error) {
+    console.error("Dropped a stored baseline that could not be evaluated.", error);
+    saveBaseline(activePack.problem.id, null);
+    return { baseline: null, evaluation: null };
+  }
+}
 
 export const useBaseline = create<BaselineState>((set) => ({
-  baseline: initial,
-  evaluation: evaluated(initial),
+  ...restored(),
   source: null,
+  /** Evaluates first, so a design that cannot be evaluated is never stored. */
   pin(attempt, source) {
+    const evaluation = evaluated(attempt);
     saveBaseline(activePack.problem.id, attempt);
-    set({ baseline: attempt, evaluation: evaluated(attempt), source: source ?? null });
+    set({ baseline: attempt, evaluation, source: source ?? null });
   },
   clear() {
     saveBaseline(activePack.problem.id, null);

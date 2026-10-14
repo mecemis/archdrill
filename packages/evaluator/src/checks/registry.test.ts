@@ -112,3 +112,30 @@ describe("validateScenarioConfig workloads", () => {
     );
   });
 });
+
+describe("validateScenarioConfig optional work", () => {
+  it("rejects optional operations outside the focus and unknown jobs", () => {
+    const base = scenarioWithKeyspace("code-length", { Link: 1e9 });
+    const scenario = ScenarioSchema.parse({
+      ...base,
+      optionalOperations: ["redirect"],
+      checks: [
+        ...base.checks,
+        {
+          id: "expired",
+          use: "expired-data-removed",
+          title: "Expired links are deleted",
+          dimension: "correctness",
+          params: { entity: "Link", job: "purge-everything" },
+          why: "w",
+          fix: "f",
+        },
+      ],
+    });
+
+    const messages = validateScenarioConfig(scenario, testProblem).map((i) => i.message);
+
+    expect(messages).toContain('optional operation "redirect" is not a focus operation');
+    expect(messages).toContain('unknown operation "purge-everything"');
+  });
+});
