@@ -136,7 +136,8 @@ export const retryOnlyIdempotent = defineCheck({
       ({ connection, target, steps }) =>
         connection.policy.retries > 0
           ? steps
-              .filter(({ step }) => getAction(step.action).unsafeToRetry)
+              // An idempotency key makes a repeat safe: the provider acts on it once.
+              .filter(({ step }) => getAction(step.action).unsafeToRetry && !step.idempotencyKey)
               .map(({ step }) => ({ connection, target, step }))
           : [],
     );

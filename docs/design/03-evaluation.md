@@ -132,6 +132,13 @@ Both point at what a fault hits or what runs over capacity at those moments; fai
 
 Increments have their own effect (`increment`), which step matchers can name. Step matchers can also ask for aggregated writes (`aggregated: true`) and fire-and-forget publishes (`fireAndForget: true`). Estimates (the estimation gym) are judged separately and never affect scenario scores.
 
+**As built (M13–M16)**, the new problem packs added four checks:
+
+- `limits-are-global(operation, entity)`: every allowed request is checked against a count shared by the fleet; a server's own count is acceptable only after the shared count failed on that path.
+- `no-dual-write(operation, event, entity?)`: every publish of the event goes through a transactional outbox, not as a second call after (or before) the write it reports. Naming the entity limits which writes count; a path that writes nothing is not judged.
+- `event-consumed` and `idempotent-consumer-writes` (M11) carry over to chat and payments.
+- `retry-only-idempotent` accepts retries of calls that carry an idempotency key.
+
 **Metric checks** (from the simulation, per environment)
 - `p99-below(op, ms)`, `p50-below(op, ms)`.
 - `error-rate-below(op, rate, environment)`.

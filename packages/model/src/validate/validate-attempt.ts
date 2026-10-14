@@ -450,6 +450,24 @@ function validateCallStep(
       ),
     );
   }
+  if (step.outbox && step.fireAndForget) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} publishes through an outbox, which already keeps the request from waiting; drop fire-and-forget.`,
+        loc,
+      ),
+    );
+  }
+  if (step.outbox && !writesTransactionallyBefore(flow, stepId, attempt, ctx)) {
+    issues.push(
+      error(
+        "step-outbox-without-transaction",
+        `Step ${stepId} publishes through an outbox, but no store write in a transactional store comes before it on every path.`,
+        loc,
+      ),
+    );
+  }
   if (step.bufferSize !== undefined && !step.fireAndForget) {
     issues.push(
       error(
@@ -492,6 +510,61 @@ function validateCallStep(
   return issues;
 }
 
+/**
+ * Whether every way into a step passes a write to a store with transactions,
+ * which an outbox message can share a transaction with.
+ */
+function writesTransactionallyBefore(
+  flow: Flow,
+  stepId: string,
+  attempt: Attempt,
+  ctx: ValidationContext,
+): boolean {
+  const capabilitiesOf = (id: string) => {
+    const step = flow.steps[id];
+    if (step?.type !== "call") return null;
+    const target = attempt.architecture.components.find((c) => c.id === step.target);
+    return target ? ctx.catalog.capabilities(target.kind, target.flavor) : null;
+  };
+  const storeWrite = (id: string): boolean => {
+    const step = flow.steps[id];
+    return (
+      step?.type === "call" &&
+      STORE_WRITE_EFFECTS.has(ACTIONS[step.action].effect) &&
+      capabilitiesOf(id)?.has("durable-store") === true
+    );
+  };
+  // Walk backwards from the step: on every way in, the last store write before
+  // it must be transactional and must have committed (its ok outcome).
+  const parents = (id: string) =>
+    Object.entries(flow.steps).flatMap(([pid, s]) =>
+      s.type === "respond"
+        ? []
+        : Object.entries(s.next)
+            .filter(([, to]) => to === id)
+            .map(([outcome]) => ({ pid, outcome })),
+    );
+  const covered = (id: string, seen: Set<string>): boolean => {
+    const from = parents(id);
+    if (from.length === 0) return false;
+    return from.every(({ pid, outcome }) => {
+      if (seen.has(pid)) return true;
+      if (storeWrite(pid))
+        return outcome === "ok" && capabilitiesOf(pid)?.has("transactions") === true;
+      return covered(pid, new Set([...seen, pid]));
+    });
+  };
+  return covered(stepId, new Set([stepId]));
+}
+
+/** Effects that change a store, and that an outbox message can share a transaction with. */
+const STORE_WRITE_EFFECTS: ReadonlySet<string> = new Set([
+  "write",
+  "conditional-write",
+  "delete",
+  "increment",
+]);
+
 /** Optional parameters checked the same way, with how messages name them. */
 const NEW_PARAMS = [
   ["aggregateSec", "an aggregation window"],
@@ -499,6 +572,8 @@ const NEW_PARAMS = [
   ["fireAndForget", "fire-and-forget"],
   ["bufferSize", "a buffer size"],
   ["each", "a count to fan out over"],
+  ["idempotencyKey", "an idempotency key"],
+  ["outbox", "a transactional outbox"],
 ] as const;
 
 function validateStepEntity(

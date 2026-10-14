@@ -1,0 +1,190 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s1-checkout
+problemId: payments
+title: Checkout
+order: 1
+story: |
+  "Two thousand orders a second at peak. Each one reserves its items and
+  charges a card through the payment provider. One card in twenty is declined.
+  One order in a hundred arrives twice, because the shopper's app resent it
+  after a timeout. Charges sometimes time out too. Walk me through what
+  happens to the money and the stock in each case."
+focusOperations: [place-order]
+workload:
+  operations:
+    place-order:
+      entity: Order
+      classes:
+        - { id: paid, share: 0.94 }
+        - { id: declined, share: 0.05, facts: [cardDeclined] }
+        - { id: resent, share: 0.01, facts: [duplicate] }
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day.
+      rates: { place-order: 500 }
+    - id: peak
+      label: Peak
+      description: Peak traffic.
+      rates: { place-order: 2000 }
+dimensions:
+  correctness: 0.55
+  latency: 0.2
+  scalability: 0.15
+  cost: 0.1
+checks:
+  - id: resent-recognised
+    use: all-success-paths-contain
+    title: A resent order is recognised
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-1]
+    params:
+      operation: place-order
+      statuses: [201, 202, 402]
+      step: { action: store.insertIfAbsent, entity: Order }
+    why: >-
+      An app that resends an order after a timeout creates a second order,
+      and a second charge, unless the server can tell it is the same one.
+    fix: >-
+      Let the client send an order id (an idempotency key) and create the order
+      with a conditional insert; a conflict means it already exists.
+
+  - id: charges-retried-safely
+    use: retry-only-idempotent
+    title: Charges are never retried without an idempotency key
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-1]
+    params: { operation: place-order }
+    why: >-
+      A charge that timed out may have gone through. Retrying it without a key
+      charges the customer twice.
+    fix: >-
+      Send the order id as the provider's idempotency key, or do not retry
+      charges.
+
+  - id: resent-not-charged
+    use: no-path
+    title: A resent order is not charged again
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [NFR-1]
+    params:
+      operation: place-order
+      where:
+        all:
+          - { hasStep: { action: store.insertIfAbsent, entity: Order, outcome: conflict } }
+          - { hasStep: { action: external.charge } }
+    why: >-
+      Recognising a resent order is only useful if the second copy stops
+      before the charge.
+    fix: >-
+      On a conflict, answer with the existing order instead of continuing.
+
+  - id: declined-released
+    use: no-path
+    title: A declined card releases the reserved items
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-2]
+    params:
+      operation: place-order
+      where:
+        all:
+          - { hasStep: { action: store.insert, entity: Reservation, outcome: ok } }
+          - { hasStep: { action: external.charge, outcome: declined } }
+          - { not: { hasStep: { action: store.delete, entity: Reservation } } }
+    why: >-
+      Stock reserved for a failed order is stock nobody else can buy. A saga
+      undoes the steps that succeeded when a later one fails.
+    fix: >-
+      After a decline, delete the reservation (the compensating step) before
+      answering.
+
+  - id: declined-402
+    use: status-for-condition
+    title: A declined card answers 402
+    dimension: correctness
+    requirements: [FR-2]
+    params:
+      operation: place-order
+      when: { hasStep: { action: external.charge, outcome: declined } }
+      statuses: [402]
+    why: >-
+      The shopper needs to know the card was declined, not that the server
+      failed.
+    fix: >-
+      Answer 402 Payment Required after a decline.
+
+  - id: refund-if-unconfirmed
+    use: no-path
+    title: Nobody is charged for an order that is not confirmed
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [NFR-1]
+    params:
+      operation: place-order
+      where:
+        all:
+          - { hasStep: { action: external.charge, outcome: approved } }
+          - { hasStep: { action: store.update, entity: Order, outcome: [error, notFound] } }
+          - { not: { hasStep: { action: external.refund } } }
+    why: >-
+      If confirming fails after the card was charged, the customer has paid for
+      nothing.
+    fix: >-
+      Refund the charge when the order cannot be confirmed (with the same
+      idempotency key), or leave it for reconciliation.
+
+  - id: checkout-fast
+    use: latency-below
+    title: Checkout p99 under 3 seconds at peak
+    dimension: latency
+    requirements: [NFR-2]
+    params: { operation: place-order, environment: peak, percentile: p99, ms: 3000 }
+    why: >-
+      Shoppers abandon a checkout that hangs, and resend one that seems lost.
+    fix: >-
+      Keep the order's own writes few and fast; the charge sets the pace.
+
+  - id: headroom-peak
+    use: utilization-below
+    title: Nothing runs above 85% at peak, the provider's quota included
+    dimension: scalability
+    requirements: [NFR-2]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      Three or four writes per order add up, and the provider throttles a
+      merchant that exceeds its quota.
+    fix: >-
+      Size the order store for the writes, and keep retries to the provider
+      bounded.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $15,000 a month
+    dimension: cost
+    requirements: [NFR-2]
+    params: { environment: avg, monthlyUsd: 15000 }
+    why: >-
+      Checkout is a few writes per order; it does not need a big fleet.
+    fix: >-
+      Autoscale the services and size the store for peak writes.
+hints:
+  - "The app resends an order whose answer it never got. What does the server do with the second copy?"
+  - "The charge times out. Did it go through? What happens if you retry it?"
+  - "Create the order with a conditional insert on a client-sent id, charge with that id as the idempotency key, release the reservation after a decline, and refund if the order cannot be confirmed."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Reservations expire after 15 minutes. Who releases them if the server crashes mid-checkout?
+  - Two shoppers buy the last item at the same time. Who gets it?
+  - How would you split the payment across two cards?

@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s3-provider-trouble
+problemId: payments
+title: When the provider misbehaves
+order: 3
+story: |
+  "The payment provider has a bad hour: charges take ten times longer, then it
+  stops answering. Some charges time out after the card was charged; others
+  never reached it. Checkout must not hang, nobody may be charged twice, and
+  every order must end up either paid or released, eventually."
+focusOperations: [place-order, reconcile-payments]
+prerequisites: [s1-checkout]
+workload:
+  operations:
+    place-order:
+      entity: Order
+      classes:
+        - { id: paid, share: 0.94 }
+        - { id: declined, share: 0.05, facts: [cardDeclined] }
+        - { id: resent, share: 0.01, facts: [duplicate] }
+    reconcile-payments:
+      entity: Order
+      classes:
+        - { id: pending, share: 1 }
+  environments:
+    - id: provider-slow
+      label: Peak, provider slow
+      description: Charges take ten times longer than usual.
+      rates: { place-order: 2000, reconcile-payments: 50 }
+      faults:
+        - { kind: slow, target: { capability: payments }, factor: 10 }
+    - id: provider-hanging
+      label: Peak, provider not answering
+      description: The provider accepts connections and never answers.
+      rates: { place-order: 2000, reconcile-payments: 50 }
+      faults:
+        - { kind: down, target: { capability: payments }, mode: hang }
+dimensions:
+  correctness: 0.45
+  latency: 0.3
+  availability: 0.25
+checks:
+  - id: unknown-left-pending
+    use: status-for-condition
+    title: An unknown charge leaves the order pending (202)
+    dimension: correctness
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-1, NFR-3]
+    params:
+      operation: place-order
+      when: { hasStep: { action: external.charge, outcome: error } }
+      statuses: [202]
+    why: >-
+      After a timeout nobody knows whether the card was charged. Confirming the
+      order ships unpaid goods; releasing it keeps money for nothing.
+    fix: >-
+      Mark the order pending and answer 202; a reconciliation job settles it
+      against the provider's records.
+
+  - id: checkout-bounded
+    use: latency-below
+    title: Checkout p99 under 3 seconds while the provider hangs
+    dimension: latency
+    weight: 2
+    requirements: [NFR-2]
+    params: { operation: place-order, environment: provider-hanging, percentile: p99, ms: 3000 }
+    why: >-
+      A hanging provider holds every checkout until the client gives up, and
+      the client resends.
+    fix: >-
+      Time out charges after a second or two and answer 202.
+
+  - id: charge-timeout
+    use: dependency-timeout-bounded
+    title: Charges time out within 2 seconds
+    dimension: latency
+    requirements: [NFR-2]
+    params: { capability: payments, maxMs: 2000 }
+    why: >-
+      A charge normally takes 300 ms; waiting much longer only holds the
+      shopper.
+    fix: >-
+      Set a timeout of one to two seconds on calls to the provider.
+
+  - id: checkout-available
+    use: success-rate-above
+    title: Checkout keeps 99% while the provider hangs
+    dimension: availability
+    weight: 2
+    requirements: [NFR-2]
+    params: { operation: place-order, environment: provider-hanging, min: 0.99 }
+    why: >-
+      Orders can be accepted and settled later; failing them loses the sale.
+    fix: >-
+      Accept the order as pending when the charge times out.
+
+  - id: reconciled
+    use: all-success-paths-contain
+    title: Pending orders are settled against the provider's records
+    dimension: correctness
+    weight: 2
+    requirements: [NFR-3]
+    params:
+      operation: reconcile-payments
+      statuses: [200]
+      step: { action: payments.lookup }
+    why: >-
+      Only the provider knows whether a timed-out charge went through.
+    fix: >-
+      Look each pending order up with the provider and confirm or release it.
+
+  - id: breaker-on-provider
+    use: circuit-breaker-on-dependency
+    title: A circuit breaker guards the provider
+    dimension: latency
+    signal: senior
+    requirements: [NFR-2]
+    params: { capability: payments }
+    why: >-
+      Once the provider is known to be down, checkouts should go pending at
+      once instead of each waiting for its timeout.
+    fix: >-
+      Put a circuit breaker on the connection to the provider.
+hints:
+  - "A charge times out. List what may have happened at the provider."
+  - "What should the order say until you know?"
+  - "Time out charges after a second or two behind a breaker, mark the order pending and answer 202, and settle pending orders in a job that looks them up with the provider."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - How long can an order stay pending before you release the stock?
+  - The provider's records disagree with yours. Which one wins, and who finds out?
+  - How would you add a second provider and fail over to it?

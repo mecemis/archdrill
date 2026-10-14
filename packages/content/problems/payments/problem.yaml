@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../../schema/problem.schema.json
+id: payments
+version: 1
+title: Orders and Payments
+levels: [senior, staff]
+brief: |
+  An online store's checkout. Placing an order reserves the items, charges
+  the card through a payment provider, confirms the order and hands it to
+  fulfilment, which ships it. Clients resend an order whose answer got lost;
+  the payment provider sometimes times out without saying whether it charged.
+  A customer is never charged twice, never charged for an order that is not
+  confirmed, and every confirmed order ships exactly once.
+scale:
+  - { label: Orders, value: "500 /s avg, 2,000 /s peak", note: "about 1 in 20 cards is declined" }
+  - { label: Payment provider, value: "5,000 requests /s quota", note: "a charge takes about 300 ms" }
+  - { label: Resent orders, value: "about 1 in 100", note: "mobile clients retry on timeouts" }
+requirements:
+  - { id: FR-1, kind: functional, text: "Place an order: reserve the items, charge the card, confirm the order." }
+  - { id: FR-2, kind: functional, text: "A declined card releases the reserved items and tells the customer (402)." }
+  - { id: FR-3, kind: functional, text: "Every confirmed order is handed to fulfilment and ships exactly once." }
+  - { id: NFR-1, kind: non-functional, text: "Never charge twice for one order, and never charge for an order that is not confirmed." }
+  - { id: NFR-2, kind: non-functional, text: "Checkout p99 < 3 s; availability 99.9%, also while the event queue is down." }
+  - { id: NFR-3, kind: non-functional, text: "An order whose charge outcome is unknown is settled against the provider's records." }
+entities:
+  - name: Order
+    key: orderId
+    fields: [orderId, customerId, items, total, status]
+    avgBytes: 1000
+  - name: Reservation
+    key: orderId
+    fields: [orderId, items, expiresAt]
+    avgBytes: 200
+  - name: Shipment
+    key: orderId
+    fields: [orderId, warehouse, status]
+    avgBytes: 300
+operations:
+  - id: place-order
+    label: Place order
+    method: POST
+    path: /orders
+    class: write
+    idempotent: false
+    successStatuses: [201, 202, 402]
+    requirements: [FR-1, FR-2, NFR-1, NFR-2]
+    introducedIn: s1-checkout
+  - id: fulfil-order
+    label: Fulfil order
+    trigger: { type: event, event: order-confirmed }
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-3]
+    introducedIn: s2-fulfilment
+  - id: reconcile-payments
+    label: Reconcile payments
+    trigger:
+      type: schedule
+      description: Runs continuously and settles orders whose charge outcome is unknown against the provider's records.
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [NFR-3]
+    introducedIn: s3-provider-trouble
+events:
+  - { id: order-confirmed, label: Order confirmed, entity: Order }
+client: { flavor: browser, label: Shoppers }
+logic: []
+estimates:
+  - id: orders-per-day
+    question: How many orders a day on average?
+    kind: count
+    answer: 43200000
+    derivation: 500 orders a second × 86,400 seconds ≈ 43 million orders a day.
+  - id: provider-load
+    question: Every order charges once, and one in twenty is retried after a timeout. How many requests a second reach the payment provider at peak?
+    kind: rate
+    answer: 2100
+    derivation: >-
+      2,000 charges + 2,000 × 1/20 retries ≈ 2,100 requests a second, well
+      within a 5,000 quota, unless retries pile up during an outage.
+  - id: double-charges
+    question: >-
+      If 0.5% of charges time out after the card was charged and are retried
+      without an idempotency key, how many customers are charged twice a day?
+    kind: count
+    answer: 216000
+    derivation: >-
+      43 million orders × 0.5% ≈ 216,000 double charges a day, each one a
+      support ticket and a chargeback.
+  - id: lost-events
+    question: >-
+      Publishing after the commit, a publish fails one time in 10,000. How many
+      confirmed orders a day never reach fulfilment?
+    kind: count
+    answer: 4320
+    derivation: >-
+      43 million × 1/10,000 ≈ 4,300 orders a day that are paid for and never
+      ship, unless the event is written with the order.
+scenarios: [s1-checkout, s2-fulfilment, s3-provider-trouble]

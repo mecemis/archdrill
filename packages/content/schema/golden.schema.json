@@ -254,6 +254,9 @@
                             "service.call",
                             "connection.push",
                             "external.notify",
+                            "external.charge",
+                            "external.refund",
+                            "payments.lookup",
                             "external.check",
                             "ids.allocate",
                             "coord.leaseRange"
@@ -296,6 +299,12 @@
                         "each": {
                           "type": "string",
                           "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                        },
+                        "idempotencyKey": {
+                          "type": "boolean"
+                        },
+                        "outbox": {
+                          "type": "boolean"
                         },
                         "bufferSize": {
                           "type": "integer",

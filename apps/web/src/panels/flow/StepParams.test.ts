@@ -34,6 +34,12 @@ describe("step parameters", () => {
   it("removes parameters that no longer apply", () => {
     const update = paramsUpdate("queue.publish", { batchSize: 100, bufferSize: 10 }, false);
 
-    expect(update).toEqual({ each: null, fireAndForget: null, bufferSize: null, batchSize: null });
+    expect(update).toEqual({
+      each: null,
+      outbox: null,
+      fireAndForget: null,
+      bufferSize: null,
+      batchSize: null,
+    });
   });
 });

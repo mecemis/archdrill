@@ -27,7 +27,7 @@ import {
   type CallTally,
   type Load,
   type Propagation,
-  pathProbability,
+  pathProbabilities,
   type ResolvedOperation,
 } from "./summary";
 
@@ -296,8 +296,11 @@ export function propagate(
         : windowWriteShare(arriving * (1 - hotShare), step.aggregateSec, op.keyPopularity);
     };
     for (const cls of classes) {
-      for (const path of op.analysis.paths) {
-        const once = arriving * cls.share * pathProbability(path, cls, state, op);
+      const probabilities = pathProbabilities(op.analysis.paths, cls, state, op);
+      const paths = op.analysis.paths;
+      for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
+        const path = paths[pathIndex] as Path;
+        const once = arriving * cls.share * (probabilities[pathIndex] as number);
         if (once === 0) continue;
         const deliveries = trigger === "event" && !succeeds(path, op) ? MAX_DELIVERIES : 1;
         const weight = once * deliveries;

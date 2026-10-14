@@ -101,6 +101,10 @@ export const CallStepSchema = z.object({
    * example `followers`), in parallel; the count comes from the request's class.
    */
   each: IdSchema.optional(),
+  /** For payments: the request carries an idempotency key, so the provider acts on a repeat only once. */
+  idempotencyKey: z.boolean().optional(),
+  /** For publishes: through a transactional outbox, written with the store write before it. */
+  outbox: z.boolean().optional(),
   /** For fire-and-forget publishes: messages held while the queue is unreachable. */
   bufferSize: z.number().int().min(1).max(MAX_BUFFER_MESSAGES).optional(),
   next: NextSchema,

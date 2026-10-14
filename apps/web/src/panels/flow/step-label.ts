@@ -22,12 +22,13 @@ export function stepTitle(step: Step, attempt: Attempt, background = false): str
       const window = step.aggregateSec === undefined ? "" : ` (per ${step.aggregateSec}s)`;
       const spread =
         step.counterShards === undefined ? "" : ` (${step.counterShards} counter shards)`;
-      const handoff = step.fireAndForget ? " (fire-and-forget)" : "";
+      const handoff = step.fireAndForget ? " (fire-and-forget)" : step.outbox ? " (outbox)" : "";
+      const keyed = step.idempotencyKey ? " (idempotency key)" : "";
       const fan =
         step.each === undefined
           ? ""
           : ` (each of ${activePack.problem.counts.find((c) => c.id === step.each)?.label ?? step.each})`;
-      const details = `${fan}${ttl}${window}${batch}${spread}${coalesced}${handoff}`;
+      const details = `${fan}${ttl}${window}${batch}${spread}${coalesced}${handoff}${keyed}`;
       return `${componentLabel(attempt, step.target)} · ${action}${details}`;
     }
     case "logic":

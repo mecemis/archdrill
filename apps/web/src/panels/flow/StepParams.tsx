@@ -14,6 +14,8 @@ export type TunableValues = Partial<
     | "fireAndForget"
     | "bufferSize"
     | "each"
+    | "idempotencyKey"
+    | "outbox"
   >
 >;
 
@@ -57,6 +59,8 @@ export function applicableParams(
       ? { aggregateSec: values.aggregateSec }
       : {}),
     ...(takes("each") && values.each !== undefined ? { each: values.each } : {}),
+    ...(takes("idempotencyKey") && values.idempotencyKey ? { idempotencyKey: true } : {}),
+    ...(takes("outbox") && values.outbox && !values.fireAndForget ? { outbox: true } : {}),
     ...(takes("counterShards") && (values.counterShards ?? 1) > 1
       ? { counterShards: values.counterShards }
       : {}),
@@ -99,7 +103,21 @@ export function StepParams({
           </Select>
         </Field>
       )}
-      {takes("fireAndForget") && (
+      {takes("idempotencyKey") && (
+        <Check
+          label="Send an idempotency key, so a repeat is acted on once"
+          checked={values.idempotencyKey === true}
+          onChange={(idempotencyKey) => set({ idempotencyKey })}
+        />
+      )}
+      {takes("outbox") && (
+        <Check
+          label="Through a transactional outbox, with the store write before it"
+          checked={values.outbox === true}
+          onChange={(outbox) => set({ outbox, ...(outbox ? { fireAndForget: false } : {}) })}
+        />
+      )}
+      {takes("fireAndForget") && !values.outbox && (
         <Check
           label="Fire-and-forget: hand the message to a local buffer and continue"
           checked={values.fireAndForget === true}
@@ -216,6 +234,8 @@ function NumberField({
 
 const TUNABLE: readonly (keyof TunableValues)[] = [
   "each",
+  "idempotencyKey",
+  "outbox",
   "ttlSec",
   "batchSize",
   "coalesce",
