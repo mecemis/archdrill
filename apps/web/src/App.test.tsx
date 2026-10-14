@@ -205,6 +205,42 @@ describe("App", () => {
     expect(flow?.steps["check-status"]).toMatchObject({ next: { active: "read-link" } });
   });
 
+  it("shows a flow that only responds, and puts a step in front of the response", () => {
+    useAttemptStore.getState().dispatch("createFlow", { operation: "redirect", handler: "api" });
+    useAttemptStore.getState().dispatch("addStep", {
+      operation: "redirect",
+      id: "r404",
+      step: { type: "respond", status: 404 },
+      attach: { to: "root" },
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a step before responding" }));
+    choose("Read Link from Links");
+
+    const flow = useAttemptStore.getState().attempt.flows.find((f) => f.operation === "redirect");
+    expect(flow?.root).toBe("read-link");
+    expect(flow?.steps["read-link"]).toMatchObject({ next: { found: "r404" } });
+  });
+
+  it("opens one picker at a time, with a fresh search for each place", () => {
+    renderApp();
+    buildReadPath();
+    const read = within(screen.getByTestId("step-check-expiry"));
+
+    fireEvent.click(read.getByRole("button", { name: "Step options" }));
+    fireEvent.click(screen.getByRole("button", { name: /Insert a step before/ }));
+    expect(screen.getAllByTestId("step-picker")).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText("Search steps"), { target: { value: "status" } });
+    choose("Check status");
+    fireEvent.click(screen.getByRole("button", { name: /Respond 302 Found/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Do something else first/ }));
+
+    expect(screen.getAllByTestId("step-picker")).toHaveLength(1);
+    expect((screen.getByLabelText("Search steps") as HTMLInputElement).value).toBe("");
+  });
+
   it("removes a step and joins what came before to what followed", () => {
     useAttemptStore.getState().replace(cacheAsideAttempt());
     renderApp();

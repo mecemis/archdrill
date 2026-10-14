@@ -14,22 +14,15 @@ import {
 import { CornerDownRight, GitFork, Reply, Search, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { activePack } from "../../state/content";
-import { useAttemptStore } from "../../state/store";
-import { useToasts } from "../../state/toasts";
 import { useUi } from "../../state/ui-store";
 import { KindChip } from "../../ui/icons";
 import { FOCUS_RING, IconButton, Select } from "../../ui/primitives";
-import { missingBinding } from "./add-step";
 import { successStatus } from "./defaults";
-import { appendStep, type EditContext, insertBefore, type Position } from "./flow-edits";
+import type { EditContext } from "./flow-edits";
+import { commitStep, operationEntity, type PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 import { componentLabel } from "./step-label";
 import { suggestNext } from "./suggestions";
-
-/** What the picker adds: a step at a position, or a step in front of another. */
-export type PickerMode =
-  | { readonly kind: "append"; readonly at: Position }
-  | { readonly kind: "insert"; readonly at: Position; readonly before: string };
 
 interface Option {
   readonly key: string;
@@ -80,15 +73,6 @@ function callOptions(
   return byTarget;
 }
 
-/** The entity a new call most likely works on: the operation's own. */
-function operationEntity(operation: string): string {
-  for (const scenario of activePack.scenarios) {
-    const entity = scenario.workload?.operations[operation]?.entity;
-    if (entity) return entity;
-  }
-  return activePack.problem.entities[0]?.name ?? "";
-}
-
 /** Whether a suggested step does what an existing step does. */
 function sameStep(input: StepInput, step: Step | undefined): boolean {
   if (!step || input.type !== step.type) return false;
@@ -119,7 +103,6 @@ export function StepPicker({
   readonly onClose?: () => void;
   readonly facts: ReadonlySet<string>;
 }) {
-  const dispatchAll = useAttemptStore((s) => s.dispatchAll);
   const canvasTarget = useUi((s) => s.canvasTarget);
   const [query, setQuery] = useState("");
   const [entity, setEntity] = useState(() => operationEntity(ctx.flow.operation));
@@ -197,8 +180,9 @@ export function StepPicker({
   const statuses = background
     ? [200, 503]
     : [...new Set([...success, ...operation.successStatuses, ...COMMON_STATUSES])];
+  // A request must do something before it answers, and an inserted step carries on.
   const responses: Option[] =
-    mode.kind === "insert"
+    mode.kind === "insert" || mode.at.kind === "root"
       ? []
       : statuses.map((status) => ({
           key: `respond:${status}`,
@@ -207,18 +191,8 @@ export function StepPicker({
         }));
 
   const choose = (option: Option) => {
-    const commands =
-      mode.kind === "append"
-        ? appendStep(ctx, mode.at, option.step)
-        : insertBefore(ctx, mode.at, mode.before, option.step);
-    const binding = missingBinding(attempt, option.step, ctx.problem, ctx.catalog);
-    if (dispatchAll(commands) && binding && option.step.type === "call") {
-      useToasts
-        .getState()
-        .notify(
-          `${componentLabel(attempt, binding.componentId)} now stores ${option.step.entity}.`,
-        );
-    }
+    // A failed change keeps the picker, and the canvas lit, for another try.
+    if (!commitStep(ctx, mode, option.step)) return;
     useUi.getState().armSlot(null);
     onClose?.();
   };

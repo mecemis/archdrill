@@ -29,7 +29,6 @@ import { MenuItem, MenuLabel, Popover } from "../../ui/Popover";
 import { FOCUS_RING } from "../../ui/primitives";
 import { successStatus } from "./defaults";
 import {
-  appendStep,
   type EditContext,
   type ExitChoice,
   type Position,
@@ -37,6 +36,7 @@ import {
   setExit,
   withPruning,
 } from "./flow-edits";
+import { commitStep, operationEntity } from "./pick";
 import { hasTunableParams } from "./StepParams";
 import { StepPicker } from "./StepPicker";
 import { StepSettings } from "./StepSettings";
@@ -65,9 +65,6 @@ function useFlowView(): FlowView {
   if (!view) throw new Error("FlowSequence parts must be rendered inside FlowSequence.");
   return view;
 }
-
-const positionKey = (at: Position) =>
-  at.kind === "root" ? "root" : `after:${at.stepId}:${at.outcomes.join(",")}`;
 
 /** Facts any of the operation's requests can have, across the scenarios' workloads. */
 function operationFacts(operation: string): Set<string> {
@@ -137,8 +134,20 @@ function SequenceList({
   readonly main?: boolean;
 }) {
   const { items, end } = sequence;
+  if (items.length === 0 && end.kind === "respond" && entry.kind === "root") {
+    return <RespondsAtOnce status={end.status} stepId={end.target} />;
+  }
   if (items.length === 0 && end.kind === "empty") {
-    return <OpenEnd at={entry} title="What does the service do first?" main={main} />;
+    return (
+      <OpenEnd
+        at={entry}
+        pickerKey={
+          entry.kind === "root" ? "root" : `exit:${entry.stepId}:${entry.outcomes.join(",")}`
+        }
+        title="What does the service do first?"
+        main={main}
+      />
+    );
   }
   return (
     <ol className="flex flex-col">
@@ -163,6 +172,74 @@ function SequenceList({
   );
 }
 
+/** A flow that answers before doing anything: its response, and a way to put a step first. */
+function RespondsAtOnce({ status, stepId }: { readonly status: number; readonly stepId: string }) {
+  const { ctx, picker } = useFlowView();
+  const dispatch = useAttemptStore((s) => s.dispatch);
+  const key = "root-insert";
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      {picker.open === key && (
+        <PickerFor
+          key={key}
+          mode={{ kind: "insert", at: { kind: "root" }, before: stepId }}
+          title="Add a step before responding"
+          onClose={() => picker.setOpen(null)}
+        />
+      )}
+      <Popover
+        label="How the request ends"
+        trigger={({ toggle }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            className={`flex items-center gap-2 rounded-full border border-ok-line bg-ok-soft py-1 pr-2.5 pl-1 text-[13px] font-medium text-ok-fg ${FOCUS_RING}`}
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ok text-on-accent">
+              <Reply className="h-3 w-3" aria-hidden="true" />
+            </span>
+            {stepSentence({ type: "respond", status }, ctx.attempt, ctx.background)}
+            <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            <MenuLabel>Respond with</MenuLabel>
+            <div className="flex flex-wrap gap-1 px-1.5 pb-1">
+              {endStatuses(ctx).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    close();
+                    dispatch("updateStep", { operation: ctx.flow.operation, stepId, status: s });
+                  }}
+                  aria-pressed={s === status}
+                  className={`rounded-md border px-1.5 py-0.5 text-xs font-medium tabular-nums ${
+                    s === status
+                      ? "border-accent bg-accent-soft text-accent-fg"
+                      : "border-line text-fg hover:bg-muted"
+                  } ${FOCUS_RING}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </Popover>
+      <button
+        type="button"
+        onClick={() => picker.setOpen(key)}
+        className={`ml-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-fg-subtle hover:bg-muted hover:text-fg ${FOCUS_RING}`}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add a step before responding
+      </button>
+    </div>
+  );
+}
+
 /** The line between two steps: which outcomes carry on, and a way to put a step in between. */
 function Connector({
   from,
@@ -174,7 +251,7 @@ function Connector({
   readonly before: string;
 }) {
   const { picker } = useFlowView();
-  const key = `insert:${before}`;
+  const key = `insert:${from.stepId}:${before}`;
   const label =
     from.exits.length > 0 ? `if ${from.continuing.map(outcomeLabel).join(" or ")}` : null;
   return (
@@ -183,6 +260,7 @@ function Connector({
       {picker.open === key ? (
         <div className="-ml-4 py-1">
           <PickerFor
+            key={key}
             mode={{ kind: "insert", at: into, before }}
             title="Insert a step here"
             onClose={() => picker.setOpen(null)}
@@ -228,11 +306,12 @@ function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: 
       steps: new Set([stepId]),
       decisions: new Set(),
     });
-  const insertKey = `insert:${stepId}`;
+  const insertKey = `before:${stepId}`;
   return (
     <div className="flex flex-col gap-1.5">
       {picker.open === insertKey && (
         <PickerFor
+          key={insertKey}
           mode={{ kind: "insert", at: into, before: stepId }}
           title="Insert a step before this one"
           onClose={() => picker.setOpen(null)}
@@ -291,6 +370,8 @@ function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: 
                 <MenuItem
                   tone="danger"
                   onClick={() => {
+                    // The card goes away under the pointer; nothing will un-highlight it.
+                    useUi.getState().setHover(null);
                     apply(removeStep(ctx, stepId, item.continuing));
                     close();
                   }}
@@ -348,6 +429,7 @@ function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: 
             ) : (
               <OpenEnd
                 at={{ kind: "after", stepId, outcomes: [exit.outcome] }}
+                pickerKey={`exit:${stepId}:${exit.outcome}`}
                 title={`If ${outcomeLabel(exit.outcome)}, what happens?`}
               />
             )}
@@ -411,9 +493,7 @@ function ExitChip({ item, exit }: { readonly item: SequenceItem; readonly exit: 
             close();
             choose(choice);
             if (choice.kind === "open") {
-              picker.setOpen(
-                positionKey({ kind: "after", stepId: item.stepId, outcomes: [exit.outcome] }),
-              );
+              picker.setOpen(`exit:${item.stepId}:${exit.outcome}`);
             }
           }}
           nextOf={item}
@@ -511,7 +591,8 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
   const { end } = sequence;
   if (!last) return null;
   if (end.kind === "open" || end.kind === "empty") {
-    const outcomes = end.kind === "open" ? end.outcomes : [];
+    // An end that leads nowhere known (a dangling link) still takes the next step.
+    const outcomes = end.kind === "open" ? end.outcomes : last.continuing;
     return (
       <div className="ml-[13px] flex flex-col gap-1 border-l-2 border-line pt-1 pl-4">
         {last.exits.length > 0 && outcomes.length > 0 && (
@@ -522,6 +603,7 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
         <div className="-ml-4">
           <OpenEnd
             at={{ kind: "after", stepId: last.stepId, outcomes }}
+            pickerKey={`end:${last.stepId}`}
             title="Then…"
             main={main}
           />
@@ -535,7 +617,7 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
         ? `Finish: ${respondLabel(end.status, true)}`
         : `Respond ${respondLabel(end.status, false)}`
       : `Carry on at step ${end.number}`;
-  const insertKey = `insert:${end.target}`;
+  const insertKey = `end-insert:${last.stepId}`;
   return (
     <div className="flex flex-col">
       <div className="ml-[13px] flex min-h-5 flex-col border-l-2 border-line pl-4">
@@ -547,6 +629,7 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
       </div>
       {picker.open === insertKey && end.kind === "respond" && (
         <PickerFor
+          key={insertKey}
           mode={{
             kind: "insert",
             at: { kind: "after", stepId: last.stepId, outcomes: last.continuing },
@@ -582,9 +665,7 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
                 close();
                 apply(setExit(ctx, last.stepId, last.continuing, choice));
                 if (choice.kind === "open") {
-                  picker.setOpen(
-                    positionKey({ kind: "after", stepId: last.stepId, outcomes: last.continuing }),
-                  );
+                  picker.setOpen(`end:${last.stepId}`);
                 }
               }}
             />
@@ -611,18 +692,21 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
 function OpenEnd({
   at,
   title,
+  pickerKey: key,
   main = false,
 }: {
   readonly at: Position;
   readonly title: string;
+  /** Names this place for the one-open-picker state: the root, a list's end, or an outcome. */
+  readonly pickerKey: string;
   readonly main?: boolean;
 }) {
-  const { ctx, facts, picker, apply } = useFlowView();
-  const key = positionKey(at);
+  const { ctx, facts, picker } = useFlowView();
   const active = picker.open === key || (picker.open === null && main);
   if (active) {
     return (
       <PickerFor
+        key={key}
         mode={{ kind: "append", at }}
         title={title}
         onClose={picker.open === key ? () => picker.setOpen(null) : undefined}
@@ -644,13 +728,17 @@ function OpenEnd({
     operation: ctx.operation,
     catalog: ctx.catalog,
     background: ctx.background,
-    defaultEntity: ctx.problem.entities[0]?.name ?? "",
+    defaultEntity: operationEntity(ctx.flow.operation),
     facts,
   }).slice(0, 3);
   return (
     <div className="flex flex-wrap items-center gap-1.5 py-1" data-tour="open-slot">
       {quick.map((s) => (
-        <QuickStep key={s.key} step={s.step} onChoose={() => apply(appendStep(ctx, at, s.step))} />
+        <QuickStep
+          key={s.key}
+          step={s.step}
+          onChoose={() => commitStep(ctx, { kind: "append", at }, s.step)}
+        />
       ))}
       <button
         type="button"

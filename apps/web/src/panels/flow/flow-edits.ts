@@ -115,6 +115,7 @@ function binding(ctx: EditContext, step: StepInput): AnyCommand[] {
  * the ones that carry on are left open for the next step.
  */
 export function appendStep(ctx: EditContext, at: Position, step: StepInput): AnyCommand[] {
+  if (at.kind === "after" && at.outcomes.length === 0) return [];
   const taken = takenIds(ctx.flow);
   const created = new Map<number, string>();
   const operation = ctx.flow.operation;
@@ -148,7 +149,7 @@ export function insertBefore(
   before: string,
   step: StepInput,
 ): AnyCommand[] {
-  if (step.type === "respond") return [];
+  if (step.type === "respond" || (at.kind === "after" && at.outcomes.length === 0)) return [];
   const continuing = continuingOutcomes(step).filter((o) =>
     feasibleOutcomes({ ...step, next: {} } as Step, ctx.attempt).includes(o),
   );
@@ -247,8 +248,14 @@ export function withPruning(
   const before = flowOf(attempt);
   if (!before) return [...commands];
   let after = attempt;
-  for (const command of commands)
-    after = applyCommand(after, command.name, command.args as never).attempt;
+  try {
+    for (const command of commands) {
+      after = applyCommand(after, command.name, command.args as never).attempt;
+    }
+  } catch {
+    // The batch itself fails; leave it to the store, which reports why.
+    return [...commands];
+  }
   const reachableBefore = new Set(reachableStepIds(before));
   const flowAfter = flowOf(after);
   if (!flowAfter) return [...commands];
