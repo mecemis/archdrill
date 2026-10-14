@@ -2,7 +2,8 @@ import { analyzeAttempt } from "@archdrill/engine";
 import { applyCommand } from "@archdrill/model";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
-import { type ProjectionInput, projectEdges, projectNodes } from "./projection";
+import { findingsByComponent } from "./node-findings";
+import { healthOf, type ProjectionInput, projectEdges, projectNodes } from "./projection";
 
 function inputFor(
   attempt = cacheAsideAttempt(),
@@ -68,7 +69,9 @@ describe("projection", () => {
 
   it("carries simulated utilisation to nodes and rates to connections", () => {
     const metrics = {
-      components: new Map([["db", { utilization: 0.42 }]]),
+      components: new Map([
+        ["db", { utilization: 0.42, hottestShardUtilization: 0.42, instances: 1, faults: [] }],
+      ]),
       connections: new Map([["api--db", 1234]]),
     } as unknown as ProjectionInput["metrics"];
     const input = inputFor(undefined, { metrics });
@@ -77,6 +80,61 @@ describe("projection", () => {
     expect(projectNodes(input).find((n) => n.id === "redis")?.data.utilization).toBeNull();
     expect(projectEdges(input).find((e) => e.id === "api--db")?.data?.rate).toBe(1234);
     expect(projectEdges(inputFor()).find((e) => e.id === "api--db")?.data?.rate).toBeNull();
+  });
+
+  it("rates health from load, hot shards and faults", () => {
+    const load = (utilization: number, hottest = utilization, faults: string[] = []) => ({
+      utilization,
+      hottestShardUtilization: hottest,
+      faults,
+    });
+
+    expect(healthOf(undefined)).toBeNull();
+    expect(healthOf(load(0.5))).toBe("ok");
+    expect(healthOf(load(0.9))).toBe("warn");
+    expect(healthOf(load(0.5, 0.9))).toBe("warn");
+    expect(healthOf(load(1.2))).toBe("critical");
+    expect(healthOf(load(0.1, 0.1, ["down"]))).toBe("critical");
+  });
+
+  it("colours a connection by the health of the component it reaches", () => {
+    const metrics = {
+      components: new Map([
+        ["db", { utilization: 1.3, hottestShardUtilization: 1.3, instances: 1, faults: [] }],
+      ]),
+      connections: new Map([["api--db", 500]]),
+    } as ProjectionInput["metrics"];
+    const edges = projectEdges(inputFor(undefined, { metrics }));
+
+    expect(edges.find((e) => e.id === "api--db")?.data?.targetHealth).toBe("critical");
+    expect(edges.find((e) => e.id === "api--redis")?.data?.targetHealth).toBeNull();
+  });
+
+  it("badges components with the open findings that name them or their steps", () => {
+    const attempt = cacheAsideAttempt();
+    const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
+    const finding = (id: string, severity: "critical" | "major" | "minor", evidence: unknown[]) =>
+      ({
+        instance: { id, title: id, severity, signal: "baseline" },
+        status: "fail",
+        gateFailed: false,
+        evidence,
+      }) as unknown as Parameters<typeof findingsByComponent>[0][number];
+    const checks = [
+      finding("minor-one", "minor", [{ type: "component", componentId: "db" }]),
+      finding("critical-one", "critical", [
+        { type: "step", operation: "redirect", stepId: "read" },
+      ]),
+    ];
+    const findings = findingsByComponent(checks, attempt, analysis);
+    const nodes = projectNodes(inputFor(attempt, { findings }));
+
+    expect(nodes.find((n) => n.id === "db")?.data.findings).toMatchObject({
+      count: 2,
+      tone: "bad",
+      key: "critical-one",
+    });
+    expect(nodes.find((n) => n.id === "redis")?.data.findings).toBeNull();
   });
 
   it("flags components with validation errors", () => {

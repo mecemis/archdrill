@@ -37,7 +37,7 @@ test("builds a read path from an empty canvas and gets it evaluated", async ({ p
   await page.locator('.react-flow__node[data-id="key-value-db-1"]').click();
   await page.getByRole("checkbox", { name: /^Link key/ }).check();
   await page.locator('.react-flow__node[data-id="service-1"]').click();
-  await page.getByLabel("Size").selectOption({ label: "8 vCPU" });
+  await page.getByRole("combobox", { name: /^Size/ }).selectOption({ label: "8 vCPU" });
   const replicas = page.getByRole("slider", { name: "Replicas" });
   await replicas.fill("25");
   await replicas.blur();

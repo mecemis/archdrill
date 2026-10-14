@@ -1,8 +1,10 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import { AlertTriangle } from "lucide-react";
-import { memo } from "react";
+import { type MouseEvent, memo } from "react";
+import { useUi } from "../state/ui-store";
 import { percent, utilizationTone } from "../ui/format";
 import { KindChip } from "../ui/icons";
+import type { FindingTone, NodeFindings } from "./node-findings";
 import type { ComponentNodeData } from "./projection";
 
 const EMPHASIS_CLASSES = {
@@ -11,13 +13,44 @@ const EMPHASIS_CLASSES = {
   dimmed: "opacity-35",
 } as const;
 
-const HANDLE_CLASS = "!h-2.5 !w-2.5 !border-2 !border-elevated !bg-fg-faint";
+const HANDLE_CLASS = "!h-2.5 !w-2.5 !border-2 !border-elevated !bg-fg-faint hover:!bg-accent";
 
 function frameClass(data: ComponentNodeData, selected: boolean | undefined): string {
   if (data.hasError) return "border-bad ring-1 ring-bad/40";
   if (selected) return "border-accent ring-2 ring-accent/35";
   if (data.callable) return "border-accent border-dashed bg-accent-soft";
+  if (data.health === "critical") return "health-critical border-bad ring-2 ring-bad/30";
+  if (data.health === "warn") return "border-warn ring-2 ring-warn/25";
   return "border-line hover:border-line-strong";
+}
+
+const BADGE_TONES: Readonly<Record<FindingTone, string>> = {
+  bad: "bg-bad",
+  warn: "bg-warn",
+  info: "bg-info",
+};
+
+/** Opens the most serious finding about this component and shows its evidence. */
+function showFinding(event: MouseEvent, findings: NodeFindings) {
+  event.stopPropagation();
+  const ui = useUi.getState();
+  ui.setResultsTab("findings");
+  if (ui.pinned?.key !== findings.key) ui.togglePin(findings.key, findings.highlight);
+}
+
+function FindingsBadge({ findings }: { readonly findings: NodeFindings }) {
+  const plural = findings.count === 1 ? "" : "s";
+  return (
+    <button
+      type="button"
+      className={`nodrag absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-bold text-on-accent shadow-card ring-2 ring-app transition-transform hover:scale-110 ${BADGE_TONES[findings.tone]}`}
+      onClick={(event) => showFinding(event, findings)}
+      aria-label={`${findings.count} open finding${plural}, led by: ${findings.title}`}
+      title={`${findings.count} open finding${plural}: ${findings.title}`}
+    >
+      {findings.count}
+    </button>
+  );
 }
 
 function scaleLabel(data: ComponentNodeData): string | null {
@@ -31,9 +64,10 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
   const scale = scaleLabel(data);
   return (
     <div
-      className={`w-48 rounded-xl border bg-elevated px-2.5 py-2 text-left shadow-card transition-[opacity,box-shadow] ${frameClass(data, selected)} ${EMPHASIS_CLASSES[data.emphasis]}`}
+      className={`relative w-48 rounded-xl border bg-elevated px-2.5 py-2 text-left shadow-card transition-[opacity,box-shadow,border-color] ${frameClass(data, selected)} ${EMPHASIS_CLASSES[data.emphasis]}`}
       data-testid={`node-${data.label}`}
     >
+      {data.findings && <FindingsBadge findings={data.findings} />}
       <Handle type="target" position={Position.Left} className={HANDLE_CLASS} />
       <div className="flex items-center gap-2">
         <KindChip kind={data.kind} size="sm" />

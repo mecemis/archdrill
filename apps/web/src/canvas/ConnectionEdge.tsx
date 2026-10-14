@@ -6,6 +6,7 @@ import {
   getBezierPath,
 } from "@xyflow/react";
 import { memo } from "react";
+import { useLayout } from "../state/layout";
 import { compact } from "../ui/format";
 import type { ConnectionEdgeData } from "./projection";
 
@@ -30,8 +31,56 @@ function strokeFor(data: ConnectionEdgeData | undefined, selected: boolean | und
   return "idle";
 }
 
+/** Seconds a dot takes along an edge: slower for light traffic, at most this slow. */
+const SLOWEST_TRIP_SEC = 3;
+const FASTEST_TRIP_SEC = 0.9;
+/** How much each tenfold increase in traffic speeds the dots up, in seconds. */
+const TRIP_SEC_PER_DECADE = 0.4;
+/** Messages through a queue move slower than calls, to tell them apart. */
+const ASYNC_SLOWDOWN = 1.6;
+
+function dotColor(data: ConnectionEdgeData): string {
+  if (data.targetHealth === "critical") return "var(--bad)";
+  if (data.targetHealth === "warn") return "var(--warn)";
+  return data.steps.length > 0 || data.ingress ? "var(--accent)" : "var(--info)";
+}
+
+/**
+ * Dots moving from source to target: more and faster with more traffic,
+ * coloured by the health of the component they reach.
+ */
+function TrafficDots({ path, data }: { readonly path: string; readonly data: ConnectionEdgeData }) {
+  const rate = data.rate ?? 0;
+  const count = rate >= 10_000 ? 3 : rate >= 100 ? 2 : 1;
+  const trip =
+    Math.min(
+      SLOWEST_TRIP_SEC,
+      Math.max(
+        FASTEST_TRIP_SEC,
+        SLOWEST_TRIP_SEC - TRIP_SEC_PER_DECADE * Math.log10(Math.max(1, rate)),
+      ),
+    ) * (data.mode === "async" ? ASYNC_SLOWDOWN : 1);
+  const color = dotColor(data);
+  return (
+    <g className="traffic-dots">
+      {Array.from({ length: count }, (_, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the dots are identical and never reorder
+        <circle key={i} r={2.6} fill={color} opacity={1 - i * 0.2}>
+          <animateMotion
+            dur={`${trip.toFixed(2)}s`}
+            begin={`${((i * trip) / count).toFixed(2)}s`}
+            repeatCount="indefinite"
+            path={path}
+          />
+        </circle>
+      ))}
+    </g>
+  );
+}
+
 function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
   const { id, data, selected } = props;
+  const animate = useLayout((s) => s.animateTraffic);
   const [path, labelX, labelY] = getBezierPath(props);
   const stroke = strokeFor(data, selected);
   const active = data ? data.steps.length > 0 || data.ingress : false;
@@ -52,6 +101,9 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
           opacity: data?.emphasis === "dimmed" ? 0.3 : 1,
         }}
       />
+      {animate && data && (data.rate ?? 0) > 0 && data.emphasis !== "dimmed" && (
+        <TrafficDots path={path} data={data} />
+      )}
       {data && (data.steps.length > 0 || rate > 0) && (
         <EdgeLabelRenderer>
           <div

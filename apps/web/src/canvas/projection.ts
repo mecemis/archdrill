@@ -8,8 +8,18 @@ import {
 } from "@archdrill/model";
 import type { Edge, Node } from "@xyflow/react";
 import type { Highlight, Selection } from "../state/ui-store";
+import type { NodeFindings } from "./node-findings";
 
 export type Emphasis = "normal" | "highlighted" | "dimmed";
+
+/**
+ * How a component is doing under the simulated load: overloaded or failing
+ * (critical), close to its capacity (warn), or fine.
+ */
+export type Health = "ok" | "warn" | "critical";
+
+/** Utilisation above which a component is shown as close to its capacity. */
+export const WARN_UTILIZATION = 0.85;
 
 export interface ComponentNodeData extends Record<string, unknown> {
   readonly label: string;
@@ -36,6 +46,10 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly running: number | null;
   /** Utilisation of its hottest shard when a hot key makes it busier than the rest, else null. */
   readonly hotShard: number | null;
+  /** Health under the simulated load, or null without a simulation. */
+  readonly health: Health | null;
+  /** Open findings that point at it, or null when there are none. */
+  readonly findings: NodeFindings | null;
 }
 
 export interface ConnectionEdgeData extends Record<string, unknown> {
@@ -47,6 +61,8 @@ export interface ConnectionEdgeData extends Record<string, unknown> {
   readonly hasError: boolean;
   /** Simulated requests per second over the connection, or null without a simulation. */
   readonly rate: number | null;
+  /** Health of the component the connection leads to, or null without a simulation. */
+  readonly targetHealth: Health | null;
 }
 
 export interface ProjectionInput {
@@ -58,6 +74,8 @@ export interface ProjectionInput {
   readonly selection: Selection;
   readonly slotArmed: boolean;
   readonly metrics?: CanvasLoad | undefined;
+  /** Open findings per component, for badges. */
+  readonly findings?: ReadonlyMap<string, NodeFindings> | undefined;
 }
 
 /**
@@ -130,9 +148,27 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         autoscaleMax: component.autoscale?.max ?? null,
         running: input.metrics?.components.get(component.id)?.instances ?? null,
         hotShard: hotShardOf(input.metrics?.components.get(component.id)),
+        health: healthOf(input.metrics?.components.get(component.id)),
+        findings: input.findings?.get(component.id) ?? null,
       },
     };
   });
+}
+
+/** Failing or overloaded is critical; close to capacity, on any shard, is a warning. */
+export function healthOf(
+  metrics:
+    | {
+        readonly utilization: number;
+        readonly hottestShardUtilization: number;
+        readonly faults: readonly string[];
+      }
+    | undefined,
+): Health | null {
+  if (!metrics) return null;
+  const busiest = Math.max(metrics.utilization, metrics.hottestShardUtilization);
+  if (metrics.faults.length > 0 || busiest > 1) return "critical";
+  return busiest > WARN_UTILIZATION ? "warn" : "ok";
 }
 
 /** Hot shards worth pointing out: noticeably busier than the tier as a whole. */
@@ -179,6 +215,7 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
       emphasis: emphasisOf(highlight, highlight?.connections.has(connection.id) ?? false),
       hasError: erroneous.has(connection.id),
       rate: input.metrics ? (input.metrics.connections.get(connection.id) ?? 0) : null,
+      targetHealth: healthOf(input.metrics?.components.get(connection.to)),
     },
   }));
 }

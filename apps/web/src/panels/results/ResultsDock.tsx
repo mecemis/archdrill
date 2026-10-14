@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from "lucide-react";
 import { activePack } from "../../state/content";
 import { useEvaluation } from "../../state/evaluation";
+import { dockLimit, LIMITS, useLayout } from "../../state/layout";
 import { useUi } from "../../state/ui-store";
 import { IconButton, Tabs } from "../../ui/primitives";
+import { ResizeHandle } from "../../ui/ResizeHandle";
 import { CompareView } from "./CompareView";
 import { Findings } from "./Findings";
 import { IssuesList } from "./IssuesList";
@@ -10,6 +12,11 @@ import { LoadPanel } from "./LoadPanel";
 import { PathExplorer } from "./PathExplorer";
 import { ScoreChip, ScoreSummary } from "./ScoreSummary";
 import { TimelinePanel } from "./TimelinePanel";
+
+/** The drawer's header, which stays when it is collapsed. */
+const COLLAPSED_HEIGHT = 44;
+/** Drag the drawer shorter than this and it collapses to its header. */
+const COLLAPSE_BELOW = LIMITS.dock.min - 40;
 
 export function ResultsDock() {
   const { analysis, scenarios } = useEvaluation();
@@ -30,12 +37,39 @@ export function ResultsDock() {
     0,
   );
   const open = dock !== "min";
+  const dragged = useLayout((s) => s.dock);
+  const height = dock === "min" ? COLLAPSED_HEIGHT : dragged;
+
+  /** Dragging below the collapse point folds the drawer to its header; dragging up opens it. */
+  const resize = (next: number) => {
+    if (next < COLLAPSE_BELOW) {
+      setDock("min");
+      return;
+    }
+    setDock("normal");
+    useLayout.getState().setDockHeight(next);
+  };
 
   return (
     <section
       aria-label="Results"
-      className="flex h-full min-h-0 flex-col border-t border-line bg-surface"
+      className="relative flex h-full min-h-0 flex-col border-t border-line bg-surface"
     >
+      <ResizeHandle
+        axis="y"
+        grow={-1}
+        value={height}
+        min={COLLAPSED_HEIGHT}
+        max={dockLimit(window.innerHeight)}
+        label="Resize the results"
+        onResize={resize}
+        onEnd={useLayout.getState().save}
+        onReset={() => {
+          useLayout.getState().reset("dock");
+          setDock("normal");
+        }}
+        className="-top-1"
+      />
       <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line px-3">
         <button
           type="button"
