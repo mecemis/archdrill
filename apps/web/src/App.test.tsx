@@ -113,26 +113,34 @@ function renderApp() {
   );
 }
 
-function form() {
-  return within(screen.getByTestId("add-step-form"));
+/** Chooses a step in the open step picker by what it does. */
+function choose(label: string | RegExp) {
+  const picker = within(screen.getByTestId("step-picker"));
+  const [option] = picker.getAllByRole("button", { name: label });
+  if (!option) throw new Error(`no step "${String(label)}"`);
+  fireEvent.click(option);
 }
 
-function fillSlot(slotIndex: number, fill: () => void) {
-  const slots = within(screen.getByTestId("step-tree")).getAllByRole("button", {
-    name: "Add step",
-  });
-  const slot = slots[slotIndex];
-  if (!slot) throw new Error(`no slot ${slotIndex}`);
-  fireEvent.click(slot);
-  fill();
-  fireEvent.click(form().getByRole("button", { name: "Add step" }));
+/** Changes where an outcome of a step goes: "If not found: 404" → 302. */
+function endOutcomeWith(outcome: string, status: number) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^If ${outcome}:`) }));
+  const menu = within(screen.getByRole("dialog", { name: `What happens if ${outcome}` }));
+  fireEvent.click(menu.getByRole("button", { name: String(status) }));
 }
 
-function respond(status: number) {
-  return () => {
-    fireEvent.click(form().getByRole("button", { name: "Respond" }));
-    fireEvent.change(form().getByLabelText("Status"), { target: { value: String(status) } });
-  };
+/** Opens a step's settings from its options menu. */
+function openSettings(stepId: string) {
+  const card = within(screen.getByTestId(`step-${stepId}`));
+  fireEvent.click(card.getByRole("button", { name: "Step options" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+}
+
+/** The read path of S2: read the link, check its expiry, redirect. */
+function buildReadPath() {
+  fireEvent.click(screen.getByRole("button", { name: "Start the flow" }));
+  choose("Read Link from Links"); // not found → 404 and error → 503 by default
+  choose("Check expiry"); // expired → 410 by default
+  choose("Respond 302 Found");
 }
 
 describe("App", () => {
@@ -149,45 +157,61 @@ describe("App", () => {
     expect(screen.getByText("Waiting for flows")).toBeDefined();
   });
 
-  it("records a redirect flow in the step tree and evaluates it", () => {
+  it("builds a redirect flow as a list of steps and evaluates it", () => {
     renderApp();
 
-    fireEvent.click(screen.getByRole("button", { name: "Start the flow" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.click(form().getByRole("button", { name: "Add step" })); // Links · read Link
-    fillSlot(0, () => fireEvent.click(form().getByRole("button", { name: "Logic" }))); // found → check expiry
-    fillSlot(0, respond(302)); // valid
-    fillSlot(0, respond(410)); // expired
-    fillSlot(0, respond(404)); // notFound
-    fillSlot(0, respond(503)); // error
+    buildReadPath();
 
-    expect(screen.queryAllByRole("button", { name: "Add step" })).toEqual([]);
+    expect(screen.queryByTestId("step-picker")).toBeNull();
+    expect(screen.getByText("Every branch ends with a response.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "If not found: 404" })).toBeDefined();
     expect(screen.getByTestId("scenario-score").textContent).toBe("100");
     expect(screen.getByRole("tab", { name: /Paths/ }).textContent).toContain("4");
   });
 
   it("gives gate feedback when the notFound outcome redirects", () => {
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: "Start the flow" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.click(form().getByRole("button", { name: "Add step" }));
-    fillSlot(0, () => fireEvent.click(form().getByRole("button", { name: "Logic" })));
-    fillSlot(0, respond(302));
-    fillSlot(0, respond(410));
-    fillSlot(0, respond(302)); // notFound → 302: wrong
-    fillSlot(0, respond(503));
+    buildReadPath();
+
+    endOutcomeWith("not found", 302); // wrong: unknown codes must not redirect
 
     expect(screen.getByText("Not passing")).toBeDefined();
     expect(screen.getByText("Unknown codes answer 404")).toBeDefined();
   });
 
-  it("asks which branch to keep when removing a step with several continuations", () => {
+  it("lets an outcome run steps of its own", () => {
+    renderApp();
+    buildReadPath();
+
+    fireEvent.click(screen.getByRole("button", { name: /^If error:/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Do something else first/ }));
+    choose("Read Link from Links"); // try the read once more
+
+    expect(screen.getByRole("button", { name: "If error: steps below" })).toBeDefined();
+    expect(screen.getByText("If error:")).toBeDefined();
+  });
+
+  it("inserts a step in front of another and carries on into it", () => {
+    renderApp();
+    buildReadPath();
+    const read = within(screen.getByTestId("step-read-link"));
+
+    fireEvent.click(read.getByRole("button", { name: "Step options" }));
+    fireEvent.click(screen.getByRole("button", { name: /Insert a step before/ }));
+    choose("Check status");
+
+    const flow = useAttemptStore.getState().attempt.flows.find((f) => f.operation === "redirect");
+    expect(flow?.root).toBe("check-status");
+    expect(flow?.steps["check-status"]).toMatchObject({ next: { active: "read-link" } });
+  });
+
+  it("removes a step and joins what came before to what followed", () => {
     useAttemptStore.getState().replace(cacheAsideAttempt());
     renderApp();
-    const tree = within(screen.getByTestId("step-tree"));
+    const first = within(screen.getByTestId("step-get"));
 
-    fireEvent.click(tree.getAllByRole("button", { name: "Remove step" })[0] as HTMLElement);
-    fireEvent.click(tree.getByRole("button", { name: /on miss: Postgres · read Link/ }));
+    fireEvent.click(first.getByRole("button", { name: "Step options" }));
+    fireEvent.click(screen.getByRole("button", { name: /Remove step/ }));
 
     const flow = useAttemptStore.getState().attempt.flows[0];
     expect(flow?.root).toBe("read");
@@ -224,11 +248,12 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Flow" }));
     fireEvent.click(screen.getByRole("button", { name: "Start the flow" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.change(form().getByLabelText("Component"), { target: { value: "kgs" } });
-    expect(form().queryByLabelText("Entity")).toBeNull();
-    fireEvent.change(form().getByLabelText(/Batch size/), { target: { value: "1000" } });
-    fireEvent.click(form().getByRole("button", { name: "Add step" }));
+    choose("Get a new id from KGS");
+    const id = useAttemptStore.getState().attempt.flows.find((f) => f.operation === "create-link")
+      ?.root as string;
+    openSettings(id);
+    fireEvent.change(screen.getByLabelText(/Batch size/), { target: { value: "1000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     const flow = useAttemptStore
       .getState()
@@ -236,7 +261,9 @@ describe("App", () => {
     const root = flow ? flow.steps[flow.root ?? ""] : undefined;
     expect(root).toMatchObject({ type: "call", action: "ids.allocate", batchSize: 1000 });
     expect(root && "entity" in root ? root.entity : undefined).toBeUndefined();
-    expect(screen.getByText("KGS · allocate id (batch 1,000)")).toBeDefined();
+    const card = within(screen.getByTestId(`step-${id}`));
+    expect(card.getByText("Get a new id from KGS")).toBeDefined();
+    expect(card.getByText("batch 1,000")).toBeDefined();
   });
 
   it("shows the ingress route while the flow has errors", () => {
@@ -435,8 +462,8 @@ describe("App with background work", () => {
     ).toBeDefined();
     expect(screen.getByText(/^Optional: a consumer of Link created/)).toBeDefined();
     expect(screen.getByText("Takes Link created messages from Link events.")).toBeDefined();
-    expect(screen.getAllByText(/finish: 200 done$/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/finish: 503 try again later$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/200 done/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/503 try again later/).length).toBeGreaterThan(0);
   });
 
   it("asks a consumer's service to connect to the queue when it receives nothing", () => {
@@ -455,12 +482,14 @@ describe("App with background work", () => {
     renderApp();
     chooseOperation("disable-link");
 
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.change(form().getByLabelText("Component"), { target: { value: "queue" } });
-    expect(form().getByLabelText("Event")).toBeDefined();
-    fireEvent.click(form().getByRole("button", { name: "Add step" }));
+    choose("Publish Link created to Link events");
 
-    expect(screen.getByText("Link events · publish Link created")).toBeDefined();
+    const root = useAttemptStore
+      .getState()
+      .attempt.flows.find((f) => f.operation === "disable-link")?.root as string;
+    expect(
+      within(screen.getByTestId(`step-${root}`)).getByText("Publish Link created to Link events"),
+    ).toBeDefined();
   });
 
   it("offers batches that collect items to jobs, not to requests", () => {
@@ -471,22 +500,21 @@ describe("App with background work", () => {
     });
     renderApp();
     chooseOperation("purge-expired");
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.change(form().getByLabelText("Component"), { target: { value: "db" } });
-    fireEvent.change(form().getByLabelText("Action"), { target: { value: "store.delete" } });
+    choose(/^Delete Link from /);
+    openSettings("delete-link");
 
-    expect(form().getByLabelText(/items wait for the batch to fill/)).toBeDefined();
+    expect(screen.getByLabelText(/items wait for the batch to fill/)).toBeDefined();
 
-    fireEvent.click(form().getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    useAttemptStore.getState().dispatch("removeFlow", { operation: "disable-link" });
     useAttemptStore
       .getState()
       .dispatch("createFlow", { operation: "disable-link", handler: "api" });
     chooseOperation("disable-link");
-    fireEvent.click(screen.getByRole("button", { name: "Add the first step" }));
-    fireEvent.change(form().getByLabelText("Component"), { target: { value: "db" } });
-    fireEvent.change(form().getByLabelText("Action"), { target: { value: "store.delete" } });
+    choose(/^Delete Link from /);
+    openSettings("delete-link");
 
-    expect(form().queryByLabelText(/Batch size/)).toBeNull();
+    expect(screen.queryByLabelText(/Batch size/)).toBeNull();
   });
 });
 

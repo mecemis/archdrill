@@ -53,8 +53,8 @@ export function showMe(step: GuideStepId, guide: Guide): void {
         selector: '[data-tour="open-slot"]',
         text:
           step === "first-step"
-            ? "Pick a suggestion to add the first step, or Add the first step to choose any."
-            : "Each open branch needs what happens next: pick a suggestion, or a response.",
+            ? "Choose what the service does first: a call, a decision or a response."
+            : "Choose what happens next here, or end the request with a response.",
       });
       return;
     case "score":

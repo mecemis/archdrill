@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { choose } from "./flow";
 
 // A first visit: nothing remembered yet.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -29,15 +30,10 @@ test("welcomes a first visit and guides it from an empty canvas to a score", asy
 
   await guide.getByRole("button", { name: "Show me" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
-  // One-click suggestions: the conditional insert, then each of its outcomes.
-  await page.getByRole("button", { name: "Add step: PostgreSQL · insert if absent Link" }).click();
+  // A conflict answers 409 and an error 503 by default; success needs a response.
+  await choose(page, "Write Link to PostgreSQL if its key is free");
   await expect(page.getByText("PostgreSQL now stores Link.")).toBeVisible();
-  for (let i = 0; i < 3; i++) {
-    await page
-      .getByRole("button", { name: /^Add step: Respond/ })
-      .first()
-      .click();
-  }
+  await choose(page, "Respond 201 Created");
 
   await expect(page.getByTestId("scenario-score")).toBeVisible();
   await expect(guide).toContainText("6/6");
@@ -59,22 +55,4 @@ test("opens an example design from the help menu, and undo brings the own design
   await expect(page.getByTestId("scenario-score")).toHaveText("100");
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText("Waiting for flows")).toBeVisible();
-});
-
-test("answers every open error with 503 in one click", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "I'll explore on my own" }).click();
-  await page.getByRole("tab", { name: "Components" }).click();
-  await page.getByRole("button", { name: "Service", exact: true }).click();
-  await page.getByRole("button", { name: "PostgreSQL", exact: true }).click();
-  await connect(page, "visitors", "service-1");
-  await connect(page, "service-1", "relational-db-1");
-  await page.getByRole("tab", { name: "Flow" }).click();
-  await page.getByRole("button", { name: "Start the flow" }).click();
-  await page.getByRole("button", { name: "Add step: PostgreSQL · insert if absent Link" }).click();
-
-  await page.getByRole("button", { name: "Answer the open error with 503" }).click();
-
-  await expect(page.getByText("respond 503 Service Unavailable")).toBeVisible();
-  await expect(page.getByText("2 open branches left")).toBeVisible();
 });

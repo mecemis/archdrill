@@ -1,31 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
+import { choose } from "./flow";
 
 async function connect(page: Page, from: string, to: string) {
   const source = page.locator(`.react-flow__node[data-id="${from}"] .react-flow__handle.source`);
   const target = page.locator(`.react-flow__node[data-id="${to}"] .react-flow__handle.target`);
   await source.dragTo(target);
   await expect(page.locator(`.react-flow__edge[data-id="${from}--${to}"]`)).toHaveCount(1);
-}
-
-async function fillNextSlot(page: Page, fill: () => Promise<void>) {
-  await page
-    .getByTestId("step-tree")
-    .getByRole("button", { name: "Add step", exact: true })
-    .first()
-    .click();
-  await fill();
-  await page
-    .getByTestId("add-step-form")
-    .getByRole("button", { name: "Add step", exact: true })
-    .click();
-}
-
-function respond(page: Page, status: string) {
-  return async () => {
-    const form = page.getByTestId("add-step-form");
-    await form.getByRole("button", { name: "Respond" }).click();
-    await form.getByLabel("Status").selectOption(status);
-  };
 }
 
 test("builds a read path from an empty canvas and gets it evaluated", async ({ page }) => {
@@ -56,18 +36,10 @@ test("builds a read path from an empty canvas and gets it evaluated", async ({ p
   await page.getByRole("button", { name: /S2 Redirect/ }).click();
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
-  await page.getByRole("button", { name: "Add the first step" }).click();
-  await page
-    .getByTestId("add-step-form")
-    .getByRole("button", { name: "Add step", exact: true })
-    .click();
-  await fillNextSlot(page, () =>
-    page.getByTestId("add-step-form").getByRole("button", { name: "Logic" }).click(),
-  );
-  await fillNextSlot(page, respond(page, "302"));
-  await fillNextSlot(page, respond(page, "410"));
-  await fillNextSlot(page, respond(page, "404"));
-  await fillNextSlot(page, respond(page, "503"));
+  // Not found → 404, an error → 503 and expired → 410 come with the steps.
+  await choose(page, "Read Link from DynamoDB");
+  await choose(page, "Check expiry");
+  await choose(page, "Respond 302 Found");
 
   await expect(page.getByTestId("scenario-score")).toHaveText("100");
   await expect(page.getByText("Excellent")).toBeVisible();
@@ -88,12 +60,8 @@ test("points at the gate that a broken flow fails", async ({ page }) => {
   await page.getByRole("button", { name: /S2 Redirect/ }).click();
   await page.getByRole("tab", { name: "Flow" }).click();
   await page.getByRole("button", { name: "Start the flow" }).click();
-  await page.getByRole("button", { name: "Add the first step" }).click();
-  await page
-    .getByTestId("add-step-form")
-    .getByRole("button", { name: "Add step", exact: true })
-    .click();
-  await fillNextSlot(page, respond(page, "302")); // found: redirect without checking expiry
+  await choose(page, "Read Link from DynamoDB");
+  await choose(page, "Respond 302 Found"); // found: redirect without checking expiry
 
   await expect(page.getByText("Not passing", { exact: true })).toBeVisible();
   await expect(page.getByText("Expired links never redirect")).toBeVisible();

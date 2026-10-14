@@ -5,7 +5,6 @@ import {
   type Flow,
   feasibleOutcomes,
   liveStepIds,
-  outcomeTone,
   type Problem,
   type StepInput,
 } from "@archdrill/model";
@@ -87,30 +86,4 @@ export function openSlots(flow: Flow, attempt: Attempt): Attach[] {
     }
   }
   return slots;
-}
-
-/** Open branches where a call failed: usually answered with 503. */
-export function openErrorSlots(flow: Flow, attempt: Attempt): Attach[] {
-  return openSlots(flow, attempt).filter(
-    (slot) => slot.to === "outcome" && outcomeTone(slot.outcome) === "error",
-  );
-}
-
-/** The status every unanswered error gets: the service cannot serve the request now. */
-export const ERROR_STATUS = 503;
-
-/** Answers every open error branch with 503, as one undoable change. */
-export function answerOpenErrors(flow: Flow): boolean {
-  const store = useAttemptStore.getState();
-  const slots = openErrorSlots(flow, store.attempt);
-  return store.dispatchAll(
-    slots.map((attach) => ({
-      name: "addStep" as const,
-      args: {
-        operation: flow.operation,
-        step: { type: "respond" as const, status: ERROR_STATUS },
-        attach,
-      },
-    })),
-  );
 }

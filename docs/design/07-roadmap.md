@@ -422,6 +422,8 @@ Unlike a decorative animation, every cue comes from the simulation: the shown en
 
 A first scenario now takes a handful of clicks from an empty canvas to a score.
 
+The flow editor was then rebuilt around a top-to-bottom list of steps in plain sentences. One searchable picker chooses each step, and outcomes that end a request get their conventional response, changeable in place. It replaces the indented tree and its per-branch forms.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).
