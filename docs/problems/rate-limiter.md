@@ -67,8 +67,8 @@ One key sends 300,000 requests a second.
 
 | ID | Design | Scenarios |
 |---|---|---|
-| `redis-sliding-counter` | Block marker in an in-process cache → atomic increment in Redis (12 shards × 2, 5 ms timeout, breaker) → `checkLimit` → backend or a one-second block and 429; on a Redis error, a server's own count and `checkLocalLimit`. Sliding window counter. | S1, S2, S3 |
-| `redis-token-bucket` | The same without a block marker, with a token bucket. A runaway client saturates its shard. | S1, S2 |
+| `redis-sliding-counter` | Block marker in an in-process cache → atomic increment in Redis (4 shards × 2, 5 ms timeout, breaker) → `checkLimit` → backend or a one-second block and 429; on a Redis error, a server's own count and `checkLocalLimit`. Sliding window counter. | S1, S2, S3 |
+| `redis-token-bucket` | The same without a block marker, with a token bucket. A runaway client runs its shard at 90%, past the 85% headroom. | S1, S2 |
 
 Eleven mutants cover:
 - the gates: no limit check, and over-limit requests forwarded;

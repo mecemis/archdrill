@@ -37,7 +37,7 @@ attempt:
         size: l
         replicas: 20
         autoscale: { max: 120, targetUtilization: 0.7 }
-      - { id: redis, kind: cache, flavor: redis, label: Sessions and sequences, size: m, shards: 8, replicas: 2 }
+      - { id: redis, kind: cache, flavor: redis, label: Sessions and sequences, size: m, shards: 4, replicas: 2 }
       - id: messages-db
         kind: wide-column-db
         flavor: cassandra

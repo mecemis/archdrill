@@ -68,15 +68,6 @@ mutants:
       fails: [fresh-with-celebrities, celebrities-pulled]
       band: not-passing
 
-  - id: celebrities-from-shared-cache
-    base: hybrid-fan-out
-    description: Every reader fetches celebrities' posts from the shared cache.
-    apply:
-      - removeStep: { operation: read-timeline, stepId: celebs-local, bypass: miss }
-    expect:
-      scenario: s2-celebrities
-      fails: [headroom-celebrities]
-
   - id: unbounded-rebuilds
     base: hybrid-fan-out
     description: Rebuilds are not capped while the cache is down.

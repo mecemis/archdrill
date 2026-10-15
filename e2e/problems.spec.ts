@@ -23,7 +23,7 @@ test("passes every rate limiter scenario with a shared counter and a block marke
   }
 });
 
-test("shows a runaway client saturating the shard that counts it", async ({ page }) => {
+test("shows a runaway client taking the headroom of the shard that counts it", async ({ page }) => {
   await importGolden(page, "redis-sliding-counter", "rate-limiter");
   await page.getByRole("button", { name: /S3 / }).click();
   await page.getByRole("tab", { name: "Flow" }).click();

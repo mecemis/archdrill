@@ -243,8 +243,8 @@ kinds:
           s:
             label: 13 GB
             memoryGb: 13.07
-            capacityPerSec: { read: 100000, write: 80000 }
-            latencyMs: { base: 0.5, cv: 0.6 }
+            capacityPerSec: { read: 110000, write: 110000 }
+            latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.206
             standsFor: cache.r6g.large (ElastiCache, Redis OSS)
             provenance:
@@ -253,11 +253,16 @@ kinds:
               memoryGb:
                 published: aws-elasticache-price-list
                 note: Memory left for data after the node's own reservation.
+              capacityPerSec:
+                model: AWS measured about 106,000 GETs and as many SETs a second on this node with redis-benchmark's 50 clients, each waiting for its reply before sending again; the replay (calibration "redis-benchmark-r6g-large") reproduces it at 110,000. Two vCPUs leave little room for Redis 7's I/O threads.
+                basis:
+                  - aws-elasticache-r6g-large
+                  - redis-benchmarks
           m:
             label: 26 GB
             memoryGb: 26.32
-            capacityPerSec: { read: 150000, write: 120000 }
-            latencyMs: { base: 0.5, cv: 0.6 }
+            capacityPerSec: { read: 400000, write: 400000 }
+            latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.411
             standsFor: cache.r6g.xlarge (ElastiCache, Redis OSS)
             provenance:
@@ -269,8 +274,8 @@ kinds:
           l:
             label: 52 GB
             memoryGb: 52.82
-            capacityPerSec: { read: 200000, write: 160000 }
-            latencyMs: { base: 0.5, cv: 0.6 }
+            capacityPerSec: { read: 600000, write: 600000 }
+            latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.821
             standsFor: cache.r6g.2xlarge (ElastiCache, Redis OSS)
             provenance:
@@ -278,18 +283,24 @@ kinds:
                 published: elasticache-r6g-2xlarge
               memoryGb:
                 published: elasticache-r6g-2xlarge
+              capacityPerSec:
+                model: Half again the 4-vCPU node's measured 400,000. With eight cores Redis 7.1 moves more of the network work off the command thread; AWS reports up to twice 7.0's throughput on such nodes and over a million commands a second on a 16-vCPU Graviton3 node. An assumption between the two.
+                basis:
+                  - aws-elasticache-io-multiplexing
+                  - aws-elasticache-71
         defaultSize: m
-        notes: Command execution is single-threaded per node. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
+        notes: Commands run on one thread per node, with Redis 7's I/O threads handling the network around it. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
         provenance:
           capacityPerSec:
-            model: "One Redis node executes commands on a single thread: about 100,000 to 200,000 small commands a second without pipelining, more on larger nodes with Redis 7.1's I/O threads. Writes cost a little more."
+            model: "AWS measured 395,819 small commands a second (80% GET, 20% SET) on a 4-vCPU node running Redis 7, whose I/O threads take the network work off the command thread; the replay (calibration \"elasticache-redis-7\") reproduces it, and the throughput with 2,000 and 5,200 clients, at 400,000. GETs and SETs cost the same: redis-benchmark measures them within 1% of each other."
             basis:
-              - redis-benchmarks
-              - aws-elasticache-71
+              - aws-elasticache-io-multiplexing
+              - aws-elasticache-r6g-large
           latencyMs:
-            model: Half a millisecond inside the node for a small command.
+            model: "0.35 ms inside the node for a small command, network excluded. With a tenth of a millisecond for a round trip within the zone, it reproduces AWS's median of 0.44 ms at 142,000 commands a second, and the latencies redis-benchmark's 50 clients see."
             basis:
-              - redis-benchmarks
+              - aws-elasticache-io-multiplexing
+              - aws-elasticache-r6g-large
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.
@@ -297,8 +308,8 @@ kinds:
           m:
             label: 26 GB
             memoryGb: 26.32
-            capacityPerSec: { read: 300000, write: 250000 }
-            latencyMs: { base: 0.5, cv: 0.6 }
+            capacityPerSec: { read: 400000, write: 400000 }
+            latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.411
             standsFor: cache.r6g.xlarge (ElastiCache, Memcached)
             provenance:
@@ -308,12 +319,13 @@ kinds:
               memoryGb:
                 published: aws-elasticache-price-list
               capacityPerSec:
-                model: Multi-threaded, so a 4-vCPU node takes about twice the commands of a single-threaded Redis node. An assumption.
+                model: Memcached spreads commands over a thread per core. Taken equal to Redis 7 on the same node, whose I/O threads do the same for the network work; an assumption.
                 basis:
-                  - redis-benchmarks
+                  - aws-elasticache-io-multiplexing
               latencyMs:
-                model: Half a millisecond inside the node for a small command; an assumption.
-                basis: []
+                model: Taken equal to Redis's calibrated 0.35 ms for a small command on the same node; an assumption.
+                basis:
+                  - aws-elasticache-io-multiplexing
         defaultSize: m
         notes: Nodes are independent; use shards for capacity. Memcached has no replication, so replicas only model extra nodes holding the same keys.
 
@@ -368,12 +380,13 @@ kinds:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
           capacityPerSec:
-            model: pgbench measures about 15,000 in-memory primary-key reads a second per vCPU and about 1,600 TPC-B-like transactions per vCPU. The catalog takes about a sixth of the read figure (2,500 per vCPU) to cover network round trips, connection handling and real queries, and about 600 single-row writes per vCPU.
+            model: pgbench measures about 15,000 in-memory primary-key reads a second per vCPU and about 1,600 TPC-B-like transactions per vCPU. The catalog's reads stand for real queries at six times a pgbench select's work, so it takes a sixth of the read figure (2,500 per vCPU), and about 600 single-row writes per vCPU. Replayed at a sixth of the work (calibration "pgbench-select-only"), the 2-vCPU size reproduces every pgbench run up to 50 clients.
             basis:
               - pgbench-selfhost
           latencyMs:
-            model: Two milliseconds for an indexed lookup or a single-row insert, with a coefficient of variation of 1 for the occasional slow query. An assumption.
-            basis: []
+            model: Two milliseconds for an indexed lookup or a single-row insert on a real query, with a coefficient of variation of 1 for the occasional slow query. A sixth of it, a third of a millisecond, reproduces pgbench's latencies for its lighter selects.
+            basis:
+              - pgbench-selfhost
       - id: mysql
         label: MySQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
@@ -528,19 +541,36 @@ kinds:
         sizes:
           m:
             label: 4 vCPU
-            capacityPerSec: { read: 40000, write: 10000 }
-            latencyMs: { base: 3, cv: 0.6 }
+            capacityPerSec: { read: 23000, write: 22000 }
+            latencyMs: { base: 1.5, cv: 0.6 }
             costPerHour: 0.17
             standsFor: c6i.xlarge (EC2, 4 vCPU) per member
             provenance:
               costPerHour:
                 published: ec2-c6i-prices
               capacityPerSec:
-                model: "etcd's benchmark on three 8-vCPU members: about 44,000 to 50,000 writes a second at 20 ms with 1,000 clients, and 141,000 linearizable reads. A 4-vCPU member kept at low latency is taken at 10,000 writes and 40,000 reads."
+                model: Half the calibrated 8-vCPU member's throughput, taking etcd's work to scale with its cores; an assumption.
                 basis:
                   - etcd-performance
               latencyMs:
-                model: "A few milliseconds: a quorum round within one zone."
+                model: The 8-vCPU member's calibrated 1.5 ms. A lone write waits on a quorum round and a disk sync, not on cores.
+                basis:
+                  - etcd-performance
+          l:
+            label: 8 vCPU
+            capacityPerSec: { read: 47000, write: 45000 }
+            latencyMs: { base: 1.5, cv: 0.6 }
+            costPerHour: 0.34
+            standsFor: c6i.2xlarge (EC2, 8 vCPU) per member
+            provenance:
+              costPerHour:
+                published: ec2-c6i-prices
+              capacityPerSec:
+                model: "etcd's benchmark on three 8-vCPU members: 44,341 writes a second through the leader with 1,000 clients, which the replay (calibration \"etcd-writes\") reproduces at 45,000; and 141,578 linearizable reads spread over the three, about 47,000 each. Only the leader takes writes, so members add read capacity only."
+                basis:
+                  - etcd-performance
+              latencyMs:
+                model: "1.5 ms for a write inside the cluster: a quorum round within one zone and a disk sync. With a tenth of a millisecond for the client's round trip it reproduces the benchmark's 1.6 ms for a lone client. The engine gives a component one service time, so reads take a write's 1.5 ms where etcd measures 0.7 ms for a linearizable read."
                 basis:
                   - etcd-performance
         defaultSize: m
@@ -551,20 +581,21 @@ kinds:
         sizes:
           m:
             label: 4 vCPU
-            capacityPerSec: { read: 40000, write: 10000 }
-            latencyMs: { base: 3, cv: 0.6 }
+            capacityPerSec: { read: 23000, write: 22000 }
+            latencyMs: { base: 1.5, cv: 0.6 }
             costPerHour: 0.17
             standsFor: c6i.xlarge (EC2, 4 vCPU) per server
             provenance:
               costPerHour:
                 published: ec2-c6i-prices
               capacityPerSec:
-                model: "Taken like etcd: writes go through the leader and a quorum. An assumption."
+                model: "Taken like etcd's 4-vCPU member: writes go through the leader and a quorum. An assumption."
                 basis:
                   - etcd-performance
               latencyMs:
-                model: "A few milliseconds: a quorum round within one zone; an assumption."
-                basis: []
+                model: "Taken like etcd: a quorum round within one zone and a disk sync. An assumption."
+                basis:
+                  - etcd-performance
         defaultSize: m
         notes: Writes go through the leader and a quorum. Keep it off the per-request path.
 
@@ -969,6 +1000,18 @@ sources:
     publisher: Redis
     kind: benchmark
     retrieved: 2026-10-14
+  - id: aws-elasticache-io-multiplexing
+    title: "New for Amazon ElastiCache for Redis 7: Get up to 72% better throughput with enhanced I/O multiplexing"
+    url: https://aws.amazon.com/blogs/database/enhanced-io-multiplexing-for-amazon-elasticache-for-redis/
+    publisher: AWS
+    kind: benchmark
+    retrieved: 2026-10-15
+  - id: aws-elasticache-r6g-large
+    title: Comparison of Amazon MemoryDB and Amazon ElastiCache (redis-benchmark on cache.r6g.large)
+    url: https://aws.amazon.com/cn/blogs/china/comparison-of-amazon-memorydb-and-amazon-elasticache/
+    publisher: AWS (China blog)
+    kind: benchmark
+    retrieved: 2026-10-15
   - id: aws-elasticache-71
     title: Achieve over 500 million requests per second per cluster with Amazon ElastiCache for Redis 7.1
     url: https://aws.amazon.com/blogs/database/achieve-over-500-million-requests-per-second-per-cluster-with-amazon-elasticache-for-redis-7-1
@@ -1035,3 +1078,77 @@ sources:
     publisher: Google Cloud
     kind: quota
     retrieved: 2026-10-14
+calibrations:
+  - id: pgbench-select-only
+    title: pgbench select-only on 2 vCPUs
+    source: pgbench-selfhost
+    component: { kind: relational-db, flavor: postgres, size: s }
+    setup: >-
+      PostgreSQL 18.4 on a self-managed r6g.large (2 vCPUs, 16 GB), standing
+      in for the 2-vCPU RDS size: pgbench -S with prepared statements, from a
+      client in another VPC of the same region. Medians of three 60-second
+      runs.
+    network: region
+    reads: 1
+    work:
+      ratio: 6
+      why: >-
+        A pgbench select reads one tiny row by primary key with a prepared
+        statement. The catalog's reads stand for real queries, taken at six
+        times the work: replayed, the size does six times its reads a second,
+        each in a sixth of the time.
+    beyondModel: >-
+      PostgreSQL runs a process per connection. With far more connections than
+      cores they contend for locks and CPU, and throughput falls from its peak;
+      the engine holds it at the peak. A connection pool keeps a real database
+      near the peak.
+    runs:
+      - { clients: 4, throughput: 5447, latencyMs: 0.73 }
+      - { clients: 16, throughput: 18811, latencyMs: 0.85 }
+      - { clients: 32, throughput: 29457, latencyMs: 1.09 }
+      - { clients: 50, throughput: 28662, latencyMs: 1.74 }
+      - { clients: 100, throughput: 21495, latencyMs: 4.65, beyondModel: true }
+      - { clients: 200, throughput: 19566, latencyMs: 10.2, beyondModel: true }
+  - id: etcd-writes
+    title: etcd writes on three 8-vCPU members
+    source: etcd-performance
+    component: { kind: coordination, flavor: etcd, size: l, replicas: 3 }
+    setup: >-
+      etcd 3.2.0 on three Google Compute Engine machines with 8 vCPUs, 16 GB
+      and an SSD each, written to through the leader from a 16-vCPU client
+      machine, presumably in the same zone: 8-byte keys and 256-byte values.
+      Current releases are faster.
+    network: zone
+    reads: 0
+    runs:
+      - { clients: 1, throughput: 583, latencyMs: 1.6 }
+      - { clients: 1000, throughput: 44341, latencyMs: 22 }
+  - id: elasticache-redis-7
+    title: ElastiCache for Redis 7 on 4 vCPUs
+    source: aws-elasticache-io-multiplexing
+    component: { kind: cache, flavor: redis, size: m }
+    setup: >-
+      ElastiCache for Redis 7.0.5 on cache.r6g.xlarge (4 vCPUs) with enhanced
+      I/O multiplexing: 80% GET and 20% SET over 3 million 16-byte keys with
+      512-byte values, from clients in the same Availability Zone. The
+      latency was measured at 142,000 commands a second.
+    network: zone
+    reads: 0.8
+    runs:
+      - { clients: 400, throughput: 395819 }
+      - { clients: 2000, throughput: 348550 }
+      - { clients: 5200, throughput: 349239 }
+      - { rate: 142000, p50Ms: 0.44 }
+  - id: redis-benchmark-r6g-large
+    title: redis-benchmark on 2 vCPUs
+    source: aws-elasticache-r6g-large
+    component: { kind: cache, flavor: redis, size: s }
+    setup: >-
+      redis-benchmark with its defaults (50 clients, no pipelining, 3-byte
+      values) against ElastiCache on cache.r6g.large, from a c5.2xlarge client
+      in the same VPC. GETs are shown; SETs measured 106,610, within 1%. The
+      round trips the throughput implies put the client in the same zone.
+    network: zone
+    reads: 1
+    runs:
+      - { clients: 50, throughput: 105597 }

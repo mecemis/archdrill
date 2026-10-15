@@ -29,6 +29,7 @@ Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/00
 - **Model numbers.** A number the catalog derives says how, and on what. For example: `capacityPerSec: { model: "pgbench measures ... ; the catalog takes about a sixth ...", basis: [pgbench-selfhost] }`. With an empty `basis` it shows as an assumption, and the text should say so.
 - **Where it goes.** A provenance on the flavor applies to all of its sizes; a size can override it.
 - **Stands for.** Name the real offering: `standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)`.
+- **Calibrations.** When a benchmark publishes runs (clients and the throughput or latency they saw), add it to `calibrations` ([ADR 0010](../adr/0010-calibrated-against-published-benchmarks.md)): the size it ran on and its replicas, its setup, `network` (`zone` or `region`), the share of `reads`, and the runs as measured. If its requests are lighter than the catalog's, give `work: { ratio, why }`. The content tests replay every run and fail beyond 15%; mark a run the engine is known to miss with `beyondModel: true` and say why in the calibration's `beyondModel`. The calibrated size's throughput and latency must cite the benchmark.
 
 ## problem.yaml
 
