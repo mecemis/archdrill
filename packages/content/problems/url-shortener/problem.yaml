@@ -40,11 +40,13 @@ entities:
     key: clickId
     fields: [clickId, code, at]
     avgBytes: 100
+# bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: create-link
     label: Create link
     method: POST
     path: /links
+    bytes: { request: 800, response: 400 }
     class: write
     idempotent: false
     successStatuses: [201, 400, 409]
@@ -54,6 +56,7 @@ operations:
     label: Redirect
     method: GET
     path: "/{code}"
+    bytes: { request: 600, response: 300 }
     class: read
     idempotent: true
     successStatuses: [301, 302, 307, 308, 404, 410]
@@ -63,6 +66,7 @@ operations:
     label: Disable link
     method: POST
     path: "/links/{code}/disable"
+    bytes: { request: 600, response: 200 }
     class: write
     idempotent: true
     successStatuses: [200, 204, 404]
@@ -97,6 +101,10 @@ operations:
 events:
   - { id: link-created, label: Link created, entity: Link }
   - { id: link-clicked, label: Link clicked, entity: Link }
+# Each click comes from a different visitor, so every redirect opens its own
+# connection, which stays open until the load balancer's 60-second idle
+# timeout closes it.
+client: { flavor: browser, label: Visitors, requestsPerConnection: 1, connectionSec: 60 }
 logic:
   [checkExpiry, validateUrl, checkStatus, hasCustomAlias, generateRandomCode, hashUrl, rehashWithSalt, encodeBase62, obfuscateId, matchThreatList]
 decisionPoints:

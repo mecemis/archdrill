@@ -77,6 +77,8 @@ export interface OperationModel {
   readonly hotBy: ReadonlyMap<string, string>;
   /** What each step of each path costs its target, aligned with `analysis.paths`. */
   readonly costs: readonly (readonly StepCost[])[];
+  /** Bytes of one request and its response on the wire; 0 for work that clients do not send. */
+  readonly wireBytes: number;
 }
 
 /** Whether a step asks for a hot key, for a request of this class. */
@@ -196,6 +198,7 @@ export function buildOperations(
     }),
     publishes: publishedEvents(analysis),
     costs: stepCosts(analysis.paths, ctx),
+    wireBytes: wireBytes(analysis.operation),
   });
   const models: OperationModel[] = [];
   for (const [operationId, rate] of Object.entries(environment.rates)) {
@@ -211,6 +214,11 @@ export function buildOperations(
     }
   }
   return publishersFirst(models);
+}
+
+function wireBytes(operation: Operation): number {
+  const bytes = operation.trigger.type === "request" ? operation.bytes : undefined;
+  return bytes ? bytes.request + bytes.response : 0;
 }
 
 /** The entity a request addresses: its workload's, or for a consumer its event's. */

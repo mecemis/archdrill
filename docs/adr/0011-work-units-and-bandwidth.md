@@ -34,7 +34,7 @@ The engine counted every call as one request, whatever it carried. Two consequen
 ## Known gaps
 
 - **Inbound traffic is not counted.** That is writes, and the copies a primary sends its replicas. Every scenario's limit is on what reads return, and inbound has its own budget of the same size.
-- **Services and load balancers have no bandwidth.** Operations do not carry request and response sizes yet; the load balancer's capacity units need them (next).
+- **Services and load balancers have no bandwidth (proxies closed in M21).** Operations now carry request and response sizes, and proxies count what they forward ([ADR 0012](0012-load-balancer-capacity-units.md)). Services still have no bandwidth.
 - **Bursting is not modelled.** A spike shorter than an instance's burst allowance would get up to 10 Gbps. The engine takes the baseline for every step.
 - **Read consistency is fixed.** Strongly consistent and transactional reads cost DynamoDB two and four times as much, and a design cannot choose them yet.
 - **Packets and connections per second.** The instance-level allowances that EC2 enforces besides bandwidth are not modelled.

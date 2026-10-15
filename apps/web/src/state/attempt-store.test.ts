@@ -9,7 +9,10 @@ describe("attempt store", () => {
     expect(starterAttempt(testProblem).architecture.components.map((c) => c.id)).toEqual([
       "visitors",
     ]);
-    const api = { ...testProblem, client: { flavor: "api-client", label: "API clients" } };
+    const api = {
+      ...testProblem,
+      client: { ...testProblem.client, flavor: "api-client", label: "API clients" },
+    };
     expect(starterAttempt(api).architecture.components[0]).toMatchObject({
       id: "clients",
       flavor: "api-client",

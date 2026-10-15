@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requestPrice, unitsText } from "./ProvenancePanel";
+import { capacityUnitsText, requestPrice, unitsText } from "./ProvenancePanel";
 
 describe("requestPrice", () => {
   it("quotes cheap requests per million, reads and writes apart", () => {
@@ -26,5 +26,18 @@ describe("unitsText", () => {
     expect(unitsText({ per: "request", readBytes: 65536, writeBytes: 65536, readUnits: 1 })).toBe(
       "one per 64 KB, per request's payload",
     );
+  });
+});
+
+describe("capacityUnitsText", () => {
+  it("says what one unit covers on each dimension, and its price", () => {
+    expect(
+      capacityUnitsText({
+        pricePerHour: 0.008,
+        newConnectionsPerSec: 25,
+        activeConnections: 3000,
+        processedGbPerHour: 1,
+      }),
+    ).toBe("$0.008 an hour each: 25 new connections a second, 3,000 open, or 1 GB an hour");
   });
 });

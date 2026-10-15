@@ -40,6 +40,11 @@ kinds:
         label: Managed LB
         description: Cloud-managed HTTP load balancer, redundant across zones (e.g. AWS ALB, Azure Application Gateway).
         managedRedundancy: true
+        capacityUnits:
+          pricePerHour: 0.008
+          newConnectionsPerSec: 25
+          activeConnections: 3000
+          processedGbPerHour: 1
         sizes:
           managed:
             label: managed
@@ -49,7 +54,7 @@ kinds:
             provenance:
               costPerHour:
                 published: aws-alb-pricing
-                note: The hourly charge. Capacity units (LCU), billed by connections and bytes, come with payload sizes.
+                note: The hourly charge; capacity units are billed on top.
               capacityPerSec:
                 model: Managed balancers scale out on their own and AWS publishes no ceiling, so the figure is set where a managed balancer never limits a design. Very sudden spikes may need pre-warming.
                 basis: []
@@ -57,8 +62,20 @@ kinds:
                 model: About a millisecond of added latency; AWS publishes no figure.
                 basis: []
         defaultSize: managed
-        notes: Scales automatically; very sudden extreme spikes may need pre-warming.
+        notes: >-
+          Scales automatically; very sudden extreme spikes may need pre-warming.
+          Billed by the hour plus capacity units: one covers 25 new connections a
+          second, 3,000 open connections or 1 GB processed an hour, whichever
+          needs the most. A client that opens a connection per request costs a
+          unit for every 25 requests a second.
         standsFor: AWS Application Load Balancer
+        provenance:
+          capacityUnits:
+            published: aws-alb-pricing
+            note: >-
+              LCU-hour in US East (N. Virginia), for EC2 and IP targets.
+              Rule evaluations, the fourth dimension, are free for the first 10
+              rules, more than these designs route with.
       - id: nginx
         label: NGINX
         description: Self-managed reverse proxy and load balancer. Run at least two for redundancy.
@@ -68,10 +85,14 @@ kinds:
             capacityPerSec: { read: 50000, write: 50000 }
             latencyMs: { base: 0.5, cv: 0.3 }
             costPerHour: 0.17
+            networkGbps: 1.562
             standsFor: c6i.xlarge (EC2, 4 vCPU)
             provenance:
               costPerHour:
                 published: ec2-c6i-prices
+              networkGbps:
+                published: ec2-compute-optimized-network
+                note: Baseline; c6i.xlarge bursts to 12.5 Gbps for minutes only.
               capacityPerSec:
                 model: NGINX serves about 261,000 requests a second for 1 KB on 4 CPUs as a web server. Proxying costs an upstream connection and TLS per request, so the catalog takes about a fifth of that.
                 basis:
@@ -126,10 +147,14 @@ kinds:
             capacityPerSec: { read: 20000, write: 20000 }
             latencyMs: { base: 1.5, cv: 0.4 }
             costPerHour: 0.17
+            networkGbps: 1.562
             standsFor: c6i.xlarge (EC2, 4 vCPU)
             provenance:
               costPerHour:
                 published: ec2-c6i-prices
+              networkGbps:
+                published: ec2-compute-optimized-network
+                note: Baseline; c6i.xlarge bursts to 12.5 Gbps for minutes only.
               capacityPerSec:
                 model: Kong runs on NGINX; with authentication and rate-limiting plugins it does far less per core than plain proxying. An assumption.
                 basis:
@@ -986,7 +1011,7 @@ sources:
     url: https://aws.amazon.com/elasticloadbalancing/pricing/
     publisher: AWS
     kind: price
-    retrieved: 2026-10-14
+    retrieved: 2026-10-16
   - id: aws-apigw-pricing
     title: Amazon API Gateway pricing
     url: https://aws.amazon.com/api-gateway/pricing/
@@ -1053,6 +1078,12 @@ sources:
     publisher: AWS
     kind: spec
     retrieved: 2026-10-15
+  - id: ec2-compute-optimized-network
+    title: "Amazon EC2 instance types: compute optimized network specifications"
+    url: https://docs.aws.amazon.com/ec2/latest/instancetypes/co.html
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-16
   - id: ec2-memory-optimized-network
     title: "Amazon EC2 instance types: memory optimized network specifications"
     url: https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html

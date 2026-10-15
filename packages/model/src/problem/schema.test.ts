@@ -18,6 +18,23 @@ describe("ProblemSchema operations", () => {
     expect(withOperations([noMethod]).success).toBe(false);
   });
 
+  it("requires request and response sizes for requested operations", () => {
+    const { bytes: _bytes, ...noBytes } = testProblem.operations[0] ?? {};
+
+    expect(withOperations([noBytes]).error?.issues.map((i) => i.message)).toContain(
+      'operation "redirect" is requested by clients, so it needs request and response sizes',
+    );
+  });
+
+  it("rejects sizes on work that clients do not request", () => {
+    const job = testProblem.operations.find((o) => o.trigger.type === "schedule");
+    const sized = { ...job, bytes: { request: 100, response: 100 } };
+
+    expect(withOperations([sized]).error?.issues.map((i) => i.message)).toContain(
+      `operation "${job?.id}" is not requested by clients, so nothing carries its sizes`,
+    );
+  });
+
   it("lets consumers and jobs go without a method and a path", () => {
     expect(withOperations(testProblem.operations).success).toBe(true);
   });
@@ -40,5 +57,18 @@ describe("ProblemSchema operations", () => {
     expect(result.error?.issues.map((i) => i.message)).toContain(
       'event "link-created" is about unknown entity "Nope"',
     );
+  });
+});
+
+describe("ProblemSchema client", () => {
+  it("defaults to visitors who open a connection per request, held for a minute", () => {
+    const { client: _client, ...noClient } = testProblem;
+
+    expect(ProblemSchema.parse(noClient).client).toEqual({
+      flavor: "browser",
+      label: "Visitors",
+      requestsPerConnection: 1,
+      connectionSec: 60,
+    });
   });
 });

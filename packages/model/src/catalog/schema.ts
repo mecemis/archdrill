@@ -54,6 +54,7 @@ export const FLAVOR_NUMBERS = [
   "storagePricePerGbMonth",
   "requestCost",
   "requestUnits",
+  "capacityUnits",
   "perKeyCapacityPerSec",
   "startupSec",
 ] as const;
@@ -78,8 +79,9 @@ export const SizeSchema = z.object({
   maxConnections: z.number().positive().optional(),
   /**
    * Network bandwidth one instance sustains in each direction, in Gbps: the
-   * baseline, since instances burst above it for minutes only. The values
-   * its reads return count against it.
+   * baseline, since instances burst above it for minutes only. What it
+   * sends counts against it: the values its reads return, or for a proxy
+   * the requests and responses it forwards.
    */
   networkGbps: z.number().positive().optional(),
   latencyMs: z.object({
@@ -139,6 +141,23 @@ export const FlavorSchema = z
         writeBytes: z.number().int().positive(),
         /** Units a read takes per readBytes: 0.5 for eventually consistent reads. */
         readUnits: z.number().positive().default(1),
+      })
+      .optional(),
+    /**
+     * Capacity units a managed load balancer bills on top of its hourly
+     * charge (ALB's LCUs). Each hour is billed for the dimension that needs
+     * the most units: new connections, open connections, or bytes processed.
+     */
+    capacityUnits: z
+      .object({
+        /** USD per unit-hour. */
+        pricePerHour: z.number().nonnegative(),
+        /** New client connections a second that one unit covers. */
+        newConnectionsPerSec: z.number().positive(),
+        /** Client connections open at once that one unit covers. */
+        activeConnections: z.number().positive(),
+        /** GB of requests and responses an hour that one unit covers. */
+        processedGbPerHour: z.number().positive(),
       })
       .optional(),
     /** Pay-per-request pricing (e.g. on-demand key-value stores), in USD. */

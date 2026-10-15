@@ -233,6 +233,7 @@ export function propagate(
   const traffic = new Map<string, number>();
   const tallies = new Map<string, CallTally>();
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
+  const fromClients = new Map<string, number>();
   const add = (into: Map<string, Load>, id: string, rate: number, write: boolean, bytes = 0) => {
     const load = into.get(id) ?? { read: 0, write: 0, bytes: 0 };
     const sent = (load.bytes ?? 0) + bytes;
@@ -272,11 +273,14 @@ export function propagate(
     const trigger = op.operation.trigger.type;
     let arriving = rate;
     const route = op.analysis.ingress;
+    const handler = route?.components.at(-1);
     const enter = (id: string) => {
       const write = ingress.writes(op, id);
       const lost = ingress.lost(id, write);
       // Work routed to a failed node is not done there.
-      add(loads, id, arriving * (1 - lost), write);
+      const served = arriving * (1 - lost);
+      // A proxy on the way sends the request on and the response back.
+      add(loads, id, served, write, id === handler ? 0 : served * op.wireBytes);
       arriving *= (1 - ingress.overload(id)) * (1 - lost);
     };
     // Work that starts inside the system enters at the first component on its
@@ -286,6 +290,10 @@ export function propagate(
     route?.connections.forEach((connectionId, index) => {
       const hop = route.components[index + 1];
       addTraffic(connectionId, arriving);
+      // Clients open their connections to the first hop; proxies keep theirs open.
+      if (index === 0 && trigger === "request" && hop) {
+        fromClients.set(hop, (fromClients.get(hop) ?? 0) + arriving);
+      }
       if (hop && op.ingress.includes(hop)) enter(hop);
     });
     let redelivered = 0;
@@ -423,5 +431,6 @@ export function propagate(
     operations: resolved,
     batchArrivals,
     batchedItems,
+    fromClients,
   };
 }

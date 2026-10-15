@@ -1,4 +1,4 @@
-import type { CatalogIndex, Component } from "@archdrill/model";
+import type { CatalogIndex, Component, Flavor } from "@archdrill/model";
 
 export const HOURS_PER_MONTH = 730;
 /** Bytes a second in one gigabit a second. */
@@ -38,6 +38,8 @@ export interface ComponentProfile {
     readonly readPerMillion: number;
     readonly writePerMillion: number;
   } | null;
+  /** Capacity units billed by connections and bytes (a managed load balancer's), or null. */
+  readonly capacityUnits: Flavor["capacityUnits"] | null;
   /** Full copies of the stored data: each replica of a shard holds that shard's data. */
   readonly storageCopies: number;
   readonly storagePricePerGbMonth: number;
@@ -93,6 +95,7 @@ export function componentProfile(
     memoryGb: (size.memoryGb ?? 0) * shards,
     costPerHour: size.costPerHour * instances,
     requestCost: flavor.requestCost ?? null,
+    capacityUnits: flavor.capacityUnits ?? null,
     storageCopies: replicas,
     storagePricePerGbMonth: flavor.storagePricePerGbMonth ?? 0,
   };

@@ -43,11 +43,13 @@ entities:
     fields: [userId, lastSeen]
     avgBytes: 32
     ephemeral: true
+# bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: send-message
     label: Send message
     method: POST
     path: "/conversations/{id}/messages"
+    bytes: { request: 500, response: 100 }
     class: write
     idempotent: false
     successStatuses: [201]
@@ -57,6 +59,7 @@ operations:
     label: Connect
     method: POST
     path: /sessions
+    bytes: { request: 800, response: 300 }
     class: write
     idempotent: true
     successStatuses: [204]
@@ -74,6 +77,7 @@ operations:
     label: Heartbeat
     method: POST
     path: /presence
+    bytes: { request: 100, response: 50 }
     class: write
     idempotent: true
     successStatuses: [204]
@@ -83,6 +87,7 @@ operations:
     label: Read contacts' presence
     method: GET
     path: /contacts/presence
+    bytes: { request: 200, response: 600 }
     class: read
     idempotent: true
     successStatuses: [200]
@@ -95,7 +100,10 @@ counts:
   - { id: offlineRecipients, label: recipients without a connection, default: 0 }
   - { id: mentionedOffline, label: mentioned recipients without a connection, default: 0 }
   - { id: contactsShown, label: contacts on screen, default: 20 }
-client: { flavor: mobile-app, label: App users }
+# Apps hold one WebSocket open while in use (each scenario says how many):
+# 20 million connected and 6,000 connecting a second keep each open for
+# about 55 minutes.
+client: { flavor: mobile-app, label: App users, connectionSec: 3300 }
 logic: [isLargeGroup]
 decisionPoints:
   - id: message-order

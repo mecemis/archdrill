@@ -136,6 +136,22 @@
             "type": "string",
             "minLength": 1
           },
+          "bytes": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "response": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["request", "response"]
+          },
           "trigger": {
             "default": {
               "type": "request"
@@ -295,6 +311,16 @@
         "label": {
           "type": "string",
           "minLength": 1
+        },
+        "requestsPerConnection": {
+          "default": 1,
+          "type": "number",
+          "minimum": 1
+        },
+        "connectionSec": {
+          "default": 60,
+          "type": "number",
+          "exclusiveMinimum": 0
         }
       },
       "required": ["flavor", "label"]

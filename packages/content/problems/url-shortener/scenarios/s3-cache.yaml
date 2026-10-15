@@ -46,10 +46,14 @@ checks:
       This is the scenario's goal. Every read replica stores a full copy of
       ~79 TB of links, and pay-per-request stores bill every redirect, so
       scaling the database tier for 300,000 reads per second is the most
-      expensive way to absorb skewed traffic.
+      expensive way to absorb skewed traffic. A load balancer billed by
+      connections is the other trap: every click is a new visitor's
+      connection.
     fix: >-
       Put a cache in front of the store so the popular links are served from
-      memory, then shrink the store tier to what the misses need.
+      memory, then shrink the store tier to what the misses need. Front the
+      redirects with a proxy fleet sized by throughput rather than a load
+      balancer that bills every new connection.
 
   - id: redirect-backed-by-data
     use: no-path

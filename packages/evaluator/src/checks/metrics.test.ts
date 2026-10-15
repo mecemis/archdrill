@@ -164,6 +164,39 @@ describe("metric checks", () => {
   });
 });
 
+describe("cost-within-budget", () => {
+  it("says what a load balancer's capacity units are for", () => {
+    const check = CHECKS.get("cost-within-budget");
+    if (!check) throw new Error("missing check");
+    const lb = {
+      componentId: "lb",
+      monthlyCost: 23_376,
+      costBreakdown: { instances: 16, requests: 0, capacityUnits: 23_360, storage: 0 },
+      capacityUnits: {
+        units: 4000,
+        by: "new-connections",
+        newConnectionsPerSec: 100_000,
+        activeConnections: 6e6,
+        processedGbPerHour: 324,
+        monthlyCost: 23_360,
+      },
+    };
+    const env = {
+      environment: { id: "avg", label: "Average day", rates: {} },
+      components: new Map([["lb", lb]]),
+      monthlyCost: 23_376,
+      converged: true,
+    } as unknown as EnvironmentMetrics;
+    const ctx = { ...contextFor(cacheAsideAttempt()), metrics: new Map([["avg", env]]) };
+
+    const outcome = check.run(check.params.parse({ environment: "avg", monthlyUsd: 10_000 }), ctx);
+
+    expect(outcome.details).toEqual([
+      "ALB: $23,376/month, $23,360 of it for 4,000 capacity units set by 100,000 new connections a second",
+    ]);
+  });
+});
+
 describe("utilization-below", () => {
   const busy = (networkUtilization: number) =>
     ({
