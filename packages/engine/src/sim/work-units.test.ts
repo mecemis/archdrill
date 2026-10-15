@@ -11,8 +11,9 @@ import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
 import type { CallPathStep, Path } from "../paths/types";
 import { type ComponentProfile, SECONDS_PER_MONTH } from "./capacity";
+import { faultedProfile, NO_FAULT } from "./faults";
 import { simulateEnvironment } from "./simulate";
-import { stepCosts } from "./step-costs";
+import { requestUnitsFor, stepCosts } from "./step-costs";
 import { networkShare, shardUtilizations } from "./summary";
 
 type FlavorEdit = (flavor: Catalog["kinds"][number]["flavors"][number]) => void;
@@ -104,6 +105,21 @@ describe("network bandwidth", () => {
   });
 });
 
+describe("bandwidth under faults", () => {
+  const profile = { outboundBytesPerSec: 1000, readCapacity: 100, writeCapacity: 100, servers: 4 };
+
+  it("goes with lost instances, not with slowness", () => {
+    const halfLost = faultedProfile(profile as ComponentProfile, {
+      ...NO_FAULT,
+      readCapacity: 0.5,
+    });
+    const slow = faultedProfile(profile as ComponentProfile, { ...NO_FAULT, slowFactor: 2 });
+
+    expect(halfLost.outboundBytesPerSec).toBe(500);
+    expect(slow.outboundBytesPerSec).toBe(1000);
+  });
+});
+
 describe("a hot key's share of the network", () => {
   const profile = {
     sharded: true,
@@ -153,9 +169,15 @@ describe("stores that meter a request's payload", () => {
   });
   const costOf = (s: CallPathStep) => stepCosts([{ steps: [s] } as unknown as Path], ctx)[0]?.[0];
 
-  it("counts a batch's whole payload once, not each item", () => {
-    expect(costOf(step({}))).toMatchObject({ units: 1, perRequest: true, perItem: false });
+  it("counts a call's whole payload once, by the items it carries", () => {
+    const cost = costOf(step({ batchSize: 10 }));
+    if (!cost) throw new Error("no cost");
+
+    expect(cost).toMatchObject({ perRequest: true, perItem: false });
+    expect(requestUnitsFor(cost, 1)).toBe(1);
     // Ten 500-byte links are 5,000 bytes: five 1 KB units for the one request.
-    expect(costOf(step({ batchSize: 10 }))?.units).toBe(5);
+    expect(requestUnitsFor(cost, 10)).toBe(5);
+    // A fan-out of 11 in batches of 10 is two calls of 5.5 items: three units each.
+    expect(requestUnitsFor(cost, 5.5)).toBe(3);
   });
 });

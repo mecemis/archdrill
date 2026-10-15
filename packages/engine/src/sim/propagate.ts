@@ -20,7 +20,7 @@ function ownBatchCost(items: number, size: number): number {
 }
 
 import { cacheKey, isHotStep, type OperationModel } from "./setup";
-import type { StepCost } from "./step-costs";
+import { requestUnitsFor, type StepCost } from "./step-costs";
 import {
   batchKey,
   type CallTally,
@@ -343,7 +343,7 @@ export function propagate(
           const work = cost.perItem
             ? carried * cost.units
             : cost.perRequest
-              ? served * cost.units
+              ? served * requestUnitsFor(cost, served > 0 ? carried / served : 1)
               : served *
                 (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
           const bytes = carried * cost.bytes;
