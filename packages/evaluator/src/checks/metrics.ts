@@ -176,11 +176,16 @@ export const utilizationBelow = defineCheck({
       type: "component",
       componentId: c.componentId,
     }));
-    const details = hot.map((c) =>
-      c.hottestShardUtilization > c.utilization + 1e-9
-        ? `${label(ctx, c.componentId)}: its hottest shard at ${percent(c.hottestShardUtilization)} while the tier averages ${percent(c.utilization)}; one hot key lands on one shard`
-        : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`,
-    );
+    const details = hot.map((c) => {
+      const where =
+        c.hottestShardUtilization > c.utilization + 1e-9
+          ? `${label(ctx, c.componentId)}: its hottest shard at ${percent(c.hottestShardUtilization)} while the tier averages ${percent(c.utilization)}; one hot key lands on one shard`
+          : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`;
+      // Say so when the network, not the CPU, is what fills up.
+      return c.networkUtilization >= busiest(c) - 1e-9
+        ? `${where}. The values its reads return fill its network bandwidth.`
+        : where;
+    });
     const overloaded = hot.some((c) => busiest(c) > 1);
     const over = hot
       .filter((c) => busiest(c) > 1)

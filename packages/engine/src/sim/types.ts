@@ -12,6 +12,13 @@ export interface ComponentMetrics {
   readonly utilization: number;
   /** Utilisation of the shard that holds the hot key; equals `utilization` without one. */
   readonly hottestShardUtilization: number;
+  /** Bytes a second its reads return over the network. */
+  readonly bytesOut: number;
+  /**
+   * Share of its outbound bandwidth those bytes take, at the shard that holds
+   * the hot key; 0 where the catalog gives no bandwidth.
+   */
+  readonly networkUtilization: number;
   /** Instances it runs in this environment, after autoscaling. */
   readonly instances: number;
   /** Share of arriving requests rejected because the component is overloaded. */

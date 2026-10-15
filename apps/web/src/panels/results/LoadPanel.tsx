@@ -219,6 +219,16 @@ function ComponentRow({
             hot shard {percent(metrics.hottestShardUtilization, 0)}
           </span>
         )}
+        {metrics.networkUtilization >=
+          Math.max(metrics.utilization, metrics.hottestShardUtilization) - 1e-9 &&
+          metrics.networkUtilization > 0.05 && (
+            <span
+              className={`block text-xs ${metrics.networkUtilization > 1 ? "font-semibold text-bad-fg" : "text-fg-subtle"}`}
+              title={`Its reads return ${compact(metrics.bytesOut / 1e6)} MB/s`}
+            >
+              limited by its network
+            </span>
+          )}
       </td>
       <td>{milliseconds(metrics.latency.mean)}</td>
       <td>

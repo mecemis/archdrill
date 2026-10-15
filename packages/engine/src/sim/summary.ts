@@ -42,7 +42,11 @@ import type {
  */
 export const OVERLOAD_WAIT_MS = 1000;
 
-export type Load = { readonly read: number; readonly write: number };
+/**
+ * What reaches a component a second: reads and writes in its units (requests,
+ * or units of item size where it counts them), and the bytes its reads return.
+ */
+export type Load = { readonly read: number; readonly write: number; readonly bytes?: number };
 
 /** What load propagation found in one pass. */
 export interface Propagation {
@@ -89,14 +93,27 @@ export interface CallTally {
   readonly shortCircuited: number;
 }
 
-export function utilizationOf(load: Load | undefined, profile: ComponentProfile): number {
-  // Open connections take memory, requests take CPU: whichever is fuller limits the component.
-  const held =
-    profile.heldConnections > 0 ? profile.heldConnections / profile.connectionCapacity : 0;
-  if (!load) return held;
+/** Share of the component's request capacity a load takes (CPU, or units where it counts them). */
+function requestShare(load: Load | undefined, profile: ComponentProfile): number {
+  if (!load) return 0;
   const read = Number.isFinite(profile.readCapacity) ? load.read / profile.readCapacity : 0;
   const write = Number.isFinite(profile.writeCapacity) ? load.write / profile.writeCapacity : 0;
-  return Math.max(read + write, held);
+  return read + write;
+}
+
+/** Share of the component's outbound bandwidth the values its reads return take. */
+export function networkShare(load: Load | undefined, profile: ComponentProfile): number {
+  if (!load?.bytes || !Number.isFinite(profile.outboundBytesPerSec)) return 0;
+  return load.bytes / profile.outboundBytesPerSec;
+}
+
+const heldShare = (profile: ComponentProfile) =>
+  profile.heldConnections > 0 ? profile.heldConnections / profile.connectionCapacity : 0;
+
+export function utilizationOf(load: Load | undefined, profile: ComponentProfile): number {
+  // Requests take CPU, returned values take the network, open connections take memory:
+  // whichever is fullest limits the component.
+  return Math.max(requestShare(load, profile), networkShare(load, profile), heldShare(profile));
 }
 
 /** Beyond capacity, the excess share of arrivals is rejected. */
@@ -130,9 +147,21 @@ export function shardUtilizations(
   // One key lives in one partition, which takes only so many writes.
   const keyLimit = (hotLoad?.write ?? 0) / profile.perKeyWriteCapacity;
   if (!profile.sharded) return { normal: all, hottest: Math.max(all, keyLimit) };
-  const hot = utilizationOf(hotLoad, profile);
-  const normal = all - hot;
-  return { normal, hottest: Math.max(profile.shards * hot + normal, keyLimit) };
+  // Each resource on its own: the hot key's share of it lands on one shard.
+  const requests = requestShare(load, profile);
+  const hotRequests = requestShare(hotLoad, profile);
+  const network = networkShare(load, profile);
+  const hotNetwork = networkShare(hotLoad, profile);
+  const held = heldShare(profile);
+  return {
+    normal: Math.max(requests - hotRequests, network - hotNetwork, held),
+    hottest: Math.max(
+      profile.shards * hotRequests + requests - hotRequests,
+      profile.shards * hotNetwork + network - hotNetwork,
+      keyLimit,
+      held,
+    ),
+  };
 }
 
 /** Share of arrivals rejected at a utilisation. */
@@ -208,6 +237,8 @@ export function summarizeComponents(
       : 0;
     const storageGb = (stored.get(id) ?? 0) * profile.storageCopies;
     const instanceCost = profile.costPerHour * HOURS_PER_MONTH;
+    const network = networkShare(load, profile);
+    const hotNetwork = profile.sharded ? networkShare(hotLoad, profile) : 0;
     const storageCost = storageGb * profile.storagePricePerGbMonth;
     metrics.set(id, {
       componentId: id,
@@ -217,6 +248,8 @@ export function summarizeComponents(
       writeCapacity: profile.writeCapacity,
       utilization: utilizationOf(load, profile),
       hottestShardUtilization: shardUtilizations(load, hotLoad, profile).hottest,
+      bytesOut: load.bytes ?? 0,
+      networkUtilization: profile.shards * hotNetwork + network - hotNetwork,
       instances: profile.instances,
       dropRate: drop.get(id) ?? 0,
       retryLoad: flow.retries.get(id) ?? 0,

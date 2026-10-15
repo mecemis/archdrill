@@ -11,19 +11,23 @@ type Field =
   | "costPerHour"
   | "memoryGb"
   | "maxConnections"
+  | "networkGbps"
   | "storagePricePerGbMonth"
   | "requestCost"
+  | "requestUnits"
   | "perKeyCapacityPerSec"
   | "startupSec";
 
 const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
   { field: "requestCost", label: "Request price" },
+  { field: "requestUnits", label: "Request units" },
   { field: "storagePricePerGbMonth", label: "Storage price" },
   { field: "capacityPerSec", label: "Throughput" },
   { field: "perKeyCapacityPerSec", label: "Per-key limit" },
   { field: "maxConnections", label: "Connections" },
   { field: "memoryGb", label: "Memory" },
+  { field: "networkGbps", label: "Network" },
   { field: "latencyMs", label: "Latency" },
   { field: "startupSec", label: "Startup" },
 ];
@@ -45,6 +49,22 @@ export function requestPrice(cost: NonNullable<Flavor["requestCost"]>): string {
   return cost.readPerMillion === cost.writePerMillion
     ? `${per(cost.readPerMillion)} calls`
     : `${per(cost.readPerMillion)} reads, ${per(cost.writePerMillion)} writes`;
+}
+
+/** How a flavor counts units: "a read per 4 KB (½ unit), a write per 1 KB, per item". */
+export function unitsText(units: NonNullable<Flavor["requestUnits"]>): string {
+  const kb = (bytes: number) => `${bytes / 1024} KB`;
+  const half =
+    units.readUnits === 0.5
+      ? " (½ unit)"
+      : units.readUnits === 1
+        ? ""
+        : ` (${units.readUnits} units)`;
+  const reads =
+    units.readBytes === units.writeBytes && units.readUnits === 1
+      ? `one per ${kb(units.readBytes)}`
+      : `reads one per ${kb(units.readBytes)}${half}, writes one per ${kb(units.writeBytes)}`;
+  return `${reads}, ${units.per === "item" ? "per item" : "per request's payload"}`;
 }
 
 /** A number as it reads in the catalog, or null when the component has none. */
@@ -75,6 +95,10 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
       return size?.maxConnections === undefined ? null : `${compact(size.maxConnections)} open`;
     case "memoryGb":
       return size?.memoryGb === undefined ? null : `${size.memoryGb} GB`;
+    case "networkGbps":
+      return size?.networkGbps === undefined ? null : `${size.networkGbps} Gbps each way`;
+    case "requestUnits":
+      return flavor.requestUnits ? unitsText(flavor.requestUnits) : null;
     case "latencyMs":
       return size ? `${size.latencyMs.base} ms` : null;
     case "startupSec":

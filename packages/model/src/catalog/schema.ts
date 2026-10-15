@@ -48,10 +48,12 @@ export const SIZE_NUMBERS = [
   "costPerHour",
   "memoryGb",
   "maxConnections",
+  "networkGbps",
 ] as const;
 export const FLAVOR_NUMBERS = [
   "storagePricePerGbMonth",
   "requestCost",
+  "requestUnits",
   "perKeyCapacityPerSec",
   "startupSec",
 ] as const;
@@ -74,6 +76,12 @@ export const SizeSchema = z.object({
   memoryGb: z.number().positive().optional(),
   /** Open client connections one instance can hold (persistent-connection gateways). */
   maxConnections: z.number().positive().optional(),
+  /**
+   * Network bandwidth one instance sustains in each direction, in Gbps: the
+   * baseline, since instances burst above it for minutes only. The values
+   * its reads return count against it.
+   */
+  networkGbps: z.number().positive().optional(),
   latencyMs: z.object({
     base: z.number().nonnegative(),
     cv: z.number().nonnegative(),
@@ -110,6 +118,28 @@ export const FlavorSchema = z
     perKeyCapacityPerSec: z
       .object({ read: z.number().positive(), write: z.number().positive() })
       .partial()
+      .optional(),
+    /**
+     * Requests count in units of size (DynamoDB's read and write units, SQS's
+     * 64 KB chunks): capacity, request prices and per-key limits are in units.
+     * Sizes round up to whole units, and an item that does not exist still
+     * takes one.
+     */
+    requestUnits: z
+      .object({
+        /**
+         * What a unit measures: each item on its own, so a batch costs every
+         * item's units (DynamoDB), or a request's whole payload, so a batch of
+         * small items is one unit (SQS).
+         */
+        per: z.enum(["item", "request"]),
+        /** Bytes one read unit covers. */
+        readBytes: z.number().int().positive(),
+        /** Bytes one write unit covers. */
+        writeBytes: z.number().int().positive(),
+        /** Units a read takes per readBytes: 0.5 for eventually consistent reads. */
+        readUnits: z.number().positive().default(1),
+      })
       .optional(),
     /** Pay-per-request pricing (e.g. on-demand key-value stores), in USD. */
     requestCost: z

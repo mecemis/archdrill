@@ -68,6 +68,18 @@ mutants:
       fails: [fresh-with-celebrities, celebrities-pulled]
       band: not-passing
 
+  - id: celebrities-from-shared-cache
+    base: hybrid-fan-out
+    description: >-
+      Every reader fetches celebrities' posts from the shared cache: 450,000
+      lookups a second of 1.6 KB entries, about 5.8 Gbps, from the one shard
+      that holds them, whose two nodes send 2.5 Gbps each.
+    apply:
+      - removeStep: { operation: read-timeline, stepId: celebs-local, bypass: miss }
+    expect:
+      scenario: s2-celebrities
+      fails: [headroom-celebrities]
+
   - id: timeline-fleet-capped
     base: hybrid-fan-out
     description: >-

@@ -16,6 +16,7 @@ import {
 import type { Analysis, OperationAnalysis } from "../analyze";
 import { type ComponentProfile, componentProfile } from "./capacity";
 import { type ComponentFault, faultedProfile, NO_FAULT } from "./faults";
+import { type StepCost, stepCosts } from "./step-costs";
 
 /** Share of cache memory usable for entries (allocator and metadata overhead). */
 export const CACHE_FILL_FACTOR = 0.7;
@@ -74,6 +75,8 @@ export interface OperationModel {
   readonly unkeyed: ReadonlySet<string>;
   /** Steps on entities with one hot key for requests with a fact (`hotFor`), by step id. */
   readonly hotBy: ReadonlyMap<string, string>;
+  /** What each step of each path costs its target, aligned with `analysis.paths`. */
+  readonly costs: readonly (readonly StepCost[])[];
 }
 
 /** Whether a step asks for a hot key, for a request of this class. */
@@ -192,6 +195,7 @@ export function buildOperations(
       return c ? !ctx.catalog.capabilities(c.kind, c.flavor).has("traffic-source") : false;
     }),
     publishes: publishedEvents(analysis),
+    costs: stepCosts(analysis.paths, ctx),
   });
   const models: OperationModel[] = [];
   for (const [operationId, rate] of Object.entries(environment.rates)) {

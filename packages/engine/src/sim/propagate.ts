@@ -20,6 +20,7 @@ function ownBatchCost(items: number, size: number): number {
 }
 
 import { cacheKey, isHotStep, type OperationModel } from "./setup";
+import type { StepCost } from "./step-costs";
 import {
   batchKey,
   type CallTally,
@@ -232,11 +233,14 @@ export function propagate(
   const traffic = new Map<string, number>();
   const tallies = new Map<string, CallTally>();
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
-  const add = (into: Map<string, Load>, id: string, rate: number, write: boolean) => {
-    const load = into.get(id) ?? { read: 0, write: 0 };
+  const add = (into: Map<string, Load>, id: string, rate: number, write: boolean, bytes = 0) => {
+    const load = into.get(id) ?? { read: 0, write: 0, bytes: 0 };
+    const sent = (load.bytes ?? 0) + bytes;
     into.set(
       id,
-      write ? { ...load, write: load.write + rate } : { ...load, read: load.read + rate },
+      write
+        ? { read: load.read, write: load.write + rate, bytes: sent }
+        : { read: load.read + rate, write: load.write, bytes: sent },
     );
   };
   const addTraffic = (id: string | null, rate: number) => {
@@ -298,14 +302,17 @@ export function propagate(
       const paths = op.analysis.paths;
       for (let pathIndex = 0; pathIndex < paths.length; pathIndex++) {
         const path = paths[pathIndex] as Path;
+        const costs = op.costs[pathIndex] as readonly StepCost[];
         const once = arriving * cls.share * (probabilities[pathIndex] as number);
         if (once === 0) continue;
         const deliveries = trigger === "event" && !succeeds(path, op) ? MAX_DELIVERIES : 1;
         const weight = once * deliveries;
         redelivered += weight - once;
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
-        for (const step of path.steps) {
+        for (let stepIndex = 0; stepIndex < path.steps.length; stepIndex++) {
+          const step = path.steps[stepIndex] as PathStep;
           if (step.kind !== "call") continue;
+          const cost = costs[stepIndex] as StepCost;
           // Inlined: this loop runs for every step, class and path on every iteration.
           const fan = step.each === undefined ? 1 : (cls.counts[step.each] ?? 0);
           if (fan === 0) continue;
@@ -325,19 +332,30 @@ export function propagate(
           const attempts = callRate * perCall;
           const write = ACTIONS[step.action].effect !== "read";
           const reach = failed ? call.reachOnFailure : call.reachOnSuccess;
-          const work =
-            attempts *
-            reach *
-            (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
-          add(loads, step.target, work, write);
-          if (batches) {
-            const carried = own
-              ? attempts * reach * (fan / fanOutCalls(step, fan))
-              : attempts * reach * (step.batchSize ?? 1);
+          const served = attempts * reach;
+          // Items the served calls carry: a batch's, or one each.
+          const carried = !batches
+            ? served
+            : own
+              ? served * (fan / fanOutCalls(step, fan))
+              : served * (step.batchSize ?? 1);
+          // Targets that meter by size count units: every item's, or every request's payload.
+          const work = cost.perItem
+            ? carried * cost.units
+            : cost.perRequest
+              ? served * cost.units
+              : served *
+                (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
+          const bytes = carried * cost.bytes;
+          add(loads, step.target, work, write, bytes);
+          if (batches && !cost.perItem && !cost.perRequest) {
             add(batchedItems, step.target, carried - work, write);
           }
           // A key spread over counter shards loads each of them with its share.
-          if (hot) add(hotLoads, step.target, work / (step.counterShards ?? 1), write);
+          if (hot) {
+            const spread = step.counterShards ?? 1;
+            add(hotLoads, step.target, work / spread, write, bytes / spread);
+          }
           retries.set(
             step.target,
             (retries.get(step.target) ?? 0) + callRate * Math.max(0, perCall - 1) * reach,

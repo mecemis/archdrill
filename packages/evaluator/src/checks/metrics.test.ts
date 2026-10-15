@@ -164,6 +164,36 @@ describe("metric checks", () => {
   });
 });
 
+describe("utilization-below", () => {
+  const busy = (networkUtilization: number) =>
+    ({
+      environment: { id: "peak", label: "Peak", rates: {} },
+      components: new Map([
+        [
+          "redis",
+          {
+            componentId: "redis",
+            utilization: 0.9,
+            hottestShardUtilization: 0.9,
+            networkUtilization,
+          },
+        ],
+      ]),
+      converged: true,
+    }) as unknown as EnvironmentMetrics;
+  const run = (env: EnvironmentMetrics) => {
+    const check = CHECKS.get("utilization-below");
+    if (!check) throw new Error("missing check");
+    const ctx = { ...contextFor(cacheAsideAttempt()), metrics: new Map([["peak", env]]) };
+    return check.run(check.params.parse({ environment: "peak", max: 0.85 }), ctx);
+  };
+
+  it("says when the network, not the CPU, is what fills up", () => {
+    expect(run(busy(0.9)).details[0]).toContain("fill its network bandwidth");
+    expect(run(busy(0.2)).details[0]).not.toContain("network");
+  });
+});
+
 describe("success-rate-above", () => {
   const createScenario = ScenarioSchema.parse({
     id: "create",

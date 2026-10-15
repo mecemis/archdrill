@@ -85,12 +85,13 @@ checks:
     why: >-
       150,000 readers a second each look up the same few celebrities: those
       keys are hot, one cache shard holds each of them, and only that shard's
-      copies share the reads. The timeline service merging them has to keep
-      up too.
+      copies share the reads. Every lookup returns a list of recent posts, so
+      the shard's network fills before its CPU. The timeline service merging
+      them has to keep up too.
     fix: >-
-      Give the cache's shards read replicas, or serve celebrities' recent
-      posts from an in-process cache in the timeline service, and give the
-      timeline service room for the merge.
+      Serve celebrities' recent posts from an in-process cache in the
+      timeline service, or give the cache's shards more read replicas, and
+      give the timeline service room for the merge.
 
   - id: celebrities-pulled
     use: no-path
