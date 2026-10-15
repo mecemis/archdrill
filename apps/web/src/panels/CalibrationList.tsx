@@ -49,23 +49,25 @@ function replayed(calibration: Calibration): readonly ReplayedRun[] {
   return runs;
 }
 
+/** How far the engine lands from a run: a short figure, so the table fits a narrow panel. */
 function Verdict({ replay }: { readonly replay: ReplayedRun }) {
-  const off = `${Math.round(replay.error * 100)}% off`;
+  const off = `${Math.round(replay.error * 100)}%`;
   if (replay.run.beyondModel) {
     return (
       <span
-        className="whitespace-nowrap rounded bg-warn-soft px-1 text-[10px] font-semibold text-warn-fg"
-        title="The engine does not model what happens here; see below."
+        className="rounded bg-warn-soft px-1 text-[10px] font-semibold text-warn-fg"
+        title={`${off} off: the engine does not model what happens here; see below.`}
       >
-        not modelled
+        n/m
       </span>
     );
   }
   return (
     <span
-      className={`whitespace-nowrap rounded px-1 text-[10px] font-semibold ${
+      className={`rounded px-1 text-[10px] font-semibold ${
         replay.within ? "bg-ok-soft text-ok-fg" : "bg-bad-soft text-bad-fg"
       }`}
+      title={`${off} off the measured run`}
     >
       {off}
     </span>
@@ -102,7 +104,13 @@ function CalibrationCard({ calibration }: { readonly calibration: Calibration })
             <th scope="col" className="py-0.5 font-normal">
               Engine
             </th>
-            <th scope="col" className="py-0.5" aria-label="Verdict" />
+            <th
+              scope="col"
+              className="py-0.5 text-right font-normal"
+              title="How far the engine lands from the run"
+            >
+              Off
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -125,7 +133,7 @@ function CalibrationCard({ calibration }: { readonly calibration: Calibration })
         </tbody>
       </table>
       {calibration.beyondModel && (
-        <span className="text-fg-subtle">Not modelled: {calibration.beyondModel}</span>
+        <span className="text-fg-subtle">Not modelled (n/m): {calibration.beyondModel}</span>
       )}
     </div>
   );

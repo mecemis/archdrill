@@ -246,6 +246,7 @@ kinds:
             capacityPerSec: { read: 110000, write: 110000 }
             latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.206
+            networkGbps: 0.75
             standsFor: cache.r6g.large (ElastiCache, Redis OSS)
             provenance:
               costPerHour:
@@ -253,17 +254,22 @@ kinds:
               memoryGb:
                 published: aws-elasticache-price-list
                 note: Memory left for data after the node's own reservation.
+              networkGbps:
+                published: aws-elasticache-node-types
+                note: Baseline in each direction; the node bursts to 10 Gbps for minutes at a time.
               capacityPerSec:
-                model: AWS measured about 106,000 GETs and as many SETs a second on this node with redis-benchmark's 50 clients, each waiting for its reply before sending again; the replay (calibration "redis-benchmark-r6g-large") reproduces it at 110,000. Two vCPUs leave little room for Redis 7's I/O threads.
+                model: AWS measured about 106,000 GETs and as many SETs a second on this node with redis-benchmark's 50 clients, each waiting for its reply before sending again; the replay (calibration "redis-benchmark-r6g-large") reproduces it at 110,000. ElastiCache gives this node type no enhanced I/O, so Redis 7's I/O threads add nothing here.
                 basis:
                   - aws-elasticache-r6g-large
                   - redis-benchmarks
+                  - aws-elasticache-node-types
           m:
             label: 26 GB
             memoryGb: 26.32
             capacityPerSec: { read: 400000, write: 400000 }
             latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.411
+            networkGbps: 1.25
             standsFor: cache.r6g.xlarge (ElastiCache, Redis OSS)
             provenance:
               costPerHour:
@@ -271,18 +277,25 @@ kinds:
               memoryGb:
                 published: aws-elasticache-price-list
                 note: Memory left for data after the node's own reservation.
+              networkGbps:
+                published: aws-elasticache-node-types
+                note: Baseline in each direction; the node bursts to 10 Gbps for minutes at a time.
           l:
             label: 52 GB
             memoryGb: 52.82
             capacityPerSec: { read: 600000, write: 600000 }
             latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.821
+            networkGbps: 2.5
             standsFor: cache.r6g.2xlarge (ElastiCache, Redis OSS)
             provenance:
               costPerHour:
                 published: elasticache-r6g-2xlarge
               memoryGb:
                 published: elasticache-r6g-2xlarge
+              networkGbps:
+                published: aws-elasticache-node-types
+                note: Baseline in each direction; the node bursts to 10 Gbps for minutes at a time.
               capacityPerSec:
                 model: Half again the 4-vCPU node's measured 400,000. With eight cores Redis 7.1 moves more of the network work off the command thread; AWS reports up to twice 7.0's throughput on such nodes and over a million commands a second on a 16-vCPU Graviton3 node. An assumption between the two.
                 basis:
@@ -311,6 +324,7 @@ kinds:
             capacityPerSec: { read: 400000, write: 400000 }
             latencyMs: { base: 0.35, cv: 0.6 }
             costPerHour: 0.411
+            networkGbps: 1.25
             standsFor: cache.r6g.xlarge (ElastiCache, Memcached)
             provenance:
               costPerHour:
@@ -318,6 +332,9 @@ kinds:
                 note: Memcached nodes cost the same as Redis OSS nodes.
               memoryGb:
                 published: aws-elasticache-price-list
+              networkGbps:
+                published: aws-elasticache-node-types
+                note: Baseline in each direction; the node bursts to 10 Gbps for minutes at a time.
               capacityPerSec:
                 model: Memcached spreads commands over a thread per core. Taken equal to Redis 7 on the same node, whose I/O threads do the same for the network work; an assumption.
                 basis:
@@ -348,31 +365,49 @@ kinds:
             capacityPerSec: { read: 5000, write: 1500 }
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.178
+            networkGbps: 0.781
             standsFor: db.m6i.large (RDS PostgreSQL, 2 vCPU)
             provenance:
               costPerHour:
                 published: aws-rds-price-list
                 note: Single-AZ.
+              networkGbps:
+                model: RDS runs on the EC2 instance of the same name, and AWS lists only its burst figure (up to 12.5 Gbps) for RDS; this is m6i.large's baseline in each direction.
+                basis:
+                  - ec2-general-purpose-network
+                  - ec2-network-bandwidth
           m:
             label: 8 vCPU
             capacityPerSec: { read: 20000, write: 5000 }
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.712
+            networkGbps: 3.125
             standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)
             provenance:
               costPerHour:
                 published: rds-m6i-prices
                 note: Single-AZ.
+              networkGbps:
+                model: RDS runs on the EC2 instance of the same name, and AWS lists only its burst figure (up to 12.5 Gbps) for RDS; this is m6i.2xlarge's baseline in each direction.
+                basis:
+                  - ec2-general-purpose-network
+                  - ec2-network-bandwidth
           l:
             label: 16 vCPU
             capacityPerSec: { read: 40000, write: 10000 }
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 1.424
+            networkGbps: 6.25
             standsFor: db.m6i.4xlarge (RDS PostgreSQL, 16 vCPU)
             provenance:
               costPerHour:
                 published: rds-m6i-prices
                 note: Single-AZ.
+              networkGbps:
+                model: RDS runs on the EC2 instance of the same name, and AWS lists only its burst figure (up to 12.5 Gbps) for RDS; this is m6i.4xlarge's baseline in each direction.
+                basis:
+                  - ec2-general-purpose-network
+                  - ec2-network-bandwidth
         defaultSize: m
         notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
         provenance:
@@ -397,8 +432,14 @@ kinds:
             capacityPerSec: { read: 20000, write: 5000 }
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.712
+            networkGbps: 3.125
             standsFor: db.m6i.2xlarge (RDS MySQL, 8 vCPU)
             provenance:
+              networkGbps:
+                model: RDS runs on the EC2 instance of the same name, and AWS lists only its burst figure (up to 12.5 Gbps) for RDS; this is m6i.2xlarge's baseline in each direction.
+                basis:
+                  - ec2-general-purpose-network
+                  - ec2-network-bandwidth
               costPerHour:
                 model: The published PostgreSQL rate for db.m6i.2xlarge; RDS MySQL lists within a few percent of it.
                 basis:
@@ -430,6 +471,7 @@ kinds:
         capabilities: [atomic-increment]
         storagePricePerGbMonth: 0.25
         requestCost: { readPerMillion: 0.125, writePerMillion: 0.625 }
+        requestUnits: { per: item, readBytes: 4096, writeBytes: 1024, readUnits: 0.5 }
         perKeyCapacityPerSec: { write: 1000 }
         sizes:
           on-demand:
@@ -457,6 +499,9 @@ kinds:
           requestCost:
             published: aws-dynamodb-pricing
             note: "Per million request units: a read unit covers up to 4 KB, a write unit up to 1 KB."
+          requestUnits:
+            published: aws-dynamodb-read-write
+            note: Reads are eventually consistent, the API's default, at half a unit per 4 KB; a strongly consistent read takes a whole one. An update counts the larger of the item's sizes before and after, and a write whose condition fails, or a read of a missing item, still takes its units.
           perKeyCapacityPerSec:
             published: aws-dynamodb-partitions
             note: Every partition delivers at most 3,000 read units and 1,000 write units a second; one item lives in one partition.
@@ -480,10 +525,14 @@ kinds:
             capacityPerSec: { read: 15000, write: 30000 }
             latencyMs: { base: 2, cv: 0.8 }
             costPerHour: 0.504
+            networkGbps: 3.125
             standsFor: r6i.2xlarge (EC2, 8 vCPU, 64 GiB) with gp3 volumes
             provenance:
               costPerHour:
                 published: ec2-r6i-2xlarge
+              networkGbps:
+                published: ec2-memory-optimized-network
+                note: Baseline in each direction; the instance bursts to 12.5 Gbps for minutes at a time.
               capacityPerSec:
                 model: Instaclustr measured about 45,000 insert-only operations a second on 8-vCPU nodes with cassandra-stress, and advises discounting 20-40% for production. The catalog takes 30,000 writes and half as many reads, since a read may touch several SSTables.
                 basis:
@@ -611,6 +660,7 @@ kinds:
         description: Cloud-managed queue (for example Amazon SQS or Azure Service Bus), redundant across zones and scaling with demand.
         managedRedundancy: true
         requestCost: { readPerMillion: 0.4, writePerMillion: 0.4 }
+        requestUnits: { per: request, readBytes: 65536, writeBytes: 65536 }
         sizes:
           on-demand:
             label: on-demand
@@ -635,6 +685,9 @@ kinds:
           requestCost:
             published: aws-sqs-pricing
             note: Per million requests; each 64 KB of payload counts as one request.
+          requestUnits:
+            published: aws-sqs-pricing-page
+            note: A request carries 1 to 10 messages, up to 1 MiB in all, and each 64 KB of its payload is billed as one request; a batch of small messages is one.
       - id: kafka
         label: Kafka
         description: Partitioned, replicated log on brokers you run (or a managed cluster). Run at least three brokers.
@@ -970,6 +1023,42 @@ sources:
     publisher: AWS
     kind: price
     retrieved: 2026-10-14
+  - id: aws-sqs-pricing-page
+    title: Amazon SQS pricing
+    url: https://aws.amazon.com/sqs/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-15
+  - id: aws-dynamodb-read-write
+    title: DynamoDB read and write operations
+    url: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/read-write-operations.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-15
+  - id: aws-elasticache-node-types
+    title: ElastiCache supported node types
+    url: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.SupportedTypes.html
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-15
+  - id: ec2-network-bandwidth
+    title: Amazon EC2 instance network bandwidth
+    url: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-network-bandwidth.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-15
+  - id: ec2-general-purpose-network
+    title: "Amazon EC2 instance types: general purpose network specifications"
+    url: https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-15
+  - id: ec2-memory-optimized-network
+    title: "Amazon EC2 instance types: memory optimized network specifications"
+    url: https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-15
   - id: aws-sqs-quotas
     title: Amazon SQS message quotas
     url: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/quotas-messages.html

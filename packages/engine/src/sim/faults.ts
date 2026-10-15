@@ -205,6 +205,8 @@ export function faultedProfile(profile: ComponentProfile, fault: ComponentFault)
     ...profile,
     readCapacity: (profile.readCapacity * fault.readCapacity) / fault.slowFactor,
     writeCapacity: (profile.writeCapacity * fault.writeCapacity) / fault.slowFactor,
+    // Lost instances take their network with them; a slow one still has all of its own.
+    outboundBytesPerSec: profile.outboundBytesPerSec * fault.readCapacity,
     serviceTimeMs: profile.serviceTimeMs * fault.slowFactor,
     // Concurrency is capacity × service time, so slowness does not change it.
     servers: Math.max(1, Math.round(profile.servers * fault.readCapacity)),

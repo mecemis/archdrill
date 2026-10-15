@@ -450,9 +450,17 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
   - All 123 mutants are caught.
 - **The inspector.** "Checked against benchmarks" shows each run as measured and as replayed.
 
+**Part 5, request units and bandwidth (as built).** Requests are metered as providers meter them, and the network is a resource ([ADR 0011](../adr/0011-work-units-and-bandwidth.md)).
+- **Request units.** DynamoDB counts units of item size: an eventually consistent read takes half a unit per 4 KB, a write one per 1 KB, and a read of a missing item the smallest read. SQS counts a request's payload in 64 KB chunks, so a batch of small messages is one request. Capacity, prices and per-key limits are in units.
+- **Bandwidth.** Caches, relational databases and Cassandra have their baseline bandwidth from AWS (ElastiCache node types, the EC2 instance an RDS class runs on). The values reads return fill it, and a hot key's bytes land on its shard.
+- **The corpus.**
+  - News feed's celebrities-from-shared-cache mutant is back, caught by the network: 450,000 lookups a second of 1.6 KB lists is about 5.8 Gbps on a shard whose nodes send 2.5 each.
+  - DynamoDB reads cost half.
+  - All 124 mutants are caught, and no golden's score changed.
+- **Shown.** The inspector lists request units and bandwidth with their sources. The load panel and the headroom finding say when the network is what fills up.
+
 **Next:**
-- **Work units and sizes.** Requests carry payload sizes and operations carry work units: a 20 KB DynamoDB read costs five read units; bandwidth, data transfer and ALB capacity units follow.
-- **Load balancer capacity units.** ALB bills LCUs by connections and processed bytes, which needs request sizes (see work units above).
+- **Load balancer capacity units.** ALB bills LCUs by new connections, active connections and processed bytes. That needs request and response sizes on operations, and how many requests a client sends over one connection.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

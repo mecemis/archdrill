@@ -1,6 +1,8 @@
 import type { CatalogIndex, Component } from "@archdrill/model";
 
 export const HOURS_PER_MONTH = 730;
+/** Bytes a second in one gigabit a second. */
+export const BYTES_PER_GBIT = 1e9 / 8;
 export const SECONDS_PER_MONTH = HOURS_PER_MONTH * 3600;
 /** Concurrency cap for the queueing model when capacity is effectively unbounded. */
 const MAX_SERVERS = 1_000_000;
@@ -16,6 +18,8 @@ export interface ComponentProfile {
   readonly inProcess: boolean;
   readonly readCapacity: number;
   readonly writeCapacity: number;
+  /** Bytes a second its reads can return over the network, every instance's baseline (infinite when unlimited). */
+  readonly outboundBytesPerSec: number;
   /** Writes a second one key can take, wherever it lives (infinite when only capacity limits it). */
   readonly perKeyWriteCapacity: number;
   /** Client connections the component can hold open (infinite for components that hold none). */
@@ -74,6 +78,11 @@ export function componentProfile(
     inProcess: kind.inProcess,
     readCapacity,
     writeCapacity,
+    // Every instance serves reads, so every instance's outbound bandwidth carries their values.
+    outboundBytesPerSec:
+      size.networkGbps === undefined
+        ? Number.POSITIVE_INFINITY
+        : size.networkGbps * BYTES_PER_GBIT * instances,
     perKeyWriteCapacity: flavor.perKeyCapacityPerSec?.write ?? Number.POSITIVE_INFINITY,
     connectionCapacity:
       size.maxConnections === undefined ? Number.POSITIVE_INFINITY : size.maxConnections * replicas,

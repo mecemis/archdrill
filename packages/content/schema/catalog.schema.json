@@ -179,6 +179,10 @@
                         "type": "number",
                         "exclusiveMinimum": 0
                       },
+                      "networkGbps": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
                       "latencyMs": {
                         "type": "object",
                         "properties": {
@@ -212,8 +216,10 @@
                             "costPerHour",
                             "memoryGb",
                             "maxConnections",
+                            "networkGbps",
                             "storagePricePerGbMonth",
                             "requestCost",
+                            "requestUnits",
                             "perKeyCapacityPerSec",
                             "startupSec"
                           ]
@@ -282,6 +288,31 @@
                     }
                   }
                 },
+                "requestUnits": {
+                  "type": "object",
+                  "properties": {
+                    "per": {
+                      "type": "string",
+                      "enum": ["item", "request"]
+                    },
+                    "readBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "writeBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "readUnits": {
+                      "default": 1,
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": ["per", "readBytes", "writeBytes"]
+                },
                 "requestCost": {
                   "type": "object",
                   "properties": {
@@ -314,8 +345,10 @@
                       "costPerHour",
                       "memoryGb",
                       "maxConnections",
+                      "networkGbps",
                       "storagePricePerGbMonth",
                       "requestCost",
+                      "requestUnits",
                       "perKeyCapacityPerSec",
                       "startupSec"
                     ]

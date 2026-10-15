@@ -72,14 +72,14 @@ The timeline cache is down at peak.
 | `hybrid-fan-out` | Post service → Cassandra and Kafka. A Flink job copies posts to followers' Redis timelines in batches of 100 and keeps celebrities' posts in one entry each. The timeline service reads Redis and merges celebrities from an in-process cache. Rebuilds read followed accounts in batches of 50 behind a bulkhead. | S1, S2, S3 |
 | `push-postgres` | The same with PostgreSQL, copying every post, celebrities included. | S1, S3 |
 
-Ten mutants cover:
+Eleven mutants cover:
 - the read path: pulling on every read, and a small timeline cache;
 - the write path: posts not published, posts not fanned out, and unbatched writes;
 - offset pagination;
-- celebrities: their posts pushed, and a timeline service capped below what merging them needs;
+- celebrities: their posts pushed, their entries read from the shared cache, and a timeline service capped below what merging them needs;
 - the outage: unbounded rebuilds, and a slow cache timeout.
 
-Reading celebrities' entries from the shared cache, without the in-process copy, is not a mutant since M21's calibration. A Redis node serves about 400,000 commands a second, as ElastiCache measures it, so the shard holding the celebrities and its replica carry every fan's lookups at peak. The in-process cache still saves a network hop per celebrity.
+Reading celebrities' entries from the shared cache, without the in-process copy, is caught by the network, not the CPU. A Redis node serves about 400,000 commands a second, as ElastiCache measures it, so the shard holding the celebrities and its replica could take every fan's lookups. Each lookup returns a 1.6 KB list, though: 450,000 a second is about 5.8 Gbps, and the shard's two nodes sustain 2.5 Gbps each (M21's work units). For one part of M21, between calibration and bandwidth, the mutant was gone.
 
 ## Estimates
 
