@@ -278,7 +278,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Gate: `serves-spike` (99% of redirects succeed during the spike).
 - Baseline: `spike-availability` (99.99%, critical), `hot-shard-headroom` (no component or shard above 85%, major), `spike-p99`, `creates-unaffected` (critical), `within-budget` (an average day under $40,000, major) and `idle-fleet` (minor).
 - Signals: a near cache, autoscaling services and rate-limited creation (senior).
-- Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, the viral link's 300,000 lookups a second saturate one Redis shard while the tier averages 68%; a fleet fixed at the spike's size breaks the average-day budget.
+- Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, Redis carries the viral link's 300,000 lookups a second on its shard's two copies (73% at the spike), but the popular links the near cache held miss through to the database, whose bulkhead sheds 4% of redirects. A fleet fixed at the spike's size breaks the average-day budget.
 - Timeline (M9): `viral-surge`, redirects growing exponentially from 100,000 to a million a second over ten minutes, while new instances take a minute to start. Its check, `surge-served`, keeps redirects at 99% throughout. Scaling at 70% passes; the `autoscaling-target-too-high` mutant (80%) sheds requests for about eight minutes.
 
 ---

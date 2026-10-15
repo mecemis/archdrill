@@ -5,8 +5,8 @@ description: >-
   The same fleet with a token bucket per key in Redis and no block marker:
   every request, rejected or not, is counted in Redis. When Redis fails, the
   server counts on its own against the limit divided by the fleet. Valid at
-  peak and through an outage, but a runaway client saturates the shard that
-  holds its key.
+  peak and through an outage, but a runaway client runs the shard that holds
+  its key at 90%, with no headroom left.
 expect:
   s1-enforce: { minScore: 90 }
   s2-limiter-down: { minScore: 90 }
@@ -26,7 +26,7 @@ attempt:
         replicas: 20
         autoscale: { max: 120, targetUtilization: 0.7 }
       - { id: local, kind: near-cache, flavor: in-process-lru, label: Local state, size: s }
-      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 12, replicas: 2 }
+      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 4, replicas: 2 }
       - id: backend
         kind: service
         flavor: generic

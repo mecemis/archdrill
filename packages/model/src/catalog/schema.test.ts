@@ -30,6 +30,115 @@ describe("catalog", () => {
   });
 });
 
+describe("calibrations", () => {
+  const benchmark = {
+    id: "bench",
+    title: "A benchmark",
+    url: "https://example.com/bench",
+    publisher: "Example",
+    kind: "benchmark",
+    retrieved: "2026-10-15",
+  };
+  const calibration = {
+    id: "redis-bench",
+    title: "Redis on one node",
+    source: "bench",
+    component: { kind: "cache", flavor: "redis", size: "m" },
+    setup: "One node, 50 clients.",
+    network: "zone",
+    reads: 0.8,
+    runs: [{ clients: 50, throughput: 100000 }],
+  };
+  const withCalibration = (changes: object, sources: object[] = [benchmark]) => ({
+    ...testCatalog,
+    sources,
+    calibrations: [{ ...calibration, ...changes }],
+  });
+
+  it("accepts a benchmark replayed on a catalog size, one replica by default", () => {
+    const parsed = CatalogSchema.parse(withCalibration({}));
+
+    expect(parsed.calibrations[0]?.component.replicas).toBe(1);
+  });
+
+  it("must cite a source of kind benchmark", () => {
+    expect(CatalogSchema.safeParse(withCalibration({}, [])).success).toBe(false);
+    expect(
+      CatalogSchema.safeParse(withCalibration({}, [{ ...benchmark, kind: "price" }])).success,
+    ).toBe(false);
+  });
+
+  it("must name a size the catalog has", () => {
+    const unknown = { component: { kind: "cache", flavor: "redis", size: "xl" } };
+
+    expect(CatalogSchema.safeParse(withCalibration(unknown)).success).toBe(false);
+  });
+
+  it("explains runs the engine is known to miss, and only those", () => {
+    const marked = { runs: [{ clients: 5000, throughput: 50000, beyondModel: true }] };
+
+    expect(CatalogSchema.safeParse(withCalibration(marked)).success).toBe(false);
+    expect(
+      CatalogSchema.safeParse(withCalibration({ ...marked, beyondModel: "Too many connections." }))
+        .success,
+    ).toBe(true);
+    expect(CatalogSchema.safeParse(withCalibration({ beyondModel: "Nothing." })).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a calibration id used twice, or a load listed twice", () => {
+    const twice = {
+      ...testCatalog,
+      sources: [benchmark],
+      calibrations: [calibration, calibration],
+    };
+    const repeated = {
+      runs: [
+        { clients: 50, throughput: 100000 },
+        { clients: 50, latencyMs: 0.5 },
+      ],
+    };
+
+    expect(CatalogSchema.safeParse(twice).success).toBe(false);
+    expect(CatalogSchema.safeParse(withCalibration(repeated)).success).toBe(false);
+  });
+
+  it("replays only what the size can take: its replicas, its reads, its writes", () => {
+    const replicated = { component: { kind: "cache", flavor: "redis", size: "m", replicas: 3 } };
+    const redis = (change: (flavor: Catalog["kinds"][number]["flavors"][number]) => void) => {
+      const copy: Catalog = JSON.parse(JSON.stringify(testCatalog));
+      const flavor = copy.kinds.find((k) => k.id === "cache")?.flavors[0];
+      if (!flavor) throw new Error("fixture changed");
+      change(flavor);
+      return copy;
+    };
+    const managed = redis((f) => {
+      f.managedRedundancy = true;
+    });
+    const readOnly = redis((f) => {
+      delete f.sizes.m?.capacityPerSec.write;
+    });
+    const parse = (base: Catalog, changes: object) =>
+      CatalogSchema.safeParse({
+        ...base,
+        sources: [benchmark],
+        calibrations: [{ ...calibration, ...changes }],
+      }).success;
+
+    expect(parse(testCatalog, replicated)).toBe(true);
+    expect(parse(managed, replicated)).toBe(false);
+    expect(parse(readOnly, { reads: 1 })).toBe(true);
+    expect(parse(readOnly, { reads: 0.8 })).toBe(false);
+  });
+
+  it("needs a measurement in every run", () => {
+    expect(CatalogSchema.safeParse(withCalibration({ runs: [{ clients: 50 }] })).success).toBe(
+      false,
+    );
+  });
+});
+
 describe("scenario schema", () => {
   const base = {
     id: "s2-redirect",

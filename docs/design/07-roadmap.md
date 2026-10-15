@@ -432,8 +432,25 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
 
 **Part 3, push notifications (as built).** FCM's default quota (600,000 messages a minute) is published; the raised quota the chat pack uses (100,000 a second) is labelled an assumption. Every device counts against it, since the HTTP v1 API has no multicast, so `external.notify` lost its batch size. Chat S2's lesson changed from batching notifications to notifying a large group's members only when mentioned, with a new decision (`isLargeGroup`) and a critical check that direct messages and small groups still notify everyone. Step matchers can name a fan-out count (`each`). Card payments got the same treatment: Stripe's live-mode default (25 requests a second per endpoint) is published, and the payments pack's 5,000 is labelled a contract assumption.
 
+**Part 4, calibration (as built).** Published benchmarks the engine replays with the catalog's numbers, run by run, within 15% ([ADR 0010](../adr/0010-calibrated-against-published-benchmarks.md)).
+- **The replay.** Closed runs settle where throughput = clients ÷ (latency + round trip), with the engine's own queueing latency. Open runs give the median at a fixed rate.
+- **The calibrations.**
+  - pgbench select-only on 2 vCPUs, replayed at a sixth of the work (the catalog's discount for real queries).
+  - etcd writes on three 8-vCPU members.
+  - ElastiCache for Redis 7 on 4 vCPUs.
+  - redis-benchmark on 2 vCPUs.
+- **What they changed.**
+  - PostgreSQL's numbers held.
+  - etcd was half as fast as measured at twice the latency; it now has an 8-vCPU size at 45,000 writes and 1.5 ms.
+  - Redis was Redis 6's single thread; Redis 7 measures 400,000 commands a second on 4 vCPUs.
+- **The corpus.**
+  - The rate limiter's and chat's Redis went from 12 and 8 shards to 4.
+  - The URL shortener's no-near-cache mutant is now caught at the database's bulkhead, not at a Redis shard.
+  - News feed's celebrities-from-shared-cache mutant is gone, since a shard and its replica carry every fan at peak; a timeline service capped below what merging celebrities needs takes its place.
+  - All 123 mutants are caught.
+- **The inspector.** "Checked against benchmarks" shows each run as measured and as replayed.
+
 **Next:**
-- **Calibration.** Reference points the engine must reproduce within a tolerance: pgbench reads per vCPU, etcd writes, Redis commands per node.
 - **Work units and sizes.** Requests carry payload sizes and operations carry work units: a 20 KB DynamoDB read costs five read units; bandwidth, data transfer and ALB capacity units follow.
 - **Load balancer capacity units.** ALB bills LCUs by connections and processed bytes, which needs request sizes (see work units above).
 

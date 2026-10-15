@@ -269,10 +269,12 @@ function mixMoments(m: Moments, share: number): Moments {
   };
 }
 
-export const NETWORK_HOP: Moments = {
-  mean: NETWORK_RTT_MS,
-  variance: (0.2 * NETWORK_RTT_MS) ** 2,
-};
+/** A network round trip: little spread around its mean. */
+export function networkHop(roundTripMs: number): Moments {
+  return { mean: roundTripMs, variance: (0.2 * roundTripMs) ** 2 };
+}
+
+export const NETWORK_HOP: Moments = networkHop(NETWORK_RTT_MS);
 
 /** Everything path latency depends on. */
 export interface LatencyInputs {

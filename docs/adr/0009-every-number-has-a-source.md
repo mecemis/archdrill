@@ -56,4 +56,4 @@ Recorded where a reader sees them (in the model text), and planned next:
 
 - Changing a number means citing a source or writing down the model, which slows careless edits on purpose.
 - Prices date. A source's read date shows how old a figure is, and refreshing them is a content task, not a code change.
-- Calibration comes next: reference points that the engine must reproduce within a tolerance, for example pgbench reads per vCPU or etcd's write throughput. These turn the model texts into tests.
+- Calibration followed in M21 ([ADR 0010](0010-calibrated-against-published-benchmarks.md)): published benchmarks the engine replays within 15%, which turn the model texts into tests.

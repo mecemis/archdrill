@@ -29,7 +29,7 @@ attempt:
         replicas: 20
         autoscale: { max: 120, targetUtilization: 0.7 }
       - { id: local, kind: near-cache, flavor: in-process-lru, label: Local state, size: s }
-      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 12, replicas: 2 }
+      - { id: redis, kind: cache, flavor: redis, label: Counters, size: m, shards: 4, replicas: 2 }
       - id: backend
         kind: service
         flavor: generic

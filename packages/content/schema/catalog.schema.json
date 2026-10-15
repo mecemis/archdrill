@@ -414,6 +414,137 @@
         "required": ["id", "title", "url", "publisher", "kind", "retrieved"],
         "additionalProperties": false
       }
+    },
+    "calibrations": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+          },
+          "component": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              },
+              "flavor": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              },
+              "size": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+              },
+              "replicas": {
+                "default": 1,
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["kind", "flavor", "size"],
+            "additionalProperties": false
+          },
+          "setup": {
+            "type": "string",
+            "minLength": 1
+          },
+          "network": {
+            "type": "string",
+            "enum": ["zone", "region"]
+          },
+          "reads": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "work": {
+            "type": "object",
+            "properties": {
+              "ratio": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["ratio", "why"],
+            "additionalProperties": false
+          },
+          "beyondModel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "clients": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "throughput": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "latencyMs": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "beyondModel": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["clients"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "rate": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "p50Ms": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "beyondModel": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["rate", "p50Ms"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": ["id", "title", "source", "component", "setup", "network", "reads", "runs"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["version", "kinds"]

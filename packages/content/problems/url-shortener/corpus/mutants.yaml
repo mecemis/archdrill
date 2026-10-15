@@ -472,12 +472,16 @@ mutants:
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside
-    description: Redirects skip the near cache, so the viral link's 300,000 lookups a second hit one Redis shard.
+    description: >-
+      Redirects skip the near cache. Redis carries the viral link's 300,000
+      lookups a second on one shard's two copies, but the popular links the
+      near cache held now miss through to the database, whose bulkhead sheds
+      them.
     apply:
       - removeStep: { operation: redirect, stepId: near-get, bypass: miss }
     expect:
       scenario: s5-hot-keys
-      fails: [hot-shard-headroom, spike-availability]
+      fails: [serves-spike, spike-availability]
 
   - id: autoscaling-max-too-low
     base: postgres-redis-cache-aside

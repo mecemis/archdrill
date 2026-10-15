@@ -70,14 +70,16 @@ estimates:
       the rejected requests have to be counted.
   - id: redis-shards
     question: >-
-      A Redis shard takes about 120,000 writes a second. How many shards keep
-      1,000,000 increments a second at 70% of capacity?
+      A Redis node takes about 400,000 small commands a second (AWS measured
+      395,819 on a 4-vCPU ElastiCache node). How many shards keep 1,000,000
+      increments a second at 70% of capacity?
     kind: count
-    answer: 12
+    answer: 4
     tolerance: 1.5
     derivation: >-
-      1,000,000 ÷ (120,000 × 0.7) ≈ 12 shards. Keys spread over shards by
-      hash, so this holds as long as no single key is hot.
+      1,000,000 ÷ (400,000 × 0.7) ≈ 3.6, so 4 shards. Only a shard's primary
+      takes writes, so replicas do not count. Keys spread over shards by hash,
+      so this holds as long as no single key is hot.
   - id: sliding-log-memory
     question: >-
       A sliding window log keeps every request of the last 60 seconds, about

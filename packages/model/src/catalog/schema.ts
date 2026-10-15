@@ -159,12 +159,121 @@ export const KindSchema = z.object({
 });
 export type Kind = z.infer<typeof KindSchema>;
 
+/**
+ * One measured run of a benchmark. Closed runs keep a fixed number of clients
+ * busy, each sending its next request when the last one returns; open runs
+ * send a fixed rate whatever the replies. A run records what the source
+ * measured, and nothing it did not.
+ */
+export const BenchmarkRunSchema = z.union([
+  z
+    .strictObject({
+      clients: z.number().int().positive(),
+      /** Requests a second the clients completed. */
+      throughput: z.number().positive().optional(),
+      /** Mean latency the clients saw, network included. */
+      latencyMs: z.number().positive().optional(),
+      /** The engine is known to miss this run, for the reason the calibration gives. */
+      beyondModel: z.literal(true).optional(),
+    })
+    .refine((r) => r.throughput !== undefined || r.latencyMs !== undefined, {
+      message: "a run records a throughput, a latency or both",
+    }),
+  z.strictObject({
+    /** Requests a second sent. */
+    rate: z.number().positive(),
+    /** Median latency the clients saw, network included. */
+    p50Ms: z.number().positive(),
+    beyondModel: z.literal(true).optional(),
+  }),
+]);
+export type BenchmarkRun = z.infer<typeof BenchmarkRunSchema>;
+
+/**
+ * A published benchmark that the engine must reproduce: the catalog size it
+ * ran on, how it ran, and what it measured. Calibrations turn the reasoning
+ * in a model's text into a test.
+ */
+export const CalibrationSchema = z.strictObject({
+  id: IdSchema,
+  title: z.string().min(1),
+  /** The benchmark's source (a source of kind "benchmark"). */
+  source: IdSchema,
+  /** The catalog size the benchmark ran on, with as many replicas as it had. */
+  component: z.strictObject({
+    kind: IdSchema,
+    flavor: IdSchema,
+    size: IdSchema,
+    replicas: z.number().int().positive().default(1),
+  }),
+  /** What ran, on what, and how, in a sentence or two. */
+  setup: z.string().min(1),
+  /**
+   * Where the clients ran: in the servers' zone, or elsewhere in the region
+   * (another zone or network), as a design's calls do.
+   */
+  network: z.enum(["zone", "region"]),
+  /** Share of requests that read; the rest write. */
+  reads: z.number().min(0).max(1),
+  /**
+   * How many benchmark requests one catalog request stands for, when the
+   * benchmark's requests are lighter than the ones the catalog models. The
+   * replay gives the size that many times its throughput and a matching
+   * fraction of its service time.
+   */
+  work: z.strictObject({ ratio: z.number().positive(), why: z.string().min(1) }).optional(),
+  /** Why the engine misses the runs marked beyondModel. */
+  beyondModel: z.string().min(1).optional(),
+  runs: z.array(BenchmarkRunSchema).min(1),
+});
+export type Calibration = z.infer<typeof CalibrationSchema>;
+
+type CatalogInput = {
+  readonly kinds: readonly Kind[];
+  readonly sources: readonly Source[];
+};
+
+/** What makes a calibration impossible to replay as the benchmark ran. */
+function calibrationIssues(catalog: CatalogInput, calibration: Calibration): string[] {
+  const issues: string[] = [];
+  const named = `calibration "${calibration.id}"`;
+  const source = catalog.sources.find((s) => s.id === calibration.source);
+  if (source?.kind !== "benchmark") issues.push(`${named} must cite a benchmark source`);
+  const { kind: kindId, flavor: flavorId, size: sizeId, replicas } = calibration.component;
+  const kind = catalog.kinds.find((k) => k.id === kindId);
+  const flavor = kind?.flavors.find((f) => f.id === flavorId);
+  const size = flavor?.sizes[sizeId];
+  if (!kind || !flavor || !size) {
+    issues.push(`${named} names unknown size ${kindId}/${flavorId}/${sizeId}`);
+  } else {
+    if (replicas > 1 && (!kind.replicable || flavor.managedRedundancy)) {
+      issues.push(`${named} gives replicas to ${kindId}/${flavorId}, which has none of its own`);
+    }
+    if (calibration.reads > 0 && size.capacityPerSec.read === undefined) {
+      issues.push(`${named} reads from a size that takes no reads`);
+    }
+    if (calibration.reads < 1 && size.capacityPerSec.write === undefined) {
+      issues.push(`${named} writes to a size that takes no writes`);
+    }
+  }
+  const loads = calibration.runs.map((r) => ("rate" in r ? `rate ${r.rate}` : `${r.clients}`));
+  if (new Set(loads).size !== loads.length) {
+    issues.push(`${named} lists the same load twice`);
+  }
+  if (calibration.runs.some((r) => r.beyondModel) !== (calibration.beyondModel !== undefined)) {
+    issues.push(`${named} explains beyondModel exactly when a run is marked so`);
+  }
+  return issues;
+}
+
 export const CatalogSchema = z
   .object({
     version: z.number().int().positive(),
     kinds: z.array(KindSchema).min(1),
     /** Everything the catalog's numbers cite. */
     sources: z.array(SourceSchema).default([]),
+    /** Benchmarks the engine reproduces with the catalog's numbers. */
+    calibrations: z.array(CalibrationSchema).default([]),
   })
   .superRefine((catalog, ctx) => {
     const sourceIds = new Set(catalog.sources.map((s) => s.id));
@@ -207,6 +316,20 @@ export const CatalogSchema = z
           cited(size.provenance, ["kinds", i, "flavors", j, "sizes", sizeId]);
         }
       });
+    });
+    const calibrationIds = new Set<string>();
+    catalog.calibrations.forEach((calibration, i) => {
+      if (calibrationIds.has(calibration.id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `duplicate calibration "${calibration.id}"`,
+          path: ["calibrations", i, "id"],
+        });
+      }
+      calibrationIds.add(calibration.id);
+      for (const message of calibrationIssues(catalog, calibration)) {
+        ctx.addIssue({ code: "custom", message, path: ["calibrations", i] });
+      }
     });
   });
 export type Catalog = z.infer<typeof CatalogSchema>;

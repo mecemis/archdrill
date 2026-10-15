@@ -2,6 +2,7 @@ export * from "./analyze";
 export * from "./paths/describe";
 export * from "./paths/enumerate";
 export * from "./paths/types";
+export * from "./sim/benchmark";
 export * from "./sim/cache-model";
 export * from "./sim/capacity";
 export * from "./sim/faults";

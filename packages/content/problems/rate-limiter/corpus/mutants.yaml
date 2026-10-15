@@ -52,9 +52,9 @@ mutants:
 
   - id: undersized-counters
     base: redis-sliding-counter
-    description: Four Redis shards for a million increments a second.
+    description: Two Redis shards for a million increments a second.
     apply:
-      - updateComponent: { id: redis, shards: 4 }
+      - updateComponent: { id: redis, shards: 2 }
     expect:
       scenario: s1-enforce
       fails: [headroom-peak]

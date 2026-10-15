@@ -1,7 +1,9 @@
 import type { Flavor, Provenance, Size, Source } from "@archdrill/model";
-import { BookCheck, ExternalLink, FlaskConical } from "lucide-react";
+import { BookCheck, FlaskConical } from "lucide-react";
 import { catalogIndex } from "../state/content";
 import { compact } from "../ui/format";
+import { CalibrationList } from "./CalibrationList";
+import { SourceLink } from "./SourceLink";
 
 type Field =
   | "capacityPerSec"
@@ -78,21 +80,6 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
     case "startupSec":
       return flavor.startupSec === undefined ? null : `${flavor.startupSec} s`;
   }
-}
-
-function SourceLink({ source }: { readonly source: Source }) {
-  return (
-    <a
-      href={source.url}
-      target="_blank"
-      rel="noreferrer noopener"
-      className="inline-flex items-center gap-0.5 text-accent-fg underline decoration-accent-line underline-offset-2 hover:decoration-accent"
-      title={`${source.title} (${source.publisher}, read ${source.retrieved}${source.via ? `, via ${source.via}` : ""})`}
-    >
-      {source.publisher}
-      <ExternalLink className="h-3 w-3" aria-hidden="true" />
-    </a>
-  );
 }
 
 function Entry({
@@ -194,6 +181,7 @@ export function ProvenancePanel({
             <Entry key={field} label={label} value={value} provenance={provenance} />
           ))}
         </ul>
+        <CalibrationList kind={kind} flavor={flavor} />
       </div>
     </details>
   );
