@@ -446,8 +446,8 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
 - **The corpus.**
   - The rate limiter's and chat's Redis went from 12 and 8 shards to 4.
   - The URL shortener's no-near-cache mutant is now caught at the database's bulkhead, not at a Redis shard.
-  - News feed's celebrities-from-shared-cache mutant is gone, since a shard and its replica carry every fan at peak.
-  - All 122 mutants are caught.
+  - News feed's celebrities-from-shared-cache mutant is gone, since a shard and its replica carry every fan at peak; a timeline service capped below what merging celebrities needs takes its place.
+  - All 123 mutants are caught.
 - **The inspector.** "Checked against benchmarks" shows each run as measured and as replayed.
 
 **Next:**

@@ -46,7 +46,7 @@ Redis's change moved lessons, as Part 2's URL-safety quotas did:
 
 - **Reference designs sized for the old figure.** The rate limiter's 12 counter shards and chat's 8 were two to three times what the load needs. They now run 4 each (62% and 48% busy at their peaks), and the mutants that overload them, two counter shards and presence read contact by contact, are caught again.
 - **The URL shortener's hot key.** A Redis shard with a replica now carries the viral link's 300,000 lookups a second. A design without a near cache still fails the spike, because the popular links the near cache held miss through to the database.
-- **News feed's celebrities.** Every fan reading celebrities' entries from the shared cache is no longer a fault at 300,000 timeline reads a second, and that mutant is gone.
+- **News feed's celebrities.** Every fan reading celebrities' entries from the shared cache is no longer a fault: at 300,000 timeline reads a second, half of them by fans of three celebrities, a shard and its replica carry the 450,000 lookups. That mutant is gone; one that caps the timeline service merging the entries keeps the scenario's headroom check tested.
 
 ## Known gaps
 

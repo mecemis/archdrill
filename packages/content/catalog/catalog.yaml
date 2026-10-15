@@ -292,7 +292,7 @@ kinds:
         notes: Commands run on one thread per node, with Redis 7's I/O threads handling the network around it. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
         provenance:
           capacityPerSec:
-            model: "AWS measured 395,819 small commands a second (80% GET, 20% SET) on a 4-vCPU node running Redis 7, whose I/O threads take the network work off the command thread; the replay (calibration \"elasticache-redis-7\") reproduces it, and the throughput with 2,000 and 5,200 clients, at 400,000. GETs and SETs cost the same: redis-benchmark measures them within 1% of each other."
+            model: "AWS measured 395,819 small commands a second (80% GET, 20% SET) on a 4-vCPU node running Redis 7, whose I/O threads take the network work off the command thread; the replay (calibration \"elasticache-redis-7\") reproduces it at 400,000. With 2,000 and 5,200 clients Redis measured 349,000, as so many connections cost it some throughput; the engine holds 392,000, 12% above. GETs and SETs cost the same: redis-benchmark measures them within 1% of each other."
             basis:
               - aws-elasticache-io-multiplexing
               - aws-elasticache-r6g-large

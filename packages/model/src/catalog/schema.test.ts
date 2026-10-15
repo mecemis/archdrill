@@ -87,6 +87,51 @@ describe("calibrations", () => {
     );
   });
 
+  it("rejects a calibration id used twice, or a load listed twice", () => {
+    const twice = {
+      ...testCatalog,
+      sources: [benchmark],
+      calibrations: [calibration, calibration],
+    };
+    const repeated = {
+      runs: [
+        { clients: 50, throughput: 100000 },
+        { clients: 50, latencyMs: 0.5 },
+      ],
+    };
+
+    expect(CatalogSchema.safeParse(twice).success).toBe(false);
+    expect(CatalogSchema.safeParse(withCalibration(repeated)).success).toBe(false);
+  });
+
+  it("replays only what the size can take: its replicas, its reads, its writes", () => {
+    const replicated = { component: { kind: "cache", flavor: "redis", size: "m", replicas: 3 } };
+    const redis = (change: (flavor: Catalog["kinds"][number]["flavors"][number]) => void) => {
+      const copy: Catalog = JSON.parse(JSON.stringify(testCatalog));
+      const flavor = copy.kinds.find((k) => k.id === "cache")?.flavors[0];
+      if (!flavor) throw new Error("fixture changed");
+      change(flavor);
+      return copy;
+    };
+    const managed = redis((f) => {
+      f.managedRedundancy = true;
+    });
+    const readOnly = redis((f) => {
+      delete f.sizes.m?.capacityPerSec.write;
+    });
+    const parse = (base: Catalog, changes: object) =>
+      CatalogSchema.safeParse({
+        ...base,
+        sources: [benchmark],
+        calibrations: [{ ...calibration, ...changes }],
+      }).success;
+
+    expect(parse(testCatalog, replicated)).toBe(true);
+    expect(parse(managed, replicated)).toBe(false);
+    expect(parse(readOnly, { reads: 1 })).toBe(true);
+    expect(parse(readOnly, { reads: 0.8 })).toBe(false);
+  });
+
   it("needs a measurement in every run", () => {
     expect(CatalogSchema.safeParse(withCalibration({ runs: [{ clients: 50 }] })).success).toBe(
       false,

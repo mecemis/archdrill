@@ -228,6 +228,44 @@ export const CalibrationSchema = z.strictObject({
 });
 export type Calibration = z.infer<typeof CalibrationSchema>;
 
+type CatalogInput = {
+  readonly kinds: readonly Kind[];
+  readonly sources: readonly Source[];
+};
+
+/** What makes a calibration impossible to replay as the benchmark ran. */
+function calibrationIssues(catalog: CatalogInput, calibration: Calibration): string[] {
+  const issues: string[] = [];
+  const named = `calibration "${calibration.id}"`;
+  const source = catalog.sources.find((s) => s.id === calibration.source);
+  if (source?.kind !== "benchmark") issues.push(`${named} must cite a benchmark source`);
+  const { kind: kindId, flavor: flavorId, size: sizeId, replicas } = calibration.component;
+  const kind = catalog.kinds.find((k) => k.id === kindId);
+  const flavor = kind?.flavors.find((f) => f.id === flavorId);
+  const size = flavor?.sizes[sizeId];
+  if (!kind || !flavor || !size) {
+    issues.push(`${named} names unknown size ${kindId}/${flavorId}/${sizeId}`);
+  } else {
+    if (replicas > 1 && (!kind.replicable || flavor.managedRedundancy)) {
+      issues.push(`${named} gives replicas to ${kindId}/${flavorId}, which has none of its own`);
+    }
+    if (calibration.reads > 0 && size.capacityPerSec.read === undefined) {
+      issues.push(`${named} reads from a size that takes no reads`);
+    }
+    if (calibration.reads < 1 && size.capacityPerSec.write === undefined) {
+      issues.push(`${named} writes to a size that takes no writes`);
+    }
+  }
+  const loads = calibration.runs.map((r) => ("rate" in r ? `rate ${r.rate}` : `${r.clients}`));
+  if (new Set(loads).size !== loads.length) {
+    issues.push(`${named} lists the same load twice`);
+  }
+  if (calibration.runs.some((r) => r.beyondModel) !== (calibration.beyondModel !== undefined)) {
+    issues.push(`${named} explains beyondModel exactly when a run is marked so`);
+  }
+  return issues;
+}
+
 export const CatalogSchema = z
   .object({
     version: z.number().int().positive(),
@@ -279,34 +317,18 @@ export const CatalogSchema = z
         }
       });
     });
+    const calibrationIds = new Set<string>();
     catalog.calibrations.forEach((calibration, i) => {
-      const at = (field: string) => ["calibrations", i, field];
-      const source = catalog.sources.find((s) => s.id === calibration.source);
-      if (source?.kind !== "benchmark") {
+      if (calibrationIds.has(calibration.id)) {
         ctx.addIssue({
           code: "custom",
-          message: `calibration "${calibration.id}" must cite a benchmark source`,
-          path: at("source"),
+          message: `duplicate calibration "${calibration.id}"`,
+          path: ["calibrations", i, "id"],
         });
       }
-      const { kind, flavor, size } = calibration.component;
-      const sizes = catalog.kinds
-        .find((k) => k.id === kind)
-        ?.flavors.find((f) => f.id === flavor)?.sizes;
-      if (!sizes?.[size]) {
-        ctx.addIssue({
-          code: "custom",
-          message: `calibration "${calibration.id}" names unknown size ${kind}/${flavor}/${size}`,
-          path: at("component"),
-        });
-      }
-      const marked = calibration.runs.some((r) => r.beyondModel);
-      if (marked !== (calibration.beyondModel !== undefined)) {
-        ctx.addIssue({
-          code: "custom",
-          message: `calibration "${calibration.id}" explains beyondModel exactly when a run is marked so`,
-          path: at("beyondModel"),
-        });
+      calibrationIds.add(calibration.id);
+      for (const message of calibrationIssues(catalog, calibration)) {
+        ctx.addIssue({ code: "custom", message, path: ["calibrations", i] });
       }
     });
   });

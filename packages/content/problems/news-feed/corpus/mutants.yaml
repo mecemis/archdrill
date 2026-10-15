@@ -68,6 +68,17 @@ mutants:
       fails: [fresh-with-celebrities, celebrities-pulled]
       band: not-passing
 
+  - id: timeline-fleet-capped
+    base: hybrid-fan-out
+    description: >-
+      The timeline service may scale to only 20 instances, too few to merge
+      celebrities' posts into 300,000 timeline reads a second.
+    apply:
+      - setAutoscale: { id: timeline-api, autoscale: { max: 20, targetUtilization: 0.7 } }
+    expect:
+      scenario: s2-celebrities
+      fails: [headroom-celebrities]
+
   - id: unbounded-rebuilds
     base: hybrid-fan-out
     description: Rebuilds are not capped while the cache is down.

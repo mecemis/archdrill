@@ -90,13 +90,19 @@ function CalibrationCard({ calibration }: { readonly calibration: Calibration })
           Replayed at 1/{calibration.work.ratio} of the work: {calibration.work.why}
         </span>
       )}
-      <table className="w-full text-left tabular-nums">
+      <table className="w-full text-left tabular-nums" aria-label={`${calibration.title}: runs`}>
         <thead className="text-fg-subtle">
           <tr>
-            <th className="py-0.5 font-normal">Run</th>
-            <th className="py-0.5 font-normal">Measured</th>
-            <th className="py-0.5 font-normal">Engine</th>
-            <th className="py-0.5" aria-label="Verdict" />
+            <th scope="col" className="py-0.5 font-normal">
+              Run
+            </th>
+            <th scope="col" className="py-0.5 font-normal">
+              Measured
+            </th>
+            <th scope="col" className="py-0.5 font-normal">
+              Engine
+            </th>
+            <th scope="col" className="py-0.5" aria-label="Verdict" />
           </tr>
         </thead>
         <tbody>

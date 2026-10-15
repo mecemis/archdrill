@@ -60,6 +60,7 @@ export function benchmarkedProfile(
     catalog,
   );
   if (!profile) throw new Error(`calibration "${calibration.id}" names a component without a size`);
+  // Servers come from read capacity, as they do for a design, even for a write-only run.
   const work = calibration.work?.ratio ?? 1;
   return {
     ...profile,
