@@ -482,6 +482,73 @@ mutants:
       scenario: s6-dependency-failure
       fails: [redirects-survive-failover, redirects-through-failover]
 
+  # A lost availability zone (S6).
+  - id: redirect-servers-in-one-zone
+    base: postgres-redis-cache-aside
+    description: Every redirect server runs in one zone, so losing it stops every redirect.
+    apply:
+      - updateComponent: { id: redirect-api, zones: 1 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [redirects-zone-redundant, redirects-survive-zone-loss]
+      band: not-passing
+
+  - id: database-in-one-zone
+    base: postgres-redis-cache-aside
+    description: >-
+      The database's primaries and replicas share one zone, so losing it
+      leaves nothing to fail over to: creates stop, and redirects that miss
+      the cache fail.
+    apply:
+      - updateComponent: { id: links-db, zones: 1 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [creates-zone-redundant]
+
+  - id: cache-in-one-zone
+    base: postgres-redis-cache-aside
+    description: >-
+      Every Redis node sits in one zone. Losing it sends every redirect to the
+      database at once, and the bulkhead sheds what the database cannot take.
+    apply:
+      - updateComponent: { id: redis, zones: 1 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [redirects-survive-zone-loss]
+
+  - id: scaled-to-seventy-percent
+    base: postgres-redis-cache-aside
+    description: >-
+      Redirect servers autoscale to 70% across three zones. When a zone goes,
+      the two left run at 105% until new instances start.
+    apply:
+      - setAutoscale: { id: redirect-api, autoscale: { max: 120, targetUtilization: 0.7 } }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [redirects-survive-zone-loss]
+
+  - id: fixed-fleet-without-zone-spare
+    base: postgres-redis-fixed-fleet
+    description: >-
+      Enough redirect servers for the peak plus one, in three zones: a lost
+      zone takes a third of them, and the rest are overloaded.
+    apply:
+      - updateComponent: { id: redirect-api, replicas: 25 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [redirects-survive-zone-loss]
+
+  - id: consensus-across-two-zones
+    base: mysql-memcached-cache-aside
+    description: >-
+      etcd's three members span two zones, so one zone holds two of them:
+      losing it takes etcd's majority, and every create that needs a key.
+    apply:
+      - updateComponent: { id: etcd, zones: 2 }
+    expect:
+      scenario: s6-dependency-failure
+      fails: [creates-zone-redundant]
+
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside

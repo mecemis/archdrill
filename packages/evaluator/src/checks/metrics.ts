@@ -88,10 +88,13 @@ function unhandledPaths(ctx: CheckContext, operation: string): Evidence[] {
     .map((p) => ({ type: "path", operation, pathId: p.id }));
 }
 
-/** Components the environment breaks (down, slow, failing over). */
+/**
+ * Components the environment breaks (down, slow, failing over). Those that
+ * only lost instances show up when the rest are overloaded, as hot ones.
+ */
 function faultedComponents(env: EnvironmentMetrics): Evidence[] {
   return [...env.components.values()]
-    .filter((c) => c.faults.length > 0)
+    .filter((c) => c.faultDisrupts)
     .map((c) => ({ type: "component", componentId: c.componentId }));
 }
 

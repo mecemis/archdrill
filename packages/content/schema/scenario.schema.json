@@ -675,6 +675,22 @@
                       },
                       "required": ["kind", "target"],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "zone-down"
+                        },
+                        "mode": {
+                          "default": "crash",
+                          "type": "string",
+                          "enum": ["crash", "hang"]
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -1146,6 +1162,22 @@
                                 }
                               },
                               "required": ["kind", "target"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "zone-down"
+                                },
+                                "mode": {
+                                  "default": "crash",
+                                  "type": "string",
+                                  "enum": ["crash", "hang"]
+                                }
+                              },
+                              "required": ["kind"],
                               "additionalProperties": false
                             }
                           ]

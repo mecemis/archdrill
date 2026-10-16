@@ -96,6 +96,12 @@
                     "minimum": 1,
                     "maximum": 1024
                   },
+                  "zones": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  },
                   "data": {
                     "default": [],
                     "type": "array",

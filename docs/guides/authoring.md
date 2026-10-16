@@ -31,6 +31,7 @@ Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/00
 - **Stands for.** Name the real offering: `standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)`.
 - **Request units and bandwidth.** A flavor that meters requests by size gives `requestUnits`: `per` (`item` or `request`), `readBytes`, `writeBytes` and `readUnits` (0.5 for eventually consistent reads); see [ADR 0011](../adr/0011-work-units-and-bandwidth.md). A size gives `networkGbps`, the baseline bandwidth in each direction, not the burst. Entities' `avgBytes` decide both: units round up per item, and the values reads return fill the bandwidth.
 - **Capacity units.** A managed load balancer that bills by connections and bytes gives `capacityUnits` on its flavor: `pricePerHour`, and what one unit covers of `newConnectionsPerSec`, `activeConnections` and `processedGbPerHour`. Each hour is billed for the dimension that needs the most ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)).
+- **Zones.** A kind whose reads and writes need a majority of a shard's replicas (consensus, quorum reads and writes) sets `quorum: true`, so that losing a zone, or a node, that held the majority stops it. Flavors with `managedRedundancy` span zones on their own ([ADR 0013](../adr/0013-availability-zones.md)).
 - **Calibrations.** When a benchmark publishes runs (clients and the throughput or latency they saw), add it to `calibrations` ([ADR 0010](../adr/0010-calibrated-against-published-benchmarks.md)): the size it ran on and its replicas, its setup, `network` (`zone` or `region`), the share of `reads`, and the runs as measured. If its requests are lighter than the catalog's, give `work: { ratio, why }`. The content tests replay every run and fail beyond 15%; mark a run the engine is known to miss with `beyondModel: true` and say why in the calibration's `beyondModel`. The calibrated size's throughput and latency must cite the benchmark.
 
 ## problem.yaml
@@ -91,7 +92,7 @@ debrief: |                 # follow-up questions, shown once the scenario passes
   Ask about what the timeline teaches, and set the bounds so that a typical good design and a typical weak one land in different options, away from the bounds. A corpus test checks that every question gets at least two different answers across the goldens and the scenario's mutants.
 
   Checks `timeline-holds` and `timeline-recovers` refer to timelines by id. Keep steps coarse for long timelines (5 s for ten minutes): a step whose state moves costs about a millisecond.
-- `environments`: each with `rates` (requests or job items per second; never for consumers), optional `connections` (clients holding a persistent connection), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`.
+- `environments`: each with `rates` (requests or job items per second; never for consumers), optional `connections` (clients holding a persistent connection), optional `classShares` overrides, and `faults`. A fault picks components by role, never by id: `{ capability }`, `{ kind }`, `{ handlerOf: <operation> }` or `{ holds: <entity> }`, with kinds `down` (crash or hang, all, one node or one shard), `slow`, `degraded` and `failover`. `zone-down` (crash or hang) has no target: it loses an availability zone with every instance in it, in every component a design places in zones ([ADR 0013](../adr/0013-availability-zones.md)). In an environment, autoscaled components keep the instances they ran before it; in a timeline, the autoscaler replaces them after its usual delay.
 
 ### Checks
 
@@ -111,7 +112,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 | `timeline-holds`, `timeline-recovers` | A metric stays within bounds over a window of a timeline, or recovers soon after a moment |
 | `dependency-timeout-bounded`, `retries-bounded-with-jitter`, `retry-only-idempotent`, `circuit-breaker-on-dependency`, `stable-under-retries` | Call policies and retry storms |
 | `no-acknowledged-data-loss` | What a failover loses under the chosen replication |
-| `no-single-point-of-failure`, `unused-components`, `ingress-has-capability` | Topology |
+| `no-single-point-of-failure`, `unused-components`, `ingress-has-capability` | Topology; `no-single-point-of-failure` with `scope: zone` counts a zone as the failure |
 | `overprovisioned`, `autoscaling-configured` | Fleet sizing |
 | `recognize-strategy`, `decision-excludes` | Approaches and decisions |
 | `unsafe-content-stopped`, `list-matches-confirmed` | New content is checked before or after it is stored; a match on a local threat list is confirmed with the API before anything acts on it |

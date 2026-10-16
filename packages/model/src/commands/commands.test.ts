@@ -1,6 +1,6 @@
 import { applyPatches } from "immer";
 import { describe, expect, it } from "vitest";
-import { emptyAttempt } from "../attempt/schema";
+import { type Attempt, emptyAttempt } from "../attempt/schema";
 import { cacheAsideAttempt } from "../testing/fixtures";
 import { createLinkAttempt } from "../testing/write-path";
 import { applyCommand, CommandError } from "./index";
@@ -30,6 +30,7 @@ describe("commands", () => {
       label: "Redis",
       replicas: 1,
       shards: 1,
+      zones: 1,
       data: [],
     });
   });
@@ -260,6 +261,19 @@ describe("commands", () => {
   it("validates command arguments", () => {
     expect(() =>
       applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", replicas: 0 }),
+    ).toThrow();
+  });
+
+  it("spreads instances over zones, never over more zones than instances", () => {
+    const spread = applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", zones: 3 });
+    const shrunk = applyCommand(spread.attempt, "updateComponent", { id: "api", replicas: 2 });
+
+    const zones = (attempt: Attempt) =>
+      attempt.architecture.components.find((c) => c.id === "api")?.zones;
+    expect(zones(spread.attempt)).toBe(3);
+    expect(zones(shrunk.attempt)).toBe(2);
+    expect(() =>
+      applyCommand(cacheAsideAttempt(), "updateComponent", { id: "api", zones: 4 }),
     ).toThrow();
   });
 

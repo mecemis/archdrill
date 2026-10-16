@@ -538,6 +538,8 @@ kinds:
     replicable: true
     holdsData: true
     shardable: true
+    # Reads and writes at QUORUM, which conditional writes need anyway.
+    quorum: true
     writeScaling: primaries
     flavors:
       - id: cassandra
@@ -608,6 +610,7 @@ kinds:
     replicable: true
     holdsData: false
     writeScaling: primaries
+    quorum: true
     flavors:
       - id: etcd
         label: etcd

@@ -471,7 +471,30 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
   - The rate limiter's API clients reuse their connections, so its ALB is billed by bytes ($12,600 a month on an average day), and the news feed's pages by bytes too ($21,300). Both stay within budget.
 - **Shown.** The inspector lists capacity units with their source; the load panel shows a load balancer's units, the cost summary their total, and the budget check what sets them.
 
+## M22: Zones and regions
+
+Where a design runs, and what it survives when part of a region, or a whole region, is lost. In parts, like M21:
+
+**Part 1, availability zones (as built).** Components spread their instances over up to three zones, and a lost zone takes every instance in it ([ADR 0013](../adr/0013-availability-zones.md)).
+- **Placement.** `zones` on a component, 1 by default. Managed offerings span zones on their own.
+- **A lost zone.**
+  - Fleets lose the zone's share of their instances.
+  - Stores fail over to a replica in another zone, or lose everything when their replicas shared it.
+  - Shards with one instance lose their keys, and quorum stores (etcd, Cassandra) stop when one zone held a majority of a shard's replicas.
+  - Autoscaled fleets keep the instances they ran before the outage, without new ones (static stability).
+- **The check.** `no-single-point-of-failure` with `scope: zone` names what goes down with a zone, and why.
+- **The corpus.**
+  - The URL shortener's S6 loses a zone at peak.
+  - Its goldens run in three zones and scale to 60%, so that two zones carry the peak; the fixed fleets grew by a third.
+  - Memcached, with one copy of each key, takes a third of the cache with a zone, so the MySQL golden no longer expects to pass S6.
+  - Six mutants keep the lesson: 131 in all, every one caught.
+- **Shown.** A Zones control in the inspector, zones on the nodes, and faults that only cost instances in amber.
+
+**Next.**
+- Failover times from the catalog, so recovery depends on the store chosen (RTO).
+- The latency and the price of crossing zones, and zone-aware routing.
+- Regions: designs in two regions, a lost region, and what cross-region replication loses on the way (RPO).
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).
-- Multi-region scenarios.

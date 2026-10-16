@@ -8,6 +8,8 @@ export const ATTEMPT_SCHEMA_VERSION = 1;
 /** Upper bounds that keep imported designs within what the model is calibrated for. */
 export const MAX_REPLICAS = 1000;
 export const MAX_SHARDS = 1024;
+/** A region has at least three availability zones, so a design spreads over up to three. */
+export const MAX_ZONES = 3;
 export const MAX_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 10;
 export const MAX_AGGREGATE_SEC = 3600;
@@ -27,6 +29,12 @@ export const ComponentSchema = z.object({
   replicas: z.number().int().min(1).max(MAX_REPLICAS).default(1),
   /** Number of shards for shardable kinds; each shard holds part of the data. */
   shards: z.number().int().min(1).max(MAX_SHARDS).default(1),
+  /**
+   * Availability zones its instances are spread over, evenly, each shard's
+   * replicas in different zones first. A zone's outage takes the instances
+   * in it. Managed offerings span zones on their own.
+   */
+  zones: z.number().int().min(1).max(MAX_ZONES).default(1),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
   /**

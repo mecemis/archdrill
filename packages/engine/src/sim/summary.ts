@@ -274,6 +274,7 @@ export function summarizeComponents(
       dropRate: drop.get(id) ?? 0,
       retryLoad: flow.retries.get(id) ?? 0,
       faults: faults.get(id)?.labels ?? [],
+      faultDisrupts: disrupts(faults.get(id)),
       latency: componentLatency(load, profile, hotLoad),
       hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
       storageGb,
@@ -288,6 +289,11 @@ export function summarizeComponents(
     });
   }
   return metrics;
+}
+
+/** Whether a fault fails or slows calls, rather than only removing capacity. */
+function disrupts(fault: ComponentFault | undefined): boolean {
+  return fault !== undefined && (fault.failRead > 0 || fault.failWrite > 0 || fault.slowFactor > 1);
 }
 
 export function summarizeCalls(

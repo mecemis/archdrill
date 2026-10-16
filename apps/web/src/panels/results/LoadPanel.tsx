@@ -264,7 +264,10 @@ function ComponentRow({
 /** What the environment represents and which components it breaks. */
 function EnvironmentSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
   const attempt = useAttemptStore((s) => s.attempt);
-  const faulty = [...metrics.components.values()].filter((c) => c.faults.length > 0);
+  // Components whose calls fail or slow down first; those that only lost instances after.
+  const faulty = [...metrics.components.values()]
+    .filter((c) => c.faults.length > 0)
+    .sort((a, b) => Number(b.faultDisrupts) - Number(a.faultDisrupts));
   const { description, faults } = metrics.environment;
   if (!description && faults.length === 0) return null;
   return (
@@ -274,7 +277,10 @@ function EnvironmentSummary({ metrics }: { readonly metrics: EnvironmentMetrics 
         <p className="text-fg-subtle">No component in this design is affected.</p>
       )}
       {faulty.map((c) => (
-        <p key={c.componentId} className="flex gap-1.5 font-medium text-bad-fg">
+        <p
+          key={c.componentId}
+          className={`flex gap-1.5 font-medium ${c.faultDisrupts ? "text-bad-fg" : "text-warn-fg"}`}
+        >
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           {componentLabel(attempt, c.componentId)}: {c.faults.join("; ")}
         </p>

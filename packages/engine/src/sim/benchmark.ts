@@ -55,6 +55,7 @@ export function benchmarkedProfile(
       label: calibration.title,
       replicas,
       shards: 1,
+      zones: 1,
       data: [],
     },
     catalog,

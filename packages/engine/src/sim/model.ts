@@ -68,8 +68,10 @@ export interface Fixtures {
   readonly cacheWindows: ReadonlyMap<string, number>;
   /** Backlog items per second that consumers and jobs work through (timelines). */
   readonly drains: ReadonlyMap<string, number>;
-  /** Replicas are set by a timeline's autoscaler, not solved for. */
+  /** Replicas are set by a timeline's autoscaler, or held after a lost zone, not solved for. */
   readonly fixedReplicas: boolean;
+  /** Replicas autoscaled components start from; their minimum when absent. */
+  readonly initialReplicas?: ReadonlyMap<string, number>;
   readonly ctx: SimulationContext;
   /** Clients holding persistent connections in this environment. */
   readonly clientConnections: number;
@@ -88,7 +90,9 @@ export interface Fixtures {
 export function createModel(fixtures: Fixtures, previous?: LoopState): Model {
   const loop = previous ?? emptyLoopState();
   if (!previous) {
-    for (const c of fixtures.autoscaled) loop.replicas.set(c.id, c.replicas);
+    for (const c of fixtures.autoscaled) {
+      loop.replicas.set(c.id, fixtures.initialReplicas?.get(c.id) ?? c.replicas);
+    }
   }
   const calls = callModels(fixtures.connections, fixtures.faults, loop);
   const existsFor = new Map(

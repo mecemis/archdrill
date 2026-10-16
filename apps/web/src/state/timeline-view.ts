@@ -18,6 +18,7 @@ export function timelineSnapshot(metrics: TimelineMetrics, step: number): Canvas
           hottestShardUtilization: utilization,
           instances: series.instances[step] ?? 0,
           faults: series.faults[step] ?? [],
+          faultDisrupts: series.faultDisrupts[step] ?? false,
         },
       ] as const;
     }),

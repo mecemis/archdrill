@@ -6,8 +6,10 @@ description: >-
   → MySQL (2 shards × 3 replicas). A cache node that fails only costs its
   share of hits, because cache errors fall through to the database. A day-long
   TTL keeps the hot set cached; expiry is checked on every hit. Losing a Memcached node, or all of them, overloads MySQL (see S4).
+  Memcached keeps one copy of each key, so a lost zone takes a third of the
+  cache with it, and its share of reads lands on a MySQL sized for one
+  node's misses: it survives a failover but not a lost zone at peak (S6).
 expect:
-  s6-dependency-failure: { minScore: 90 }
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
   s3-cache: { minScore: 90 }
@@ -18,9 +20,9 @@ attempt:
   architecture:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
-      - { id: proxy, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 8 }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
-      - { id: memcached, kind: cache, flavor: memcached, label: Memcached, size: m, shards: 6 }
+      - { id: proxy, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 8, zones: 3 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25, zones: 3 }
+      - { id: memcached, kind: cache, flavor: memcached, label: Memcached, size: m, shards: 6, zones: 3 }
       - id: links-db
         kind: relational-db
         flavor: mysql
@@ -28,8 +30,9 @@ attempt:
         size: m
         shards: 2
         replicas: 3
+        zones: 3
         data: [{ entity: Link }]
-      - { id: etcd, kind: coordination, flavor: etcd, label: etcd, size: m, replicas: 3 }
+      - { id: etcd, kind: coordination, flavor: etcd, label: etcd, size: m, replicas: 3, zones: 3 }
     connections:
       - { id: visitors--proxy, from: visitors, to: proxy }
       - { id: proxy--link-api, from: proxy, to: link-api }

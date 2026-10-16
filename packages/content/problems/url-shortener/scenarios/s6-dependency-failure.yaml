@@ -8,7 +8,8 @@ story: |
   replica is being promoted. Connections to the old primary just hang. What
   do people creating links see, and can a link someone was just given
   disappear? Separately, one of your redirect servers crashes. Does anybody
-  notice?"
+  notice? And later, at the same peak, a whole availability zone goes dark
+  with everything in it."
 focusOperations: [create-link, redirect]
 workload:
   operations:
@@ -49,6 +50,15 @@ workload:
       rates: { redirect: 300000, create-link: 3000 }
       faults:
         - { kind: down, target: { handlerOf: redirect }, scope: one-node }
+    - id: zone-loss
+      label: Peak, an availability zone lost
+      description: >-
+        One of the region's zones goes dark with every instance in it.
+        Primaries there have failed over, and nothing has started in their
+        place yet: the instances in the other zones carry the peak.
+      rates: { redirect: 300000, create-link: 3000 }
+      faults:
+        - { kind: zone-down }
   timelines:
     - id: failover-over-time
       label: Failover, second by second
@@ -216,6 +226,70 @@ checks:
       Keep enough headroom that the peak minus one server stays well below
       saturation.
 
+  - id: redirects-zone-redundant
+    use: no-single-point-of-failure
+    title: Redirects do not depend on one zone
+    dimension: availability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, scope: zone }
+    why: >-
+      Zones fail as a unit: power, cooling or networking for a whole data
+      centre. Two replicas in the same zone go down together, so they are
+      one point of failure, not two.
+    fix: >-
+      Spread the instances of everything a redirect needs over at least two
+      zones (three for anything that needs a quorum), with a replica of
+      every shard outside its primary's zone.
+
+  - id: creates-zone-redundant
+    use: no-single-point-of-failure
+    title: Creates do not depend on one zone
+    dimension: availability
+    weight: 1
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: create-link, scope: zone }
+    why: >-
+      A store whose primary and replicas share a zone loses every write with
+      it, and a key generator in one zone stops every create.
+    fix: >-
+      Give the store a replica in another zone to fail over to, and spread
+      the services and the key generator over zones.
+
+  - id: redirects-survive-zone-loss
+    use: success-rate-above
+    title: Redirects survive losing a zone at peak (99.9%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2]
+    params: { operation: redirect, environment: zone-loss, min: 0.999 }
+    why: >-
+      When a zone goes, its share of every fleet goes with it, at whatever
+      load the moment brings. Launching replacements depends on a control
+      plane the outage may impair, and takes minutes anyway: the instances
+      already running in the other zones must carry the peak (static
+      stability).
+    fix: >-
+      Spread over three zones and keep a third of spare capacity, so that
+      two zones carry the whole peak; with two zones, keep half.
+
+  - id: zone-loss-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms with a zone lost
+    dimension: latency
+    weight: 1
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: zone-loss, percentile: p99, ms: 50 }
+    why: >-
+      The surviving instances run a third hotter, and queueing shows up in
+      the tail first.
+    fix: >-
+      Size every fleet so that the zones left run below saturation at peak.
+
   - id: no-unsafe-retries
     use: retry-only-idempotent
     title: Creates are not retried blindly
@@ -287,9 +361,11 @@ hints:
   - "When the primary is gone, which requests need it and which do not?"
   - "When exactly does your create answer 201: before or after a replica has the link?"
   - "Set a timeout on every call to the store, keep a replica for reads, and record how you replicate under Decisions."
+  - "Which of your components would go down together if one zone did? Set Zones in the inspector."
 debrief: |
   Questions an interviewer would ask next:
 
   - What exactly can a failover lose, and what does semi-synchronous replication cost you per write?
   - Creates fail for a few seconds during the failover. What does the client see, and how does it retry safely?
   - One server crashes during the peak. Who notices first: the load balancer's health check, or your users?
+  - A zone goes dark at peak. How much spare capacity does each fleet carry for that, and what does it cost you every other day?

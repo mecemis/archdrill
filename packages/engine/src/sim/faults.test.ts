@@ -1,7 +1,10 @@
 import {
   type Attempt,
   applyCommand,
+  type Catalog,
+  CatalogSchema,
   type CommandArgs,
+  createCatalogIndex,
   EnvironmentSchema,
   type Fault,
   FaultSchema,
@@ -10,13 +13,14 @@ import {
 import {
   cacheAsideAttempt,
   createLinkAttempt,
+  testCatalog,
   testCatalogIndex,
   testProblem,
 } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
 import { NO_TIMEOUT_WAIT_MS } from "./calls";
-import { resolveFaults } from "./faults";
+import { resolveFaults, zoneLoss } from "./faults";
 import { simulateEnvironment } from "./simulate";
 
 const workload = WorkloadSchema.parse({
@@ -146,6 +150,150 @@ describe("resolveFaults", () => {
     ]);
   });
 });
+
+describe("a lost zone", () => {
+  const zoneDown = fault({ kind: "zone-down" });
+  const effects = (attempt: Attempt, catalog = testCatalogIndex) =>
+    resolveFaults([zoneDown], attempt, catalog);
+  const spread = (id: string, changes: Omit<CommandArgs<"updateComponent">, "id">) =>
+    apply(cacheAsideAttempt(), "updateComponent", { id, ...changes });
+
+  /** The test catalog with Cassandra's reads and writes at quorum, and a Cassandra cluster. */
+  function withQuorumStore(replicas: number, zones: number, shards = 1) {
+    const copy: Catalog = JSON.parse(JSON.stringify(testCatalog));
+    const kind = copy.kinds.find((k) => k.id === "wide-column-db");
+    if (!kind) throw new Error("no wide-column kind in the test catalog");
+    kind.quorum = true;
+    const attempt = apply(cacheAsideAttempt(), "addComponent", {
+      id: "stats",
+      kind: "wide-column-db",
+      flavor: "cassandra",
+      label: "Stats",
+      replicas,
+      position: { x: 0, y: 0 },
+    });
+    return {
+      catalog: createCatalogIndex(CatalogSchema.parse(copy)),
+      attempt: apply(attempt, "updateComponent", { id: "stats", shards, zones }),
+    };
+  }
+
+  it("takes down a component whose instances all sit in the zone", () => {
+    expect(effects(cacheAsideAttempt()).get("api")).toMatchObject({
+      failRead: 1,
+      failWrite: 1,
+      labels: ["down: every instance was in the lost zone"],
+    });
+  });
+
+  it("leaves managed components and clients alone", () => {
+    const lost = effects(cacheAsideAttempt());
+
+    expect(lost.get("lb")).toMatchObject({ failRead: 0, readCapacity: 1, labels: [] });
+    expect(lost.has("client")).toBe(false);
+  });
+
+  it("costs a spread fleet the zone's share of its instances", () => {
+    const lost = effects(spread("api", { zones: 3 })).get("api");
+
+    expect(lost?.failRead).toBe(0);
+    expect(lost?.readCapacity).toBeCloseTo(2 / 3, 9);
+    expect(lost?.writeCapacity).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("keeps a store's writes once the primary in the lost zone has failed over", () => {
+    expect(effects(spread("db", { zones: 2 })).get("db")).toMatchObject({
+      failRead: 0,
+      failWrite: 0,
+      readCapacity: 0.5,
+      writeCapacity: 1,
+    });
+  });
+
+  it("loses the keys of shards whose only instance was in the zone", () => {
+    const shards = spread("redis", { replicas: 1, shards: 4, zones: 3 });
+
+    expect(effects(shards).get("redis")).toMatchObject({ failRead: 0.5, readCapacity: 0.5 });
+  });
+
+  it("stops a quorum store when the zone held a majority of its replicas", () => {
+    const twoZones = withQuorumStore(3, 2);
+    const threeZones = withQuorumStore(3, 3);
+
+    expect(effects(twoZones.attempt, twoZones.catalog).get("stats")).toMatchObject({
+      failRead: 1,
+      labels: ["down: the lost zone held 2 of its 3 replicas, a majority"],
+    });
+    expect(effects(threeZones.attempt, threeZones.catalog).get("stats")?.failRead).toBe(0);
+    expect(effects(threeZones.attempt, threeZones.catalog).get("stats")?.readCapacity).toBeCloseTo(
+      2 / 3,
+      9,
+    );
+    expect(zoneLoss(component(twoZones.attempt, "stats"), twoZones.catalog).keepsServing).toBe(
+      false,
+    );
+  });
+
+  it("balances shards over zones, so a zone holds a majority of some shards only", () => {
+    // Shard 1 sits in zones A, B, A and shard 2 in B, A, B: losing A stops shard 1 only.
+    const cluster = withQuorumStore(3, 2, 2);
+
+    expect(effects(cluster.attempt, cluster.catalog).get("stats")).toMatchObject({
+      failRead: 0.5,
+      readCapacity: 0.5,
+      writeCapacity: 0.5,
+      labels: ["down: the lost zone held a majority of the replicas of 1 of 2 shards"],
+    });
+  });
+
+  it("keeps every shard of a cache whose replicas are spread, losing a zone's share", () => {
+    const lost = effects(spread("redis", { shards: 3, replicas: 2, zones: 3 })).get("redis");
+
+    expect(lost?.failRead).toBe(0);
+    expect(lost?.readCapacity).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("stops a quorum store of two replicas when it loses one node", () => {
+    const pair = withQuorumStore(2, 2);
+    const nodeDown = fault({ kind: "down", target: { kind: "wide-column-db" }, scope: "one-node" });
+
+    expect(resolveFaults([nodeDown], pair.attempt, pair.catalog).get("stats")).toMatchObject({
+      failRead: 1,
+    });
+  });
+
+  it("is survived with the instances that ran before it, not new ones (static stability)", () => {
+    const autoscaled = apply(spread("api", { replicas: 3, zones: 3 }), "setAutoscale", {
+      id: "api",
+      autoscale: { max: 100, targetUtilization: 0.6 },
+    });
+    // Retries make the engine solve again from cold caches, from the same instances.
+    const fleet = apply(autoscaled, "setConnectionPolicy", { id: "api--db", retries: 2 });
+    const crash = fault({ kind: "down", target: { kind: "service" }, scope: "one-node" });
+
+    const healthy = redirects(fleet, [], 60_000).metrics.components.get("api");
+    const zoneLost = redirects(fleet, [zoneDown], 60_000).metrics;
+    const nodeLost = redirects(fleet, [crash], 60_000).metrics.components.get("api");
+
+    const running = healthy?.instances ?? 0;
+    // Instances are dealt over the three zones in turn, so the first zone holds the most.
+    const left = running - Math.ceil(running / 3);
+    expect(zoneLost.components.get("api")?.instances).toBe(running);
+    expect(zoneLost.components.get("api")?.utilization).toBeCloseTo(
+      ((healthy?.utilization ?? 0) * running) / left,
+      2,
+    );
+    expect(zoneLost.metastable).toEqual([]);
+    // Without a lost zone, the autoscaler has replaced the lost node.
+    expect(nodeLost?.utilization).toBeLessThan(0.61);
+  });
+});
+
+function component(attempt: Attempt, id: string) {
+  const found = attempt.architecture.components.find((c) => c.id === id);
+  if (!found) throw new Error(`no component ${id}`);
+  return found;
+}
 
 describe("faults and connection policies", () => {
   it("serves redirects from the store while the cache is down", () => {

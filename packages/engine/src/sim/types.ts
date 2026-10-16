@@ -28,6 +28,11 @@ export interface ComponentMetrics {
   readonly retryLoad: number;
   /** The environment's faults on this component, for people; empty when healthy. */
   readonly faults: readonly string[];
+  /**
+   * Its faults fail calls or slow them down, beyond costing it capacity that
+   * the rest of its instances may well absorb.
+   */
+  readonly faultDisrupts: boolean;
   /** Latency added per visit (service + queueing), excluding the network. */
   readonly latency: Moments;
   /** The same at the shard that holds the hot key (equal to `latency` without one). */

@@ -3,14 +3,16 @@ id: postgres-redis-cache-aside
 title: PostgreSQL with a Redis cache
 description: >-
   NGINX (25 × 4 vCPU) → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
-  (2 vCPU, 2 to 12 instances) → Redis
+  (2 vCPU, 3 to 12 instances) → Redis
   cache-aside with negative caching (3 shards × 2 replicas) → PostgreSQL
   (16 vCPU, 2 shards × 2 replicas, semi-synchronous). Redirects run in their own
   service and cap their database calls with a bulkhead, so a cache outage
   cannot take link creation down. A 10-second near cache in the redirect
   service absorbs viral links, both services autoscale between an
   average-day minimum and a spike maximum, and a gateway rate-limits
-  creation. Cache calls time out after 20 ms behind a
+  creation. Everything runs in three zones, and the services scale to 60%
+  of capacity, so that two zones carry the peak when one is lost without
+  waiting for new instances. Cache calls time out after 20 ms behind a
   circuit breaker; a KGS hands out keys in batches. New links are published
   to a managed queue; a worker matches them against a local copy of the
   threat lists, confirms matches with the URL-safety API, disables and
@@ -34,24 +36,26 @@ attempt:
   architecture:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
-      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25 }
+      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25, zones: 3 }
       - id: redirect-api
         kind: service
         flavor: generic
         label: Redirect API
         size: l
         replicas: 10
-        autoscale: { max: 120, targetUtilization: 0.7 }
+        zones: 3
+        autoscale: { max: 120, targetUtilization: 0.6 }
       - { id: near, kind: near-cache, flavor: in-process-lru, label: Near cache, size: m }
       - id: link-api
         kind: service
         flavor: generic
         label: Link API
         size: s
-        replicas: 2
-        autoscale: { max: 12, targetUtilization: 0.7 }
-      - { id: gateway, kind: api-gateway, flavor: kong, label: Gateway, size: m, replicas: 2 }
-      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
+        replicas: 3
+        zones: 3
+        autoscale: { max: 12, targetUtilization: 0.6 }
+      - { id: gateway, kind: api-gateway, flavor: kong, label: Gateway, size: m, replicas: 2, zones: 2 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2, zones: 3 }
       - id: links-db
         kind: relational-db
         flavor: postgres
@@ -59,24 +63,27 @@ attempt:
         size: l
         shards: 2
         replicas: 2
+        zones: 3
         data: [{ entity: Link }]
-      - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2 }
+      - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2, zones: 2 }
       - { id: link-events, kind: queue, flavor: managed-queue, label: Link events, size: on-demand }
       - id: worker
         kind: service
         flavor: generic
         label: Worker
         size: s
-        replicas: 2
-        autoscale: { max: 8, targetUtilization: 0.7 }
+        replicas: 3
+        zones: 3
+        autoscale: { max: 8, targetUtilization: 0.6 }
       - { id: safety, kind: external-api, flavor: url-safety-list, label: URL safety, size: quota }
-      - { id: clicks, kind: queue, flavor: kafka, label: Clicks, size: m, replicas: 8 }
+      - { id: clicks, kind: queue, flavor: kafka, label: Clicks, size: m, replicas: 8, zones: 3 }
       - id: click-counter
         kind: stream-processor
         flavor: flink
         label: Click counter
         size: m
         replicas: 4
+        zones: 3
         autoscale: { max: 16, targetUtilization: 0.7 }
       - id: click-stats
         kind: wide-column-db
@@ -85,6 +92,7 @@ attempt:
         size: m
         shards: 1
         replicas: 3
+        zones: 3
         data: [{ entity: LinkStats }]
     connections:
       - { id: visitors--lb, from: visitors, to: lb }

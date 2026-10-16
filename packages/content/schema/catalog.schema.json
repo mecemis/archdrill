@@ -81,6 +81,10 @@
             "default": false,
             "type": "boolean"
           },
+          "quorum": {
+            "default": false,
+            "type": "boolean"
+          },
           "flavors": {
             "minItems": 1,
             "type": "array",

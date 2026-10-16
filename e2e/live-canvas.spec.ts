@@ -72,3 +72,28 @@ test("plays a timeline on the canvas", async ({ page }) => {
   await page.getByRole("button", { name: "Pause the timeline" }).click();
   await expect(page.getByRole("button", { name: "Play the timeline" })).toBeVisible();
 });
+
+test("spreads a fleet over zones, and shows what losing one takes down", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S6 / }).click();
+  await page.getByRole("tab", { name: "Load" }).click();
+  await page.getByRole("tab", { name: "Peak, an availability zone lost" }).click();
+  await expect(
+    page.getByText(/^Redirect API: lost \d+% of its instances with a zone$/),
+  ).toBeVisible();
+
+  await page.getByTestId("node-Redirect API").click();
+  const zones = page.getByRole("group", { name: "Zones" });
+  await expect(zones.getByRole("button", { name: "3" })).toHaveAttribute("aria-pressed", "true");
+  await zones.getByRole("button", { name: "1" }).click();
+
+  await expect(
+    page.getByText("Redirect API: down: every instance was in the lost zone"),
+  ).toBeVisible();
+  await expect(page.getByTestId("node-Redirect API")).toContainText("×10–120");
+  await expect(page.getByTestId("node-Redirect API")).not.toContainText("AZ");
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await expect(
+    page.getByText("Losing an availability zone takes down Redirect API", { exact: false }).first(),
+  ).toBeVisible();
+});

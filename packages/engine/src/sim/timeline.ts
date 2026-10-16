@@ -60,6 +60,8 @@ export interface ComponentSeries {
   readonly latencyMs: readonly number[];
   /** What the faults active at each step do to the component, as on the canvas. */
   readonly faults: readonly (readonly string[])[];
+  /** Whether those faults fail or slow its calls, beyond costing capacity. */
+  readonly faultDisrupts: readonly boolean[];
 }
 
 /** One way requests went at a step, with its share of all requests and its mean latency. */
@@ -153,6 +155,7 @@ function stepTimes(timeline: Timeline): number[] {
 }
 
 function describeFault(fault: Fault): string {
+  if (fault.kind === "zone-down") return "zone-down: every component";
   const target = Object.entries(fault.target)
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
@@ -228,6 +231,7 @@ export function simulateTimeline(
       instances: number[];
       latencyMs: number[];
       faults: (readonly string[])[];
+      faultDisrupts: boolean[];
     }
   >();
   const trafficSeries = new Map<string, number[]>();
@@ -418,12 +422,14 @@ export function simulateTimeline(
         instances: [],
         latencyMs: [],
         faults: [],
+        faultDisrupts: [],
       };
       const busiest = Math.max(c.utilization, c.hottestShardUtilization);
       series.utilization.push(busiest);
       series.instances.push(c.instances);
       series.latencyMs.push(c.latency.mean);
       series.faults.push(c.faults);
+      series.faultDisrupts.push(c.faultDisrupts);
       components.set(id, series);
       if (busiest > 1 && !overloaded.has(id)) {
         overloaded.add(id);

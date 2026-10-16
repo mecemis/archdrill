@@ -54,10 +54,28 @@ function FindingsBadge({ findings }: { readonly findings: NodeFindings }) {
 }
 
 function scaleLabel(data: ComponentNodeData): string | null {
+  const count = instanceLabel(data);
+  if (count === null || data.zones === null || data.zones < 2) return count;
+  return `${count} · ${data.zones} AZ`;
+}
+
+function instanceLabel(data: ComponentNodeData): string | null {
   if (!data.replicable && (data.shards ?? 1) <= 1) return null;
   if (data.shards !== null && data.shards > 1) return `${data.shards}×${data.replicas}`;
   if (data.autoscaleMax !== null) return `×${data.replicas}–${data.autoscaleMax}`;
   return `×${data.replicas}`;
+}
+
+function scaleTitle(data: ComponentNodeData): string {
+  const counts =
+    data.autoscaleMax !== null
+      ? "replicas, autoscaling up to the maximum"
+      : data.shards !== null
+        ? "shards × replicas"
+        : "replicas";
+  return data.zones !== null && data.zones > 1
+    ? `${counts}, spread over ${data.zones} availability zones`
+    : counts;
 }
 
 function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>>) {
@@ -83,13 +101,7 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
             {scale && (
               <span
                 className="ml-auto shrink-0 font-medium text-fg-muted tabular-nums"
-                title={
-                  data.autoscaleMax !== null
-                    ? "replicas, autoscaling up to the maximum"
-                    : data.shards !== null
-                      ? "shards × replicas"
-                      : "replicas"
-                }
+                title={scaleTitle(data)}
               >
                 {scale}
               </span>
@@ -115,7 +127,11 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
         </div>
       )}
       {data.faults.length > 0 && (
-        <div className="mt-1.5 flex items-start gap-1 rounded-md bg-bad-soft px-1.5 py-0.5 text-[11px] font-medium text-bad-fg">
+        <div
+          className={`mt-1.5 flex items-start gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+            data.faultDisrupts ? "bg-bad-soft text-bad-fg" : "bg-warn-soft text-warn-fg"
+          }`}
+        >
           <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
           <span>{data.faults.join("; ")}</span>
         </div>

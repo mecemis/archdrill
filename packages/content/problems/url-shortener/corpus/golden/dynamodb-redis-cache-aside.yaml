@@ -2,7 +2,8 @@
 id: dynamodb-redis-cache-aside
 title: DynamoDB with a Redis cache
 description: >-
-  NGINX (25 × 4 vCPU) → Link API (8 vCPU, autoscaling from 10 to 120 instances) with a
+  NGINX (25 × 4 vCPU) → Link API (8 vCPU, autoscaling from 10 to 120 instances
+  at 60%, so that two of its three zones carry the peak) with a
   10-second near cache → Redis cache-aside (3 shards × 2 replicas) →
   DynamoDB. The cache turns most per-request charges into memory hits; no
   negative caching, so unknown codes still reach the table. On-demand DynamoDB absorbs the full read peak when the cache is gone, at a price.
@@ -26,16 +27,17 @@ attempt:
   architecture:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
-      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25 }
+      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25, zones: 3 }
       - id: link-api
         kind: service
         flavor: generic
         label: Link API
         size: l
         replicas: 10
-        autoscale: { max: 120, targetUtilization: 0.7 }
+        zones: 3
+        autoscale: { max: 120, targetUtilization: 0.6 }
       - { id: near, kind: near-cache, flavor: in-process-lru, label: Near cache, size: m }
-      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2, zones: 3 }
       - id: links
         kind: key-value-db
         flavor: dynamodb

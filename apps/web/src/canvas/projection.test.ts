@@ -70,7 +70,16 @@ describe("projection", () => {
   it("carries simulated utilisation to nodes and rates to connections", () => {
     const metrics = {
       components: new Map([
-        ["db", { utilization: 0.42, hottestShardUtilization: 0.42, instances: 1, faults: [] }],
+        [
+          "db",
+          {
+            utilization: 0.42,
+            hottestShardUtilization: 0.42,
+            instances: 1,
+            faults: [],
+            faultDisrupts: false,
+          },
+        ],
       ]),
       connections: new Map([["api--db", 1234]]),
     } as unknown as ProjectionInput["metrics"];
@@ -87,6 +96,7 @@ describe("projection", () => {
       utilization,
       hottestShardUtilization: hottest,
       faults,
+      faultDisrupts: faults.includes("down"),
     });
 
     expect(healthOf(undefined)).toBeNull();
@@ -95,12 +105,23 @@ describe("projection", () => {
     expect(healthOf(load(0.5, 0.9))).toBe("warn");
     expect(healthOf(load(1.2))).toBe("critical");
     expect(healthOf(load(0.1, 0.1, ["down"]))).toBe("critical");
+    // Losing instances the rest absorb is worth a look, not an alarm.
+    expect(healthOf(load(0.6, 0.6, ["lost 33% of its instances with a zone"]))).toBe("warn");
   });
 
   it("colours a connection by the health of the component it reaches", () => {
     const metrics = {
       components: new Map([
-        ["db", { utilization: 1.3, hottestShardUtilization: 1.3, instances: 1, faults: [] }],
+        [
+          "db",
+          {
+            utilization: 1.3,
+            hottestShardUtilization: 1.3,
+            instances: 1,
+            faults: [],
+            faultDisrupts: false,
+          },
+        ],
       ]),
       connections: new Map([["api--db", 500]]),
     } as ProjectionInput["metrics"];
@@ -135,6 +156,19 @@ describe("projection", () => {
       key: "critical-one",
     });
     expect(nodes.find((n) => n.id === "redis")?.data.findings).toBeNull();
+  });
+
+  it("shows the zones a design spreads a component over, but not a managed one's", () => {
+    const attempt = applyCommand(cacheAsideAttempt(), "updateComponent", {
+      id: "api",
+      zones: 3,
+    }).attempt;
+
+    const nodes = projectNodes(inputFor(attempt));
+
+    expect(nodes.find((n) => n.id === "api")?.data.zones).toBe(3);
+    expect(nodes.find((n) => n.id === "redis")?.data.zones).toBe(1);
+    expect(nodes.find((n) => n.id === "lb")?.data.zones).toBeNull();
   });
 
   it("flags components with validation errors", () => {

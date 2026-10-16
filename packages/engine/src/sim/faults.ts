@@ -1,4 +1,11 @@
-import type { Attempt, CatalogIndex, Component, ComponentSelector, Fault } from "@archdrill/model";
+import {
+  type Attempt,
+  type CatalogIndex,
+  type Component,
+  type ComponentSelector,
+  type Fault,
+  placedInZones,
+} from "@archdrill/model";
 import type { ComponentProfile } from "./capacity";
 
 /** The combined effect of an environment's faults on one component. */
@@ -55,16 +62,42 @@ export function selectComponents(
   });
 }
 
-/** Per component, the combined effect of every fault in the environment. */
+/**
+ * Components a fault hits: those its selector picks, or for a lost zone every
+ * component with instances of its own on the network. Clients are outside
+ * the region, and in-process components fail with their service's instances.
+ */
+export function faultedComponents(
+  fault: Fault,
+  attempt: Attempt,
+  catalog: CatalogIndex,
+): Component[] {
+  if (fault.kind !== "zone-down") return selectComponents(fault.target, attempt, catalog);
+  return attempt.architecture.components.filter((c) => runsInZones(c, catalog));
+}
+
+/** Whether a component has instances in the region's zones: not a client, nor in-process. */
+function runsInZones(component: Component, catalog: CatalogIndex): boolean {
+  return (
+    !catalog.kind(component.kind)?.inProcess &&
+    !catalog.capabilities(component.kind, component.flavor).has("traffic-source")
+  );
+}
+
+/**
+ * Per component, the combined effect of every fault in the environment.
+ * `running` gives the instances autoscaled components run, where known.
+ */
 export function resolveFaults(
   faults: readonly Fault[],
   attempt: Attempt,
   catalog: CatalogIndex,
+  running?: ReadonlyMap<string, number>,
 ): Map<string, ComponentFault> {
   const result = new Map<string, ComponentFault>();
   for (const fault of faults) {
-    for (const component of selectComponents(fault.target, attempt, catalog)) {
-      const effect = faultEffect(fault, component, catalog);
+    for (const component of faultedComponents(fault, attempt, catalog)) {
+      const effect = faultEffect(fault, shapeOf(component, catalog, running?.get(component.id)));
       result.set(component.id, combine(result.get(component.id) ?? NO_FAULT, effect));
     }
   }
@@ -98,17 +131,33 @@ interface Shape {
   readonly primaries: boolean;
   /** Writes scale with primaries only, so a lost replica costs no write capacity. */
   readonly writesToPrimaries: boolean;
+  /** A shard stops once half of its replicas are lost. */
+  readonly quorum: boolean;
+  /** Zones its instances are spread over (1 where the design does not place them). */
+  readonly zones: number;
+  /**
+   * Instances follow the load and how many run is not known, so a zone holds
+   * its even share of them.
+   */
+  readonly autoscaled: boolean;
 }
 
-function shapeOf(component: Component, catalog: CatalogIndex): Shape {
+function shapeOf(component: Component, catalog: CatalogIndex, running?: number): Shape {
   const kind = catalog.kind(component.kind);
-  const managed = catalog.flavor(component.kind, component.flavor)?.managedRedundancy ?? false;
+  const flavor = catalog.flavor(component.kind, component.flavor);
+  const managed = flavor?.managedRedundancy ?? false;
+  const replicas = kind?.replicable && !managed ? (running ?? component.replicas) : 1;
+  const shards = kind?.shardable ? component.shards : 1;
+  const placed = kind !== undefined && flavor !== undefined && placedInZones(kind, flavor);
   return {
-    replicas: kind?.replicable && !managed ? component.replicas : 1,
-    shards: kind?.shardable ? component.shards : 1,
+    replicas,
+    shards,
     managed,
     primaries: (kind?.holdsData ?? false) && kind?.writeScaling === "primaries",
     writesToPrimaries: kind?.writeScaling === "primaries",
+    quorum: kind?.quorum ?? false,
+    zones: placed ? Math.max(1, Math.min(component.zones, replicas * shards)) : 1,
+    autoscaled: component.autoscale !== undefined && running === undefined,
   };
 }
 
@@ -120,8 +169,7 @@ const fail = (share: number, hang: boolean, labels: string[]): ComponentFault =>
   labels,
 });
 
-function faultEffect(fault: Fault, component: Component, catalog: CatalogIndex): ComponentFault {
-  const shape = shapeOf(component, catalog);
+function faultEffect(fault: Fault, shape: Shape): ComponentFault {
   const hangs = "mode" in fault && fault.mode === "hang";
   const how = hangs ? "hanging" : "down";
   switch (fault.kind) {
@@ -140,6 +188,8 @@ function faultEffect(fault: Fault, component: Component, catalog: CatalogIndex):
       if (fault.scope === "all") return fail(1, hangs, [how]);
       if (fault.scope === "one-node") return nodeDown(shape, hangs, how);
       return shardDown(shape, hangs, how);
+    case "zone-down":
+      return zoneDown(shape, hangs, how);
   }
 }
 
@@ -147,6 +197,13 @@ function faultEffect(fault: Fault, component: Component, catalog: CatalogIndex):
 function nodeDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
   if (shape.managed) return { ...NO_FAULT, labels: ["one node lost, replaced by the provider"] };
   const instances = shape.replicas * shape.shards;
+  if (shape.quorum && shape.replicas >= 2 && shape.replicas - 1 <= shape.replicas / 2) {
+    return quorumLost(
+      shape,
+      hangs,
+      `${how}: one of its ${shape.replicas} replicas was its majority`,
+    );
+  }
   if (shape.replicas >= 2) {
     const remaining = (instances - 1) / instances;
     return {
@@ -170,6 +227,129 @@ function shardDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
     ...fail(1 / shape.shards, hangs, [`one of ${shape.shards} shards ${how}`]),
     readCapacity: remaining,
     writeCapacity: remaining,
+  };
+}
+
+/** A shard that lost half of its replicas stops. */
+function quorumLost(shape: Shape, hangs: boolean, label: string): ComponentFault {
+  if (shape.shards < 2) return fail(1, hangs, [label]);
+  const remaining = (shape.shards - 1) / shape.shards;
+  return {
+    ...fail(1 / shape.shards, hangs, [label]),
+    readCapacity: remaining,
+    writeCapacity: remaining,
+  };
+}
+
+/**
+ * Instances of one shard in a zone. Instances are numbered shard by shard
+ * and dealt over the zones in turn, as providers balance them: a shard's
+ * replicas land in different zones first, and the zones hold as many
+ * instances as each other, give or take one.
+ */
+function replicasIn(zone: number, shard: number, shape: Shape): number {
+  const first = (((zone - shard * shape.replicas) % shape.zones) + shape.zones) % shape.zones;
+  return first < shape.replicas ? Math.floor((shape.replicas - 1 - first) / shape.zones) + 1 : 0;
+}
+
+interface ZoneOutcome {
+  readonly lostInstances: number;
+  /** Shards left without a replica, or without a majority of them. */
+  readonly failedShards: number;
+  /** Some shard failed because it lost its majority, not every replica. */
+  readonly quorumLost: boolean;
+}
+
+/** The zone whose loss hurts most: the most shards failed, then the most instances lost. */
+function worstZone(shape: Shape): ZoneOutcome {
+  let worst: ZoneOutcome = { lostInstances: 0, failedShards: -1, quorumLost: false };
+  for (let zone = 0; zone < shape.zones; zone++) {
+    let lostInstances = 0;
+    let failedShards = 0;
+    let quorumLost = false;
+    for (let shard = 0; shard < shape.shards; shard++) {
+      const lost = replicasIn(zone, shard, shape);
+      const left = shape.replicas - lost;
+      lostInstances += lost;
+      if (left === 0) failedShards++;
+      else if (shape.quorum && left <= shape.replicas / 2) {
+        failedShards++;
+        quorumLost = true;
+      }
+    }
+    const worse =
+      failedShards > worst.failedShards ||
+      (failedShards === worst.failedShards && lostInstances > worst.lostInstances);
+    if (worse) worst = { lostInstances, failedShards, quorumLost };
+  }
+  return worst;
+}
+
+/**
+ * Losing an availability zone and every instance in it, in the zone where
+ * that hurts most. A shard with a replica left elsewhere keeps its keys (a
+ * primary there has failed over); one without, or without a majority of its
+ * replicas where it needs one, loses them. Nothing has replaced the lost
+ * instances yet, so the rest carry the load.
+ */
+function zoneDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
+  // The provider runs it in every zone and moves the lost zone's share to the others.
+  if (shape.managed) return NO_FAULT;
+  if (shape.zones < 2) return fail(1, hangs, [`${how}: every instance was in the lost zone`]);
+  const zone = worstZone(shape);
+  const instances = shape.replicas * shape.shards;
+  const lostShare = shape.autoscaled ? 1 / shape.zones : zone.lostInstances / instances;
+  const failedShare = zone.failedShards / shape.shards;
+  if (failedShare === 0) {
+    return {
+      ...NO_FAULT,
+      readCapacity: 1 - lostShare,
+      // Primaries in the lost zone have failed over; every shard still has one.
+      writeCapacity: shape.writesToPrimaries ? 1 : 1 - lostShare,
+      labels: [`lost ${Math.round(lostShare * 100)}% of its instances with a zone`],
+    };
+  }
+  const label = zoneFailureLabel(shape, zone, how);
+  if (failedShare === 1) return fail(1, hangs, [label]);
+  return {
+    ...fail(failedShare, hangs, [label]),
+    readCapacity: 1 - lostShare,
+    writeCapacity: 1 - failedShare,
+  };
+}
+
+function zoneFailureLabel(shape: Shape, zone: ZoneOutcome, how: string): string {
+  if (!zone.quorumLost) {
+    return `${zone.failedShards} of ${shape.shards} shards ${how} with the lost zone`;
+  }
+  if (shape.shards === 1) {
+    return `${how}: the lost zone held ${zone.lostInstances} of its ${shape.replicas} replicas, a majority`;
+  }
+  const which =
+    zone.failedShards === shape.shards
+      ? "every shard"
+      : `${zone.failedShards} of ${shape.shards} shards`;
+  return `${how}: the lost zone held a majority of the replicas of ${which}`;
+}
+
+/**
+ * What losing a zone does to a component: whether it keeps every key, the
+ * share of its read capacity left, and what happened, as the fault reports it.
+ */
+export function zoneLoss(
+  component: Component,
+  catalog: CatalogIndex,
+): { readonly keepsServing: boolean; readonly capacityLeft: number; readonly label: string } {
+  if (!runsInZones(component, catalog)) {
+    return { keepsServing: true, capacityLeft: 1, label: "not in a zone of its own" };
+  }
+  const shape = shapeOf(component, catalog);
+  if (shape.managed) return { keepsServing: true, capacityLeft: 1, label: "spans zones (managed)" };
+  const effect = zoneDown(shape, false, "down");
+  return {
+    keepsServing: effect.failRead === 0 && effect.failWrite === 0,
+    capacityLeft: effect.failRead === 1 ? 0 : effect.readCapacity,
+    label: effect.labels.join("; "),
   };
 }
 

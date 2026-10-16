@@ -14,7 +14,7 @@ import {
 } from "../catalog/actions";
 import { canHandle } from "../catalog/capabilities";
 import { getLogic, type LogicId } from "../catalog/logic";
-import type { CatalogIndex } from "../catalog/schema";
+import { type CatalogIndex, type Flavor, type Kind, placedInZones } from "../catalog/schema";
 import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
 import type { Issue } from "./issues";
@@ -103,6 +103,7 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
   if (!kind.replicable && component.replicas > 1) {
     issues.push(error("replicas-not-supported", `${kind.label} does not take replicas.`, location));
   }
+  issues.push(...validateZones(component, kind, flavor));
   if (component.autoscale) {
     if (!kind.replicable || kind.holdsData || flavor.managedRedundancy) {
       issues.push(
@@ -119,6 +120,28 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
     }
   }
   return issues;
+}
+
+function validateZones(component: Component, kind: Kind, flavor: Flavor): Issue[] {
+  if (component.zones === 1) return [];
+  const location = { type: "component", componentId: component.id } as const;
+  if (!placedInZones(kind, flavor)) {
+    const why = flavor.managedRedundancy
+      ? `${flavor.label} spans zones on its own`
+      : `${kind.label} has no instances of its own to place`;
+    return [warning("zones-ignored", `${why}; its zone count is ignored.`, location)];
+  }
+  const instances = component.replicas * component.shards;
+  if (component.zones > instances) {
+    return [
+      error(
+        "zones-exceed-instances",
+        `${component.label} runs ${instances} instance${instances === 1 ? "" : "s"}, too few to spread over ${component.zones} zones.`,
+        location,
+      ),
+    ];
+  }
+  return [];
 }
 
 /** An in-process component lives inside one service, so only that service can call it. */
