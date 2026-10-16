@@ -96,18 +96,18 @@ attempt:
         data: [{ entity: LinkStats }]
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
-      - { id: lb--redirect-api, from: lb, to: redirect-api }
+      - { id: lb--redirect-api, from: lb, to: redirect-api, policy: { sameZone: true } }
       - { id: lb--gateway, from: lb, to: gateway }
       - { id: gateway--link-api, from: gateway, to: link-api }
       - { id: redirect-api--near, from: redirect-api, to: near }
       - id: redirect-api--redis
         from: redirect-api
         to: redis
-        policy: { timeoutMs: 20, circuitBreaker: true }
+        policy: { timeoutMs: 20, circuitBreaker: true, sameZone: true }
       - id: redirect-api--links-db
         from: redirect-api
         to: links-db
-        policy: { timeoutMs: 200, maxRps: 80000, circuitBreaker: true }
+        policy: { timeoutMs: 200, maxRps: 80000, circuitBreaker: true, sameZone: true }
       - id: link-api--links-db
         from: link-api
         to: links-db
@@ -138,7 +138,7 @@ attempt:
         to: redis
         policy: { timeoutMs: 20, circuitBreaker: true }
       - { id: redirect-api--clicks, from: redirect-api, to: clicks }
-      - { id: click-counter--clicks, from: click-counter, to: clicks }
+      - { id: click-counter--clicks, from: click-counter, to: clicks, policy: { sameZone: true } }
       - id: click-counter--click-stats
         from: click-counter
         to: click-stats

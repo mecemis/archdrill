@@ -39,11 +39,11 @@ attempt:
       - id: link-api--redis
         from: link-api
         to: redis
-        policy: { timeoutMs: 20, circuitBreaker: true }
+        policy: { timeoutMs: 20, circuitBreaker: true, sameZone: true }
       - id: link-api--links-db
         from: link-api
         to: links-db
-        policy: { timeoutMs: 500 }
+        policy: { timeoutMs: 500, sameZone: true }
   flows:
     - operation: redirect
       handler: link-api

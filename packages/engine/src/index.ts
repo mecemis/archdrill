@@ -17,3 +17,4 @@ export {
   SCALE_IN_COOLDOWN_SEC,
 } from "./sim/timeline-dynamics";
 export * from "./sim/types";
+export * from "./sim/zone-traffic";

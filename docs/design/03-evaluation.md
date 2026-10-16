@@ -156,6 +156,7 @@ Increments have their own effect (`increment`), which step matchers can name. St
 - `no-acknowledged-data-loss(op, environment)`: on failover, writes acknowledged before replication are counted.
 - `stable-under-retries(environment)`: the analytic fixed point converges, so there is no retry amplification spiral.
 - `cost-within-budget(budget)`.
+- `zone-local-calls(environment, minMonthlyUsd)`: no connection pays more than the threshold for crossings between zones that zone-aware routing would avoid.
 
 **Decision checks**
 - `decision-consistent(decision, requirement)`: for example, `301` versus FR-4 revocation or per-click analytics.

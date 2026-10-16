@@ -48,8 +48,8 @@ attempt:
       - { id: safety, kind: external-api, flavor: url-safety-list, label: URL safety, size: quota }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
-      - { id: lb--link-api, from: lb, to: link-api }
-      - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true } }
+      - { id: lb--link-api, from: lb, to: link-api, policy: { sameZone: true } }
+      - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true, sameZone: true } }
       - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
       - { id: link-api--near, from: link-api, to: near }
       - { id: link-api--safety, from: link-api, to: safety, policy: { timeoutMs: 300 } }

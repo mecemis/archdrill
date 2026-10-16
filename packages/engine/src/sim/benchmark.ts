@@ -1,21 +1,14 @@
 import type { BenchmarkRun, Calibration, CatalogIndex } from "@archdrill/model";
 import { NETWORK_RTT_MS } from "./calls";
 import { type ComponentProfile, componentProfile } from "./capacity";
-import { addMoments, componentLatency, type Load, networkHop, summarize } from "./summary";
+import { addMoments, componentLatency, type Load, summarize } from "./summary";
+import { networkHop, SAME_ZONE_RTT_MS } from "./zone-traffic";
 
 /**
  * Replays published benchmarks with the engine's own component model, so the
  * catalog's capacities and latencies are checked against measurements rather
  * than only explained.
  */
-
-/**
- * Round trip between hosts in one zone, where benchmarks run their clients.
- * AWS puts it below a millisecond with enhanced networking; ElastiCache's
- * median of 0.44 ms, service included, bounds it from above. Designs pay
- * NETWORK_RTT_MS per hop instead, since their calls cross zones.
- */
-export const SAME_ZONE_RTT_MS = 0.1;
 
 /** How far a replayed run may land from the measured one, relative to it. */
 export const CALIBRATION_TOLERANCE = 0.15;

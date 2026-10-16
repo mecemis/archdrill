@@ -1,3 +1,4 @@
+import { CROSS_ZONE_USD_PER_GB } from "@archdrill/engine";
 import type { Flavor, Provenance, Size, Source } from "@archdrill/model";
 import { BookCheck, FlaskConical } from "lucide-react";
 import { catalogIndex } from "../state/content";
@@ -18,7 +19,8 @@ type Field =
   | "capacityUnits"
   | "perKeyCapacityPerSec"
   | "startupSec"
-  | "failoverSec";
+  | "failoverSec"
+  | "crossZoneBilling";
 
 const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
@@ -34,7 +36,15 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "latencyMs", label: "Latency" },
   { field: "startupSec", label: "Startup" },
   { field: "failoverSec", label: "Failover" },
+  { field: "crossZoneBilling", label: "Between zones" },
 ];
+
+/** What data crossing zones costs at a flavor's end. */
+const CROSS_ZONE_BILLING: Readonly<Record<NonNullable<Flavor["crossZoneBilling"]>, string>> = {
+  "each-end": `${price(CROSS_ZONE_USD_PER_GB)} a GB sent or received across zones`,
+  "other-end": `free at its end; the other end pays ${price(CROSS_ZONE_USD_PER_GB)} a GB`,
+  free: "free on hops through it",
+};
 
 /** A price as the source states it: $1.424, $0.115, $0.0225, $0.50, never rounded away. */
 function price(value: number): string {
@@ -119,6 +129,10 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
       return flavor.failoverSec === undefined
         ? null
         : `${flavor.failoverSec} s until a replica takes writes`;
+    case "crossZoneBilling":
+      return flavor.crossZoneBilling === undefined
+        ? null
+        : CROSS_ZONE_BILLING[flavor.crossZoneBilling];
   }
 }
 

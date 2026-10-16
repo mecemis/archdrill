@@ -47,7 +47,28 @@ export interface ComponentMetrics {
     readonly requests: number;
     readonly capacityUnits: number;
     readonly storage: number;
+    /** Data its calls send and receive across zones, both ends' share. */
+    readonly crossZone: number;
   };
+}
+
+/** How the calls over one connection cross zones, and what that costs. */
+export interface ConnectionZoneMetrics {
+  readonly connectionId: string;
+  /** Share of reads, and of writes, that go to an instance in another zone. */
+  readonly crossRead: number;
+  readonly crossWrite: number;
+  /** Mean round trip of a read and of a write over the connection. */
+  readonly roundTripMs: { readonly read: number; readonly write: number };
+  /** Bytes a second it carries, both ways, for reads and for writes, crossing or not. */
+  readonly bytesPerSec: { readonly read: number; readonly write: number };
+  /** GB a month that cross zones over it, both directions, at this load. */
+  readonly crossGbPerMonth: number;
+  /** USD a GB crossing zones costs on this hop, both ends together. */
+  readonly usdPerGb: number;
+  readonly monthlyCost: number;
+  /** What zone-aware routing would save of it; 0 where it is on or cannot help. */
+  readonly avoidableMonthlyCost: number;
 }
 
 export interface CacheMetrics {
@@ -159,6 +180,8 @@ export interface EnvironmentMetrics {
   readonly connections: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: failures, retries, timeouts, shedding. */
   readonly calls: ReadonlyMap<string, ConnectionCallMetrics>;
+  /** Per connection between components the region holds: what crosses zones. */
+  readonly zoneTraffic: ReadonlyMap<string, ConnectionZoneMetrics>;
   readonly monthlyCost: number;
   /** False if the overload feedback loop did not settle; metrics are then the last iterate. */
   readonly converged: boolean;

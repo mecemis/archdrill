@@ -44,17 +44,21 @@ describe("describeChanges", () => {
   it("summarises components, connections, policies, flows and decisions", () => {
     const before = cacheAsideAttempt();
     const after = JSON.parse(JSON.stringify(before));
-    after.architecture.components.find((c: { id: string }) => c.id === "api").replicas = 10;
-    after.architecture.connections.find(
+    const api = after.architecture.components.find((c: { id: string }) => c.id === "api");
+    api.replicas = 10;
+    api.zones = 3;
+    const policy = after.architecture.connections.find(
       (c: { id: string }) => c.id === "api--redis",
-    ).policy.timeoutMs = 20;
+    ).policy;
+    policy.timeoutMs = 20;
+    policy.sameZone = true;
     delete after.flows[0].steps.populate;
     after.flows[0].steps.expiryDb.next.valid = "r302";
     after.decisions["redirect-status"] = "s302";
 
     expect(describeChanges(before, after)).toEqual([
-      "Link API: replicas 3 → 10",
-      "Link API → Redis: timeout 20 ms",
+      "Link API: replicas 3 → 10, zones 1 → 3",
+      "Link API → Redis: timeout 20 ms, same-zone routing",
       "redirect flow: 1 removed, 1 changed",
       "Decision redirect-status: undecided → s302",
     ]);

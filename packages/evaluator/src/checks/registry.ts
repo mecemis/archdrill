@@ -44,6 +44,7 @@ import { recognizeStrategy } from "./strategy";
 import { timelineHolds, timelineRecovers } from "./timeline";
 import { noSinglePointOfFailure, unusedComponents } from "./topology";
 import type { CheckDef } from "./types";
+import { zoneLocalCalls } from "./zones";
 
 export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
   [
@@ -83,6 +84,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     limitsAreGlobal,
     noDualWrite,
     expiredDataRemoved,
+    zoneLocalCalls,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

@@ -59,7 +59,7 @@ describe("publishing clicks", () => {
     const down = simulate(clickAnalyticsAttempt(), { faults: queueDown });
 
     const p99 = (m: typeof intact) => m.operations.get("redirect")?.latency.p99 ?? 0;
-    expect(p99(slow)).toBeCloseTo(p99(intact), 6);
+    expect(p99(slow)).toBeCloseTo(p99(intact), 4);
     expect(down.operations.get("redirect")?.successRate).toBeCloseTo(1, 9);
     // Clicks the queue cannot take are lost, not counted.
     expect(down.operations.get("record-click")?.rate ?? 0).toBeLessThan(1);

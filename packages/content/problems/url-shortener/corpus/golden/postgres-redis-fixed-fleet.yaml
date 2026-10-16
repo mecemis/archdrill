@@ -40,16 +40,16 @@ attempt:
       - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2, zones: 2 }
     connections:
       - { id: visitors--lb, from: visitors, to: lb }
-      - { id: lb--redirect-api, from: lb, to: redirect-api }
+      - { id: lb--redirect-api, from: lb, to: redirect-api, policy: { sameZone: true } }
       - { id: lb--link-api, from: lb, to: link-api }
       - id: redirect-api--redis
         from: redirect-api
         to: redis
-        policy: { timeoutMs: 20, circuitBreaker: true }
+        policy: { timeoutMs: 20, circuitBreaker: true, sameZone: true }
       - id: redirect-api--links-db
         from: redirect-api
         to: links-db
-        policy: { timeoutMs: 200, maxRps: 100000, circuitBreaker: true }
+        policy: { timeoutMs: 200, maxRps: 100000, circuitBreaker: true, sameZone: true }
       - id: link-api--links-db
         from: link-api
         to: links-db

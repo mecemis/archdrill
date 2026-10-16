@@ -10,6 +10,7 @@ function componentChanges(before: Component, after: Component): string[] {
   if (before.shards !== after.shards) changes.push(`shards ${before.shards} → ${after.shards}`);
   if (before.replicas !== after.replicas)
     changes.push(`replicas ${before.replicas} → ${after.replicas}`);
+  if (before.zones !== after.zones) changes.push(`zones ${before.zones} → ${after.zones}`);
   if (!sameJson(before.autoscale, after.autoscale)) {
     changes.push(after.autoscale ? `autoscaling up to ${after.autoscale.max}` : "no autoscaling");
   }
@@ -23,6 +24,7 @@ function policySummary(policy: ConnectionPolicy): string {
     policy.retries > 0 ? `${policy.retries} retries` : null,
     policy.circuitBreaker ? "circuit breaker" : null,
     policy.maxRps !== undefined ? `bulkhead ${policy.maxRps}/s` : null,
+    policy.sameZone ? "same-zone routing" : null,
   ];
   return parts.filter((p): p is string => p !== null).join(", ");
 }

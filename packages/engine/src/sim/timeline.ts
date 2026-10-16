@@ -30,6 +30,7 @@ import {
   replicaAckMs,
   type SimulationContext,
   storedGb,
+  wholeInstances,
 } from "./setup";
 import { summarizeCache, summarizeComponents, summarizeOperations } from "./summary";
 import {
@@ -41,6 +42,14 @@ import {
 } from "./timeline-dynamics";
 import { activeAt, type FaultEvent, type FaultWindow, faultWindows } from "./timeline-faults";
 import type { ComponentMetrics, OperationMetrics } from "./types";
+import {
+  crossZoneCostByCaller,
+  type RouteHops,
+  routeHops,
+  summarizeZoneTraffic,
+  type ZoneRoute,
+  zoneRoutes,
+} from "./zone-traffic";
 
 export interface OperationSeries {
   readonly trigger: OperationMetrics["trigger"];
@@ -210,6 +219,21 @@ export function simulateTimeline(
   const stored = storedGb(workload, ctx);
   const replicaAck = replicaAckMs(workload, ctx);
   const connections = ctx.attempt.architecture.connections;
+  // Routes follow the instances autoscaled components run; the counts repeat from step to step.
+  const routesByCount = new Map<
+    string,
+    { routes: Map<string, ZoneRoute>; hops: Map<string, RouteHops> }
+  >();
+  const routesFor = (replicas: ReadonlyMap<string, number>) => {
+    const running = new Map([...replicas].map(([id, r]) => [id, wholeInstances(r)]));
+    const key = [...running].map(([id, n]) => `${id}:${n}`).join(",");
+    const known = routesByCount.get(key);
+    if (known) return known;
+    const routes = zoneRoutes(ctx.attempt, ctx.catalog, running);
+    const entry = { routes, hops: routeHops(routes) };
+    routesByCount.set(key, entry);
+    return entry;
+  };
 
   const times = stepTimes(timeline);
   // One state for the whole run: each step starts where the previous one ended.
@@ -353,10 +377,16 @@ export function simulateTimeline(
     const paths = new Map<string, PathShare[]>();
     const profiles = profilesOf(model, fixtures, true);
     const flow = propagateModel(model, fixtures);
-    const metrics = summarizeComponents(profiles, flow, model.loop.drop, stored, fixtures.faults, {
-      ...ctx.problem.client,
-      held: fixtures.clientConnections,
-    });
+    const { routes, hops } = routesFor(model.loop.replicas);
+    const metrics = summarizeComponents(
+      profiles,
+      flow,
+      model.loop.drop,
+      stored,
+      fixtures.faults,
+      { ...ctx.problem.client, held: fixtures.clientConnections },
+      crossZoneCostByCaller(summarizeZoneTraffic(flow.transfer, routes), ctx.attempt),
+    );
     const summary = summarizeOperations(
       fixtures.operations,
       flow.operations,
@@ -364,6 +394,7 @@ export function simulateTimeline(
       model.ingress.pass,
       {
         components: metrics,
+        hops,
         callFor: model.calls.get,
         replicaAck,
         timeoutOf: (callStep) =>

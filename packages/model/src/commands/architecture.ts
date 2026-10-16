@@ -183,6 +183,7 @@ export const setConnectionPolicy = defineCommand(
     jitter: z.boolean().optional(),
     circuitBreaker: z.boolean().optional(),
     maxRps: z.number().positive().max(1e9).nullable().optional(),
+    sameZone: z.boolean().optional(),
   }),
   (draft, args) => {
     const policy = draft.architecture.connections[requireConnectionIndex(draft, args.id)]?.policy;
@@ -195,6 +196,7 @@ export const setConnectionPolicy = defineCommand(
     if (args.backoff !== undefined) policy.backoff = args.backoff;
     if (args.jitter !== undefined) policy.jitter = args.jitter;
     if (args.circuitBreaker !== undefined) policy.circuitBreaker = args.circuitBreaker;
+    if (args.sameZone !== undefined) policy.sameZone = args.sameZone;
   },
 );
 

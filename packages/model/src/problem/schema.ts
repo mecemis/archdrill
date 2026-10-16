@@ -42,6 +42,11 @@ export const EventSchema = z.object({
   id: IdSchema,
   label: z.string().min(1),
   entity: z.string().min(1),
+  /**
+   * Bytes of one message, where it carries less than the whole entity (an
+   * id and a timestamp rather than the record); the entity's size otherwise.
+   */
+  bytes: z.number().int().positive().optional(),
 });
 export type ProblemEvent = z.infer<typeof EventSchema>;
 

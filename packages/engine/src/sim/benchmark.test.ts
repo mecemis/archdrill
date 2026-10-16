@@ -7,8 +7,8 @@ import {
   closedLoop,
   openLoop,
   replayCalibration,
-  SAME_ZONE_RTT_MS,
 } from "./benchmark";
+import { SAME_ZONE_RTT_MS } from "./zone-traffic";
 
 // The test catalog's Redis: 150,000 reads and 120,000 writes a second, 0.5 ms per command.
 const calibration = (changes: Partial<Calibration> = {}): Calibration =>

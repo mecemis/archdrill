@@ -20,6 +20,7 @@ import {
   utilizationOf,
 } from "./summary";
 import type { EnvironmentMetrics, MetastableComponent } from "./types";
+import { crossZoneCostByCaller, routeHops, summarizeZoneTraffic, zoneRoutes } from "./zone-traffic";
 
 export { NETWORK_RTT_MS } from "./calls";
 export { MAX_DELIVERIES } from "./propagate";
@@ -134,6 +135,11 @@ export function simulateEnvironment(
   // Billed and reported with whole instances.
   const profiles = profilesOf(model, fixtures, true);
   const final = propagateModel(model, fixtures);
+  const running = new Map(
+    [...model.loop.replicas].map(([id, replicas]) => [id, wholeInstances(replicas)]),
+  );
+  const routes = zoneRoutes(ctx.attempt, ctx.catalog, running);
+  const zoneTraffic = summarizeZoneTraffic(final.transfer, routes);
   const components = summarizeComponents(
     profiles,
     final,
@@ -141,6 +147,7 @@ export function simulateEnvironment(
     storedGb(workload, ctx),
     faults,
     { ...ctx.problem.client, held: fixtures.clientConnections },
+    crossZoneCostByCaller(zoneTraffic, ctx.attempt),
   );
   const connections = fixtures.connections;
   return {
@@ -152,6 +159,7 @@ export function simulateEnvironment(
       model.ingress.pass,
       {
         components,
+        hops: routeHops(routes),
         callFor: model.calls.get,
         replicaAck: replicaAckMs(workload, ctx),
         timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,
@@ -169,6 +177,7 @@ export function simulateEnvironment(
     ),
     connections: final.traffic,
     calls: summarizeCalls(final, model.calls.shedOf, model.loop.timedOut),
+    zoneTraffic,
     monthlyCost: [...components.values()].reduce((sum, c) => sum + c.monthlyCost, 0),
     converged,
     iterations,

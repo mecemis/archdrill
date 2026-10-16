@@ -97,3 +97,22 @@ test("spreads a fleet over zones, and shows what losing one takes down", async (
     page.getByText("Losing an availability zone takes down Redirect API", { exact: false }).first(),
   ).toBeVisible();
 });
+
+test("keeps calls in their zone, and shows what crossing zones costs", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S3 / }).click();
+  // The edge moves while the nodes take their metrics; its click selects it wherever it is.
+  await page.locator('.react-flow__edge[data-id="lb--redirect-api"]').dispatchEvent("click");
+
+  const zones = page.getByRole("group", { name: "Zones" });
+  const routing = zones.getByRole("checkbox", { name: /Zone-aware routing/ });
+  await expect(routing).toBeChecked();
+  await routing.uncheck();
+
+  await expect(zones.getByText("Zone-aware routing would save")).toBeVisible();
+  await expect(zones.getByText("67%")).toBeVisible();
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await expect(
+    page.getByText("zone-aware routing would save", { exact: false }).first(),
+  ).toBeVisible();
+});

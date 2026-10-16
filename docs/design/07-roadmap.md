@@ -499,8 +499,19 @@ Where a design runs, and what it survives when part of a region, or a whole regi
   - A new timeline loses a zone at peak for good: redirects stay at 99.9% before any replacement starts, creates are back within 45 seconds, and two predictions ask what happens to each.
   - Every golden keeps its scores, and the zone mutants also fail the new timeline: 131 mutants, all caught.
 
+**Part 3, traffic between zones (as built).** Crossing zones costs time and money, and zone-aware routing saves both ([ADR 0015](../adr/0015-traffic-between-zones.md)).
+- **Round trips.** 0.1 ms within a zone and 1 ms between zones, by the share of calls that cross; replicas acknowledge from where they are.
+- **Transfer charges.** $0.01 a GB at each end that pays: EC2 instances at both ends, RDS and ElastiCache at neither, nothing through an Application Load Balancer or to DynamoDB and SQS. The component making the calls carries the cost.
+- **Zone-aware routing** on a connection keeps calls in their zone as far as the target's instances there can take them; writes still go to the primary or the leader.
+- **The check.** `zone-local-calls` names the connections whose crossings routing would avoid, and the saving.
+- **The corpus.**
+  - The URL shortener's goldens route within their zones; without it, NGINX's hop alone costs about $3,100 a month at S3's average load.
+  - Click messages are 100 bytes, not the link.
+  - The MySQL and Memcached golden no longer passes S3: Memcached's one copy of a key is in one zone, and reaching it crosses zones two times in three.
+  - Two mutants: 133, every one caught.
+- **Shown.** A Zones section on connections, and costs between zones on components and totals.
+
 **Next.**
-- The latency and the price of crossing zones, and zone-aware routing.
 - Regions: designs in two regions, a lost region, and what cross-region replication loses on the way (RPO).
 
 ## v0.4 and later (only if justified)

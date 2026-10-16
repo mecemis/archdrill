@@ -45,6 +45,7 @@ kinds:
           newConnectionsPerSec: 25
           activeConnections: 3000
           processedGbPerHour: 1
+        crossZoneBilling: free
         sizes:
           managed:
             label: managed
@@ -70,6 +71,9 @@ kinds:
           unit for every 25 requests a second.
         standsFor: AWS Application Load Balancer
         provenance:
+          crossZoneBilling:
+            published: aws-elb-faqs
+            note: Cross-zone load balancing is always on with an Application Load Balancer, and the data it moves between zones is not charged.
           capacityUnits:
             published: aws-alb-pricing
             note: >-
@@ -79,6 +83,7 @@ kinds:
       - id: nginx
         label: NGINX
         description: Self-managed reverse proxy and load balancer. Run at least two for redundancy.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU
@@ -101,6 +106,10 @@ kinds:
                 model: Half a millisecond of proxy processing; an assumption.
                 basis: []
         defaultSize: m
+        provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
 
   - id: api-gateway
     label: API gateway
@@ -141,6 +150,7 @@ kinds:
       - id: kong
         label: Kong
         description: Self-managed gateway with rate-limiting and authentication plugins. Run at least two.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU
@@ -163,6 +173,10 @@ kinds:
                 model: A millisecond and a half of plugin processing; an assumption.
                 basis: []
         defaultSize: m
+        provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
 
   - id: service
     label: Service
@@ -175,6 +189,7 @@ kinds:
         label: Service
         description: A stateless HTTP service (for example ASP.NET Core, Spring Boot, Go, Node.js).
         startupSec: 60
+        crossZoneBilling: each-end
         sizes:
           s:
             label: 2 vCPU
@@ -197,6 +212,9 @@ kinds:
         defaultSize: m
         notes: Throughput assumes a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime; heavier handlers do far less.
         provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
           startupSec:
             model: "A minute from launch to taking traffic: instance boot, runtime start and health checks. An assumption."
             basis: []
@@ -264,6 +282,7 @@ kinds:
         label: Redis
         description: In-memory data store with rich data types and optional replication.
         capabilities: [atomic-increment]
+        crossZoneBilling: other-end
         sizes:
           s:
             label: 13 GB
@@ -329,6 +348,9 @@ kinds:
         defaultSize: m
         notes: Commands run on one thread per node, with Redis 7's I/O threads handling the network around it. Shards add memory and write capacity; replicas add read capacity and failover. Atomic increments (INCR with an expiry) suit short-lived counters such as rate limits; counts that must survive a restart belong in a durable store, since a restart empties the cache.
         provenance:
+          crossZoneBilling:
+            published: aws-elasticache-pricing
+            note: No charge for traffic in or out of the ElastiCache node; the instance at the other end pays $0.01 a GB.
           capacityPerSec:
             model: "AWS measured 395,819 small commands a second (80% GET, 20% SET) on a 4-vCPU node running Redis 7, whose I/O threads take the network work off the command thread; the replay (calibration \"elasticache-redis-7\") reproduces it at 400,000. With 2,000 and 5,200 clients Redis measured 349,000, as so many connections cost it some throughput; the engine holds 392,000, 12% above. GETs and SETs cost the same: redis-benchmark measures them within 1% of each other."
             basis:
@@ -342,6 +364,7 @@ kinds:
       - id: memcached
         label: Memcached
         description: Multi-threaded in-memory cache for simple key-value data. No replication.
+        crossZoneBilling: other-end
         sizes:
           m:
             label: 26 GB
@@ -370,6 +393,10 @@ kinds:
                   - aws-elasticache-io-multiplexing
         defaultSize: m
         notes: Nodes are independent; use shards for capacity. Memcached has no replication, so replicas only model extra nodes holding the same keys.
+        provenance:
+          crossZoneBilling:
+            published: aws-elasticache-pricing
+            note: No charge for traffic in or out of the ElastiCache node; the instance at the other end pays $0.01 a GB.
 
   - id: relational-db
     label: Relational database
@@ -385,6 +412,7 @@ kinds:
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
         failoverSec: 35
+        crossZoneBilling: other-end
         sizes:
           s:
             label: 2 vCPU
@@ -437,6 +465,9 @@ kinds:
         defaultSize: m
         notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
         provenance:
+          crossZoneBilling:
+            published: aws-rds-pricing
+            note: The EC2 end pays $0.01 a GB in and out; data in and out of the RDS instance costs nothing more, and Multi-AZ replication between zones is free.
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
@@ -456,6 +487,7 @@ kinds:
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
         failoverSec: 35
+        crossZoneBilling: other-end
         sizes:
           m:
             label: 8 vCPU
@@ -476,6 +508,9 @@ kinds:
                   - rds-m6i-prices
         defaultSize: m
         provenance:
+          crossZoneBilling:
+            published: aws-rds-pricing
+            note: The EC2 end pays $0.01 a GB in and out; data in and out of the RDS instance costs nothing more, and Multi-AZ replication between zones is free.
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
@@ -506,6 +541,7 @@ kinds:
         requestCost: { readPerMillion: 0.125, writePerMillion: 0.625 }
         requestUnits: { per: item, readBytes: 4096, writeBytes: 1024, readUnits: 0.5 }
         perKeyCapacityPerSec: { write: 1000 }
+        crossZoneBilling: free
         sizes:
           on-demand:
             label: on-demand
@@ -527,6 +563,9 @@ kinds:
         notes: On-demand capacity scales with demand once table quotas are raised; you pay per request and per GB stored (one billed copy, replicated across zones). One item lives in one partition, which takes at most 1,000 writes a second, however much capacity the table has.
         standsFor: Amazon DynamoDB (on-demand, Standard table class)
         provenance:
+          crossZoneBilling:
+            published: aws-data-transfer-overview
+            note: Reaching an AWS service at its regional endpoint, through an internet gateway or a gateway endpoint, carries no data transfer charge.
           storagePricePerGbMonth:
             published: aws-dynamodb-pricing
           requestCost:
@@ -554,6 +593,7 @@ kinds:
         label: Cassandra
         description: Leaderless, partitioned database (Apache Cassandra or ScyllaDB). Shards are the groups of nodes that own a range of keys; replicas are the copies of each range.
         storagePricePerGbMonth: 0.08
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 8 vCPU node
@@ -578,6 +618,9 @@ kinds:
         defaultSize: m
         notes: Writes are cheap appends, so a node takes about twice as many writes as reads. Run three replicas of every range. Counter columns add in place, so a retried or redelivered increment counts twice. Conditional writes (IF NOT EXISTS) run a lightweight transaction, a consensus round between replicas that costs several plain writes.
         provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
           storagePricePerGbMonth:
             published: ebs-gp3-storage
             note: EBS gp3 volumes on EC2, per stored copy.
@@ -592,6 +635,7 @@ kinds:
       - id: kgs
         label: Key generation service
         description: Pre-generates random unique codes into a key table and hands them out, singly or in batches, with an atomic claim.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU
@@ -610,6 +654,10 @@ kinds:
                 basis: []
         defaultSize: m
         notes: Every claim marks keys as used in a durable key table. Claiming in batches keeps the service off the per-request path.
+        provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
 
   - id: coordination
     label: Coordination service
@@ -623,6 +671,7 @@ kinds:
       - id: etcd
         label: etcd
         description: Raft-based key-value store. Run 3 or 5 members.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU
@@ -660,9 +709,14 @@ kinds:
                   - etcd-performance
         defaultSize: m
         notes: Every write goes through consensus and costs a quorum round trip, and only the leader takes writes. Keep it off the per-request path.
+        provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
       - id: zookeeper
         label: ZooKeeper
         description: Consensus-based coordination service (ZAB). Run 3 or 5 servers.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU
@@ -683,6 +737,10 @@ kinds:
                   - etcd-performance
         defaultSize: m
         notes: Writes go through the leader and a quorum. Keep it off the per-request path.
+        provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
 
   - id: queue
     label: Message queue
@@ -697,6 +755,7 @@ kinds:
         managedRedundancy: true
         requestCost: { readPerMillion: 0.4, writePerMillion: 0.4 }
         requestUnits: { per: request, readBytes: 65536, writeBytes: 65536 }
+        crossZoneBilling: free
         sizes:
           on-demand:
             label: on-demand
@@ -718,6 +777,9 @@ kinds:
         notes: You pay per request. Messages wait for days if consumers fall behind; a message that keeps failing is delivered a few times, then moved to a dead-letter queue.
         standsFor: Amazon SQS (standard queue)
         provenance:
+          crossZoneBilling:
+            published: aws-data-transfer-overview
+            note: Reaching an AWS service at its regional endpoint, through an internet gateway or a gateway endpoint, carries no data transfer charge.
           requestCost:
             published: aws-sqs-pricing
             note: Per million requests; each 64 KB of payload counts as one request.
@@ -727,6 +789,7 @@ kinds:
       - id: kafka
         label: Kafka
         description: Partitioned, replicated log on brokers you run (or a managed cluster). Run at least three brokers.
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 4 vCPU broker
@@ -748,6 +811,10 @@ kinds:
                 basis: []
         defaultSize: m
         notes: Throughput per broker for small messages with replication factor 3. Consumers track their own offsets; at-least-once delivery is the default.
+        provenance:
+          crossZoneBilling:
+            published: aws-msk-pricing
+            note: Standard data transfer charges apply to data in and out of the cluster; replication between brokers is free.
 
   - id: stream-processor
     label: Stream processor
@@ -760,6 +827,7 @@ kinds:
         label: Flink
         description: A stream processing job (Apache Flink, or Kafka Streams inside a service) whose per-key state is checkpointed, so a restart resumes where it left off.
         startupSec: 120
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 8 vCPU task manager
@@ -779,6 +847,9 @@ kinds:
         defaultSize: m
         notes: Throughput for small messages with simple per-key state, such as counts. A restart replays messages since the last checkpoint, so whatever it writes must tolerate seeing a message twice.
         provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
           startupSec:
             model: "Two minutes: the job restarts and restores its state from the last checkpoint. An assumption."
             basis: []
@@ -794,6 +865,7 @@ kinds:
         label: Connection servers
         description: Self-managed servers that keep WebSocket connections open (for example Envoy, or a service on an event loop). Any instance can hold any user's connection.
         startupSec: 60
+        crossZoneBilling: each-end
         sizes:
           m:
             label: 8 vCPU, 32 GB
@@ -817,6 +889,9 @@ kinds:
         defaultSize: m
         notes: Every open connection holds memory for its buffers, so memory, not CPU, decides how many fit on an instance. A node that goes down drops all of its connections at once, and they all reconnect.
         provenance:
+          crossZoneBilling:
+            published: aws-cross-az-data-transfer
+            note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
           startupSec:
             model: A minute from launch to holding connections; an assumption.
             basis: []
@@ -1002,6 +1077,42 @@ sources:
   - id: rds-multi-az-cluster-failover
     title: Failing over a Multi-AZ DB cluster for Amazon RDS ("failover times are typically under 35 seconds")
     url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts-failover.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-16
+  - id: aws-cross-az-data-transfer
+    title: Exploring data transfer costs for Classic and Application Load Balancers ("$0.01/GB in each direction" between zones)
+    url: https://aws.amazon.com/blogs/networking-and-content-delivery/exploring-data-transfer-costs-for-classic-and-application-load-balancers
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-16
+  - id: aws-elb-faqs
+    title: Elastic Load Balancing FAQs (regional data transfer with cross-zone load balancing)
+    url: https://aws.amazon.com/elasticloadbalancing/faqs/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-16
+  - id: aws-elasticache-pricing
+    title: Amazon ElastiCache pricing (data transfer)
+    url: https://aws.amazon.com/elasticache/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-16
+  - id: aws-rds-pricing
+    title: Amazon RDS pricing (data transfer)
+    url: https://aws.amazon.com/rds/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-16
+  - id: aws-msk-pricing
+    title: Amazon MSK pricing (data transfer)
+    url: https://aws.amazon.com/msk/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-16
+  - id: aws-data-transfer-overview
+    title: Overview of data transfer costs for common architectures
+    url: https://aws.amazon.com/blogs/architecture/overview-of-data-transfer-costs-for-common-architectures/
     publisher: AWS
     kind: documentation
     retrieved: 2026-10-16

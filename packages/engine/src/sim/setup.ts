@@ -16,19 +16,11 @@ import {
 import type { Analysis, OperationAnalysis } from "../analyze";
 import { type ComponentProfile, componentProfile } from "./capacity";
 import { type ComponentFault, faultedProfile, NO_FAULT } from "./faults";
-import { type StepCost, stepCosts } from "./step-costs";
+import { messageBytes, type StepCost, stepCosts } from "./step-costs";
+import { replicaRoundTripMs } from "./zone-traffic";
 
 /** Share of cache memory usable for entries (allocator and metadata overhead). */
 export const CACHE_FILL_FACTOR = 0.7;
-/** Round trip to a replica in another zone, which semi-synchronous replication waits for. */
-export const CROSS_ZONE_RTT_MS = 1;
-
-const REPLICA_ACK_MS: Readonly<Record<ReplicationMode, number>> = {
-  async: 0,
-  "semi-sync": CROSS_ZONE_RTT_MS,
-  // Waiting for every replica means waiting for the slowest one, and for its disk.
-  sync: 2 * CROSS_ZONE_RTT_MS,
-};
 
 const DEFAULT_CLASS: RequestClass = {
   id: "default",
@@ -79,6 +71,11 @@ export interface OperationModel {
   readonly costs: readonly (readonly StepCost[])[];
   /** Bytes of one request and its response on the wire; 0 for work that clients do not send. */
   readonly wireBytes: number;
+  /**
+   * Bytes each hop on the way to the handler carries per request: the
+   * request and its response, or the message a consumer receives.
+   */
+  readonly hopBytes: number;
 }
 
 /** Whether a step asks for a hot key, for a request of this class. */
@@ -199,6 +196,10 @@ export function buildOperations(
     publishes: publishedEvents(analysis),
     costs: stepCosts(analysis.paths, ctx),
     wireBytes: wireBytes(analysis.operation),
+    hopBytes:
+      analysis.operation.trigger.type === "event"
+        ? messageBytes(ctx.problem, analysis.operation.trigger.event)
+        : wireBytes(analysis.operation),
   });
   const models: OperationModel[] = [];
   for (const [operationId, rate] of Object.entries(environment.rates)) {
@@ -419,16 +420,20 @@ export function storedGb(workload: Workload, ctx: SimulationContext): Map<string
 /**
  * Milliseconds a write to each component waits for its replicas, from the
  * workload's replication decision (asynchronous until the candidate decides).
- * Only self-managed stores with a primary and at least one replica wait.
+ * Only self-managed stores with a primary and at least one replica wait:
+ * semi-synchronously for the nearest replica's round trip, synchronously for
+ * the farthest one's and for its disk.
  */
 export function replicaAckMs(workload: Workload, ctx: SimulationContext): Map<string, number> {
   const result = new Map<string, number>();
   const decision = workload.replication?.decision;
   const chosen = decision ? ctx.attempt.decisions[decision] : undefined;
-  const mode = REPLICATION_MODES.find((m) => m === chosen) ?? "async";
-  if (REPLICA_ACK_MS[mode] === 0) return result;
+  const mode: ReplicationMode = REPLICATION_MODES.find((m) => m === chosen) ?? "async";
+  if (mode === "async") return result;
   for (const component of ctx.attempt.architecture.components) {
-    if (waitsForReplicas(component, ctx.catalog)) result.set(component.id, REPLICA_ACK_MS[mode]);
+    if (!waitsForReplicas(component, ctx.catalog)) continue;
+    const trip = replicaRoundTripMs(component, ctx.catalog, mode);
+    result.set(component.id, mode === "sync" ? 2 * trip : trip);
   }
   return result;
 }

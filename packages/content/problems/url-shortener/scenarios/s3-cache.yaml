@@ -238,6 +238,25 @@ checks:
       Combine enough memory for the hot set with a long TTL (hours to a day);
       expiry checks on read keep it correct.
 
+  - id: zone-local-calls
+    use: zone-local-calls
+    title: Calls stay in their zone where they can
+    dimension: cost
+    signal: senior
+    requirements: [NFR-1]
+    params: { environment: avg, minMonthlyUsd: 100 }
+    why: >-
+      Data that crosses availability zones is billed $0.01 a GB at each end
+      that runs on EC2, and each crossing adds most of a millisecond. A proxy
+      that spreads every redirect over three zones sends two in three of them
+      to another one: at 100,000 redirects a second that is about $3,000 a
+      month for one hop. A cache read from a replica in the caller's zone
+      costs nothing.
+    fix: >-
+      Turn on zone-aware routing on the busy hops: each zone's proxies send to
+      the services in their zone, and services read from cache and database
+      replicas in theirs. Writes still go to the primary, wherever it is.
+
   - id: dead-weight
     use: unused-components
     title: Every component earns its place
