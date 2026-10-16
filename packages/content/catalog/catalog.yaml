@@ -384,6 +384,7 @@ kinds:
         label: PostgreSQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
+        failoverSec: 35
         sizes:
           s:
             label: 2 vCPU
@@ -439,6 +440,9 @@ kinds:
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
+          failoverSec:
+            published: rds-multi-az-cluster-failover
+            note: Replicas that serve reads and take over by themselves are a Multi-AZ DB cluster's readers. A Multi-AZ DB instance, whose one standby serves no reads, fails over in 60 to 120 seconds.
           capacityPerSec:
             model: pgbench measures about 15,000 in-memory primary-key reads a second per vCPU and about 1,600 TPC-B-like transactions per vCPU. The catalog's reads stand for real queries at six times a pgbench select's work, so it takes a sixth of the read figure (2,500 per vCPU), and about 600 single-row writes per vCPU. Replayed at a sixth of the work (calibration "pgbench-select-only"), the 2-vCPU size reproduces every pgbench run up to 50 clients.
             basis:
@@ -451,6 +455,7 @@ kinds:
         label: MySQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
+        failoverSec: 35
         sizes:
           m:
             label: 8 vCPU
@@ -474,6 +479,9 @@ kinds:
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
+          failoverSec:
+            published: rds-multi-az-cluster-failover
+            note: Replicas that serve reads and take over by themselves are a Multi-AZ DB cluster's readers.
           capacityPerSec:
             model: Taken equal to PostgreSQL on the same hardware for primary-key work; an assumption.
             basis:
@@ -991,6 +999,12 @@ sources:
     publisher: DoiT (AWS on-demand rates)
     kind: price
     retrieved: 2026-10-14
+  - id: rds-multi-az-cluster-failover
+    title: Failing over a Multi-AZ DB cluster for Amazon RDS ("failover times are typically under 35 seconds")
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts-failover.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-16
   - id: rds-m6i-prices
     title: RDS db.m6i.2xlarge and db.m6i.4xlarge prices
     url: https://instances.vantage.sh/aws/rds/db.m6i.2xlarge

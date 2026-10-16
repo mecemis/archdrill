@@ -17,7 +17,8 @@ type Field =
   | "requestUnits"
   | "capacityUnits"
   | "perKeyCapacityPerSec"
-  | "startupSec";
+  | "startupSec"
+  | "failoverSec";
 
 const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
@@ -32,6 +33,7 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "networkGbps", label: "Network" },
   { field: "latencyMs", label: "Latency" },
   { field: "startupSec", label: "Startup" },
+  { field: "failoverSec", label: "Failover" },
 ];
 
 /** A price as the source states it: $1.424, $0.115, $0.0225, $0.50, never rounded away. */
@@ -113,6 +115,10 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
       return size ? `${size.latencyMs.base} ms` : null;
     case "startupSec":
       return flavor.startupSec === undefined ? null : `${flavor.startupSec} s`;
+    case "failoverSec":
+      return flavor.failoverSec === undefined
+        ? null
+        : `${flavor.failoverSec} s until a replica takes writes`;
   }
 }
 

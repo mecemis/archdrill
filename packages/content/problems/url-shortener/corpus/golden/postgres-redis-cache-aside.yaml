@@ -10,9 +10,9 @@ description: >-
   cannot take link creation down. A 10-second near cache in the redirect
   service absorbs viral links, both services autoscale between an
   average-day minimum and a spike maximum, and a gateway rate-limits
-  creation. Everything runs in three zones, and the services scale to 60%
-  of capacity, so that two zones carry the peak when one is lost without
-  waiting for new instances. Cache calls time out after 20 ms behind a
+  creation. Everything runs in three zones, and the services and the click
+  counter scale to 60% of capacity, so that two zones carry the peak when
+  one is lost without waiting for new instances. Cache calls time out after 20 ms behind a
   circuit breaker; a KGS hands out keys in batches. New links are published
   to a managed queue; a worker matches them against a local copy of the
   threat lists, confirms matches with the URL-safety API, disables and
@@ -82,9 +82,9 @@ attempt:
         flavor: flink
         label: Click counter
         size: m
-        replicas: 4
+        replicas: 6
         zones: 3
-        autoscale: { max: 16, targetUtilization: 0.7 }
+        autoscale: { max: 16, targetUtilization: 0.6 }
       - id: click-stats
         kind: wide-column-db
         flavor: cassandra

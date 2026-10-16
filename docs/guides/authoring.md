@@ -31,6 +31,7 @@ Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/00
 - **Stands for.** Name the real offering: `standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)`.
 - **Request units and bandwidth.** A flavor that meters requests by size gives `requestUnits`: `per` (`item` or `request`), `readBytes`, `writeBytes` and `readUnits` (0.5 for eventually consistent reads); see [ADR 0011](../adr/0011-work-units-and-bandwidth.md). A size gives `networkGbps`, the baseline bandwidth in each direction, not the burst. Entities' `avgBytes` decide both: units round up per item, and the values reads return fill the bandwidth.
 - **Capacity units.** A managed load balancer that bills by connections and bytes gives `capacityUnits` on its flavor: `pricePerHour`, and what one unit covers of `newConnectionsPerSec`, `activeConnections` and `processedGbPerHour`. Each hour is billed for the dimension that needs the most ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)).
+- **Failover.** A flavor whose writes go to a primary gives `failoverSec`: seconds until a replica takes writes again after the primary is lost.
 - **Zones.** A kind whose reads and writes need a majority of a shard's replicas (consensus, quorum reads and writes) sets `quorum: true`, so that losing a zone, or a node, that held the majority stops it. Flavors with `managedRedundancy` span zones on their own ([ADR 0013](../adr/0013-availability-zones.md)).
 - **Calibrations.** When a benchmark publishes runs (clients and the throughput or latency they saw), add it to `calibrations` ([ADR 0010](../adr/0010-calibrated-against-published-benchmarks.md)): the size it ran on and its replicas, its setup, `network` (`zone` or `region`), the share of `reads`, and the runs as measured. If its requests are lighter than the catalog's, give `work: { ratio, why }`. The content tests replay every run and fail beyond 15%; mark a run the engine is known to miss with `beyondModel: true` and say why in the calibration's `beyondModel`. The calibrated size's throughput and latency must cite the benchmark.
 
@@ -82,7 +83,7 @@ debrief: |                 # follow-up questions, shown once the scenario passes
 - `dataset`, `keyspace`, `replication`: stored entities (for storage cost and collisions), the keyspace and the decision that sets code length, and the decision that sets the replication mode.
 - `timelines` (optional): how the design behaves over time. Each has a `durationSec`, a `stepSec`, starting `rates`, and `events`:
   - `load`: new rates, at once or over `rampSec`, with `curve: linear` or `exponential`;
-  - `fault`: a fault from `at` until `until`;
+  - `fault`: a fault from `at` until `until`. A `failover` without `until` lasts as long as each store's failover takes (`failoverSec` in the catalog), or to the end for a store with no replica to promote or no failover time; a `zone-down` also fails over the primaries in the lost zone for as long ([ADR 0014](../adr/0014-failover-times.md));
   - `restart`: components that lose what they hold in memory.
 
   A timeline can also carry `predictions`: questions the candidate answers before the charts are shown. Each has a `question`, a `measure` and `options`:
