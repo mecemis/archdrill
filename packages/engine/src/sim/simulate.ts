@@ -1,5 +1,6 @@
 import type { Environment, Workload } from "@archdrill/model";
 import type { ComponentProfile } from "./capacity";
+import { resolveFaults } from "./faults";
 import {
   buildFixtures,
   createModel,
@@ -9,7 +10,7 @@ import {
   solve,
   warmCaches,
 } from "./model";
-import { replicaAckMs, type SimulationContext, storedGb } from "./setup";
+import { replicaAckMs, type SimulationContext, storedGb, wholeInstances } from "./setup";
 import {
   type Propagation,
   summarizeCache,
@@ -81,6 +82,30 @@ function shockTest(
 }
 
 /**
+ * A lost zone is survived with the instances already running: launching
+ * new ones depends on a control plane that the outage may impair, and takes
+ * minutes anyway (static stability). Autoscaled components keep the whole
+ * instances they ran for the same load before the zone was lost, or null
+ * when the environment loses no zone.
+ */
+function instancesBeforeZoneLoss(
+  workload: Workload,
+  environment: Environment,
+  ctx: SimulationContext,
+): Map<string, number> | null {
+  if (!environment.faults.some((f) => f.kind === "zone-down")) return null;
+  const healthy = {
+    ...environment,
+    faults: environment.faults.filter((f) => f.kind !== "zone-down"),
+  };
+  const fixtures = buildFixtures(workload, healthy, ctx);
+  const model = createModel(fixtures);
+  warmCaches(model, fixtures);
+  solve(model, fixtures);
+  return new Map([...model.loop.replicas].map(([id, replicas]) => [id, wholeInstances(replicas)]));
+}
+
+/**
  * Steady-state model of one environment: load propagation over path
  * probabilities, cache hit ratios, queueing latency, hot shards, overload,
  * autoscaling, faults, and the callers' timeouts, retries, circuit breakers
@@ -94,7 +119,13 @@ export function simulateEnvironment(
   environment: Environment,
   ctx: SimulationContext,
 ): EnvironmentMetrics {
-  const fixtures = buildFixtures(workload, environment, ctx);
+  const before = instancesBeforeZoneLoss(workload, environment, ctx);
+  // A lost zone takes its share of the instances that actually ran.
+  const lost = before && resolveFaults(environment.faults, ctx.attempt, ctx.catalog, before);
+  const fixtures: Fixtures = {
+    ...buildFixtures(workload, environment, ctx, lost ?? undefined),
+    ...(before && { fixedReplicas: true, initialReplicas: before }),
+  };
   const faults = fixtures.faults;
   const model = createModel(fixtures);
   warmCaches(model, fixtures);

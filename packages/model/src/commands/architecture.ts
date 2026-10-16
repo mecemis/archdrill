@@ -7,6 +7,7 @@ import {
   MAX_RETRIES,
   MAX_SHARDS,
   MAX_TIMEOUT_MS,
+  MAX_ZONES,
   PositionSchema,
 } from "../attempt/schema";
 import { IdSchema } from "../catalog/schema";
@@ -35,6 +36,7 @@ export const addComponent = defineCommand(
       ...(args.size === undefined ? {} : { size: args.size }),
       replicas: args.replicas ?? 1,
       shards: 1,
+      zones: 1,
       data: [],
     });
     draft.layout[id] = { ...args.position };
@@ -66,6 +68,7 @@ export const updateComponent = defineCommand(
     size: IdSchema.nullable().optional(),
     replicas: z.number().int().min(1).max(MAX_REPLICAS).optional(),
     shards: z.number().int().min(1).max(MAX_SHARDS).optional(),
+    zones: z.number().int().min(1).max(MAX_ZONES).optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -76,6 +79,9 @@ export const updateComponent = defineCommand(
     else if (args.size !== undefined) component.size = args.size;
     if (args.replicas !== undefined) component.replicas = args.replicas;
     if (args.shards !== undefined) component.shards = args.shards;
+    if (args.zones !== undefined) component.zones = args.zones;
+    // Instances cannot be spread over more zones than there are of them.
+    component.zones = Math.max(1, Math.min(component.zones, component.replicas * component.shards));
   },
 );
 

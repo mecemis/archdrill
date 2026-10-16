@@ -317,8 +317,17 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | Staff | Multi-zone survival |
 | Staff | Explicit RPO/RTO statement through decisions |
 
+**As built (M22): a lost zone.** A third environment, `zone-loss`, loses one of the region's availability zones at the peak, with every instance in it ([ADR 0013](../adr/0013-availability-zones.md)). Primaries there have failed over, and no new instance has started yet.
+- Checks:
+  - `redirects-zone-redundant` (gate) and `creates-zone-redundant`: nothing an operation needs goes down with one zone;
+  - `redirects-survive-zone-loss`: 99.9% of redirects succeed (critical);
+  - `zone-loss-p99`: redirect p99 stays under 50 ms.
+- The goldens that pass S6 spread over three zones and keep a third spare: services autoscale to 60%, and the fixed fleets grew (NGINX from 8 to 12, redirect servers from 25 to 33).
+- The MySQL and Memcached golden scores 79: Memcached keeps one copy of each key, so a lost zone sends a third of the cache's reads to MySQL.
+- Six mutants: redirect servers, the database or Redis in one zone, redirect servers scaling to 70%, a fixed fleet with one server to spare, and etcd over two zones.
+
 **As built (M4)** (`s6-dependency-failure`)
-- Environments: `failover` (a primary of the link store is lost and connections to it hang) and `instance-crash` (one instance of the redirect handler crashes), at the S4 peak. The zone outage is left for later.
+- Environments: `failover` (a primary of the link store is lost and connections to it hang) and `instance-crash` (one instance of the redirect handler crashes), at the S4 peak. The zone outage came in M22.
 - Gates: `no-acknowledged-loss` (from the `replication-mode` decision: asynchronous replication loses about one second of creates) and `creates-fail-fast` (store calls time out within a second).
 - Baseline: `redirects-survive-failover` (99.9%, critical), `failover-p99`, `survives-instance-loss` (99.99%, critical; N+1 sizing), `instance-loss-p99`, `no-unsafe-retries` (the conditional insert is not retried, major), `create-errors-handled`, `redirect-errors-handled` and `stable-under-retries`.
 - Signals: a circuit breaker on the store (senior).

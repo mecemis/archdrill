@@ -1,5 +1,5 @@
 import type { ComponentSelector, Timeline, TimelineEvent } from "@archdrill/model";
-import { selectComponents } from "./faults";
+import { selectComponents, zoneLoss } from "./faults";
 import type { LoopState } from "./propagate";
 import { type CacheSpec, cacheKey, type SimulationContext } from "./setup";
 import type { ComponentMetrics, OperationMetrics } from "./types";
@@ -200,11 +200,17 @@ export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
         label: restart.label ?? "Restart",
       });
     }
-    if (event.kind === "fault" && event.fault.kind === "down") {
-      const fault = event as FaultEvent;
-      if (fault.until === undefined) continue;
-      const ids = caches(fault.fault.target).map((c) => c.id);
-      if (ids.length > 0) emptied.push({ at: fault.until, ids, label: "Back after the outage" });
+    if (event.kind === "fault") {
+      const { fault, until } = event as FaultEvent;
+      if (until === undefined || (fault.kind !== "down" && fault.kind !== "zone-down")) continue;
+      const ids =
+        fault.kind === "down"
+          ? caches(fault.target).map((c) => c.id)
+          : // Caches that lost everything with the zone come back empty; the others keep theirs.
+            caches({ capability: "volatile-kv" })
+              .filter((c) => zoneLoss(c, ctx.catalog).capacityLeft === 0)
+              .map((c) => c.id);
+      if (ids.length > 0) emptied.push({ at: until, ids, label: "Back after the outage" });
     }
   }
   emptied.sort((a, b) => a.at - b.at);

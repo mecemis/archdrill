@@ -2,7 +2,7 @@
 id: postgres-sized-for-cache-loss
 title: PostgreSQL sized to survive cache loss
 description: >-
-  ALB → Link API (25 × 8 vCPU) → Redis cache-aside (3 shards × 2 replicas,
+  ALB → Link API (33 × 8 vCPU over three zones) → Redis cache-aside (3 shards × 2 replicas,
   20 ms timeout behind a circuit breaker) → PostgreSQL sized to serve the
   full read peak without any cache (16 vCPU, 4 shards × 3 replicas,
   semi-synchronous). Redirects keep working even when the whole cache is
@@ -22,8 +22,8 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
-      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 33, zones: 3 }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2, zones: 3 }
       - id: links-db
         kind: relational-db
         flavor: postgres
@@ -31,6 +31,7 @@ attempt:
         size: l
         shards: 4
         replicas: 3
+        zones: 3
         data: [{ entity: Link }]
     connections:
       - { id: visitors--lb, from: visitors, to: lb }

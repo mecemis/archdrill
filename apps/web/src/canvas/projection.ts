@@ -5,6 +5,7 @@ import {
   type Flow,
   type Issue,
   liveStepIds,
+  placedInZones,
 } from "@archdrill/model";
 import type { Edge, Node } from "@xyflow/react";
 import type { Highlight, Selection } from "../state/ui-store";
@@ -29,6 +30,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly replicas: number;
   /** Shards for shardable kinds, otherwise null. */
   readonly shards: number | null;
+  /** Zones its instances are spread over, for components a design places; otherwise null. */
+  readonly zones: number | null;
   readonly replicable: boolean;
   readonly entities: readonly string[];
   readonly isHandler: boolean;
@@ -40,6 +43,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly utilization: number | null;
   /** Faults the selected environment injects into this component. */
   readonly faults: readonly string[];
+  /** Those faults fail or slow its calls; otherwise they only cost it instances. */
+  readonly faultDisrupts: boolean;
   /** Autoscaling ceiling, or null for a fixed number of replicas. */
   readonly autoscaleMax: number | null;
   /** Instances it runs in the selected environment, or null without a simulation. */
@@ -90,6 +95,8 @@ export interface CanvasLoad {
       readonly hottestShardUtilization: number;
       readonly instances: number;
       readonly faults: readonly string[];
+      /** The faults fail or slow its calls; otherwise they only cost it capacity. */
+      readonly faultDisrupts: boolean;
     }
   >;
   /** Requests per second over each connection. */
@@ -137,6 +144,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         sizeLabel: size?.label ?? null,
         replicas: component.replicas,
         shards: kind?.shardable ? component.shards : null,
+        zones: kind && flavor && placedInZones(kind, flavor) ? component.zones : null,
         replicable: (kind?.replicable ?? false) && !(flavor?.managedRedundancy ?? false),
         entities: component.data.map((d) => d.entity),
         isHandler: flow?.handler === component.id,
@@ -145,6 +153,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         callable: callable.has(component.id),
         utilization: input.metrics?.components.get(component.id)?.utilization ?? null,
         faults: input.metrics?.components.get(component.id)?.faults ?? [],
+        faultDisrupts: input.metrics?.components.get(component.id)?.faultDisrupts ?? false,
         autoscaleMax: component.autoscale?.max ?? null,
         running: input.metrics?.components.get(component.id)?.instances ?? null,
         hotShard: hotShardOf(input.metrics?.components.get(component.id)),
@@ -155,20 +164,24 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
   });
 }
 
-/** Failing or overloaded is critical; close to capacity, on any shard, is a warning. */
+/**
+ * Failing, slowed or overloaded is critical. Close to capacity, on any
+ * shard, is a warning, and so is a fault that only cost it instances.
+ */
 export function healthOf(
   metrics:
     | {
         readonly utilization: number;
         readonly hottestShardUtilization: number;
         readonly faults: readonly string[];
+        readonly faultDisrupts: boolean;
       }
     | undefined,
 ): Health | null {
   if (!metrics) return null;
   const busiest = Math.max(metrics.utilization, metrics.hottestShardUtilization);
-  if (metrics.faults.length > 0 || busiest > 1) return "critical";
-  return busiest > WARN_UTILIZATION ? "warn" : "ok";
+  if (metrics.faultDisrupts || busiest > 1) return "critical";
+  return busiest > WARN_UTILIZATION || metrics.faults.length > 0 ? "warn" : "ok";
 }
 
 /** Hot shards worth pointing out: noticeably busier than the tier as a whole. */

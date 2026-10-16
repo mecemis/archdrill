@@ -204,9 +204,23 @@ export const KindSchema = z.object({
    * hop, and one independent copy per instance of that service.
    */
   inProcess: z.boolean().default(false),
+  /**
+   * Reads and writes need a majority of a shard's replicas (consensus, or
+   * quorum reads and writes): a shard that loses half of them stops.
+   */
+  quorum: z.boolean().default(false),
   flavors: z.array(FlavorSchema).min(1),
 });
 export type Kind = z.infer<typeof KindSchema>;
+
+/**
+ * Whether a design places a component's instances in zones: it runs its own
+ * instances (managed offerings span zones on their own) on the network
+ * (in-process components live in their service's instances).
+ */
+export function placedInZones(kind: Kind, flavor: Flavor): boolean {
+  return kind.replicable && !kind.inProcess && !flavor.managedRedundancy;
+}
 
 /**
  * One measured run of a benchmark. Closed runs keep a fixed number of clients

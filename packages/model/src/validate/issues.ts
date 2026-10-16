@@ -8,6 +8,8 @@ export const ISSUE_CODES = [
   "replicas-not-supported",
   "shards-not-supported",
   "replicas-ignored",
+  "zones-ignored",
+  "zones-exceed-instances",
   "autoscale-not-supported",
   "autoscale-below-minimum",
   "in-process-shared",

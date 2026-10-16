@@ -2,8 +2,9 @@
 id: dynamodb-direct
 title: DynamoDB without a cache
 description: >-
-  ALB → stateless Link API (25 × 8 vCPU) → DynamoDB, no cache. A valid
-  answer to the read path: correct, redundant and simple. It does not pass
+  ALB → stateless Link API (33 × 8 vCPU over three zones, so that two carry
+  the peak) → DynamoDB, no cache. A valid answer to the read path: correct,
+  redundant and simple. It does not pass
   S3, where paying per request for 300,000 redirects a second breaks the
   budget. With no cache there is nothing to invalidate or lose.
 expect:
@@ -20,7 +21,7 @@ attempt:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
       - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
-      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 25 }
+      - { id: link-api, kind: service, flavor: generic, label: Link API, size: l, replicas: 33, zones: 3 }
       - id: links
         kind: key-value-db
         flavor: dynamodb

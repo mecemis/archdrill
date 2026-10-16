@@ -272,6 +272,63 @@ describe("no-single-point-of-failure per kind of request", () => {
   });
 });
 
+describe("no-single-point-of-failure across zones", () => {
+  const params = { operation: "redirect", scope: "zone" };
+  const spread = (attempt = cacheAsideAttempt()) =>
+    mutated(
+      "updateComponent",
+      { id: "db", zones: 2 },
+      mutated("updateComponent", { id: "api", zones: 3 }, attempt),
+    );
+
+  it("counts replicas in one zone as one point of failure, lost together with the rest", () => {
+    const outcome = runCheck("no-single-point-of-failure", params, cacheAsideAttempt());
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe(
+      "Losing an availability zone takes down Link API (down: every instance was in the lost zone); Redis (down: every instance was in the lost zone); Postgres (down: every instance was in the lost zone).",
+    );
+    expect(outcome.evidence).toEqual([
+      { type: "component", componentId: "api" },
+      { type: "component", componentId: "redis" },
+      { type: "component", componentId: "db" },
+    ]);
+  });
+
+  it("does not count on a fallback that shares the lost zone", () => {
+    // Either the cache or the store alone would do, but one zone takes both.
+    const attempt = mutated("updateComponent", { id: "api", zones: 3 });
+
+    const outcome = runCheck("no-single-point-of-failure", params, attempt);
+
+    expect(outcome.evidence).toEqual([
+      { type: "component", componentId: "redis" },
+      { type: "component", componentId: "db" },
+    ]);
+  });
+
+  it("passes once everything a redirect needs is spread over zones", () => {
+    const outcome = runCheck("no-single-point-of-failure", params, spread());
+
+    expect(outcome.status).toBe("pass");
+    expect(outcome.message).toBe(
+      "Every kind of request keeps a way to succeed when a zone is lost.",
+    );
+  });
+
+  it("flags a cache whose replicas share a zone when redirects cannot do without it", () => {
+    const attempt = mutated(
+      "linkOutcome",
+      { operation: "redirect", stepId: "get", outcome: "error", target: "r503" },
+      spread(),
+    );
+
+    const outcome = runCheck("no-single-point-of-failure", params, attempt);
+
+    expect(outcome.evidence).toEqual([{ type: "component", componentId: "redis" }]);
+  });
+});
+
 describe("unused-components", () => {
   it("lists components no flow uses", () => {
     const attempt = mutated("addComponent", {

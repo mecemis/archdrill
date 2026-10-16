@@ -14,6 +14,7 @@ function metrics(): TimelineMetrics {
           instances: [2, 3],
           latencyMs: [2, 40],
           faults: [[], ["Primary down"]],
+          faultDisrupts: [false, true],
         },
       ],
     ]),
@@ -30,6 +31,7 @@ describe("timelineSnapshot", () => {
       hottestShardUtilization: 1.3,
       instances: 3,
       faults: ["Primary down"],
+      faultDisrupts: true,
     });
     expect(snapshot.connections.get("api--db")).toBe(250);
   });
@@ -37,7 +39,11 @@ describe("timelineSnapshot", () => {
   it("shows an idle design past the end of the series", () => {
     const snapshot = timelineSnapshot(metrics(), 5);
 
-    expect(snapshot.components.get("db")).toMatchObject({ utilization: 0, faults: [] });
+    expect(snapshot.components.get("db")).toMatchObject({
+      utilization: 0,
+      faults: [],
+      faultDisrupts: false,
+    });
     expect(snapshot.connections.get("api--db")).toBe(0);
   });
 });

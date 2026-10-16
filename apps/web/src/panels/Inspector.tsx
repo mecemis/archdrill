@@ -1,5 +1,5 @@
 import { componentProfile, HOURS_PER_MONTH } from "@archdrill/engine";
-import type { Component } from "@archdrill/model";
+import { type Component, placedInZones } from "@archdrill/model";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { activePack, catalogIndex } from "../state/content";
@@ -10,6 +10,7 @@ import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitiv
 import { AutoscaleEditor } from "./AutoscaleEditor";
 import { ConnectionInspector } from "./ConnectionInspector";
 import { ProvenancePanel } from "./ProvenancePanel";
+import { ZonePicker } from "./ZonePicker";
 
 const MAX_REPLICAS = 200;
 const MAX_SHARDS = 64;
@@ -42,6 +43,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
     size?: string | null;
     replicas?: number;
     shards?: number;
+    zones?: number;
   }) => dispatch("updateComponent", { id: component.id, ...changes });
   const profile = componentProfile(component, catalogIndex);
 
@@ -92,6 +94,9 @@ function ComponentInspector({ component }: { readonly component: Component }) {
           value={component.replicas}
           onCommit={(replicas) => update({ replicas })}
         />
+      )}
+      {kind && flavor && placedInZones(kind, flavor) && (
+        <ZonePicker component={component} onChange={(zones) => update({ zones })} />
       )}
       {kind?.replicable && !kind.holdsData && !flavor?.managedRedundancy && (
         <AutoscaleEditor component={component} />

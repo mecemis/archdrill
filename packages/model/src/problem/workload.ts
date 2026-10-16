@@ -118,6 +118,9 @@ const FailureModeSchema = z.enum(["crash", "hang"]);
  * - `degraded`: capacity multiplied by `capacity`.
  * - `failover`: a store's primary is lost and a replica is being promoted.
  *   Writes to that shard fail; reads continue on replicas.
+ * - `zone-down`: an availability zone is lost with every instance in it, in
+ *   any component. Primaries there have failed over, and no instance has
+ *   been launched to replace the lost ones yet.
  */
 export const FaultSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -140,6 +143,10 @@ export const FaultSchema = z.discriminatedUnion("kind", [
     kind: z.literal("failover"),
     target: ComponentSelectorSchema,
     mode: FailureModeSchema.default("hang"),
+  }),
+  z.strictObject({
+    kind: z.literal("zone-down"),
+    mode: FailureModeSchema.default("crash"),
   }),
 ]);
 export type Fault = z.infer<typeof FaultSchema>;

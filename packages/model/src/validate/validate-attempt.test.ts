@@ -263,6 +263,24 @@ describe("validateAttempt", () => {
     expect(issue?.severity).toBe("warning");
   });
 
+  it("spreads instances over no more zones than there are instances", () => {
+    const base = cacheAsideAttempt();
+    const components = base.architecture.components.map((c) =>
+      c.id === "redis" ? { ...c, zones: 3 } : c.id === "lb" ? { ...c, zones: 2 } : c,
+    );
+    const placed: Attempt = { ...base, architecture: { ...base.architecture, components } };
+
+    const issues = validateAttempt(placed, ctx);
+
+    expect(issues.find((i) => i.code === "zones-exceed-instances")?.message).toBe(
+      "Redis runs 2 instances, too few to spread over 3 zones.",
+    );
+    expect(issues.find((i) => i.code === "zones-ignored")).toMatchObject({
+      severity: "warning",
+      message: "ALB spans zones on its own; its zone count is ignored.",
+    });
+  });
+
   it("accepts an outbox publish only after a transactional write", () => {
     const behind = applyCommand(asyncAttempt(), "updateStep", {
       operation: "create-link",
