@@ -1,5 +1,6 @@
 import {
   type Attempt,
+  applyCommand,
   EnvironmentSchema,
   type Timeline,
   TimelineSchema,
@@ -97,6 +98,35 @@ describe("simulateTimeline", () => {
     const expected = steady.operations.get("redirect");
     expect(redirect?.successRate[last]).toBeCloseTo(expected?.successRate ?? 0, 9);
     expect(redirect?.p99[last]).toBeCloseTo(expected?.latency.p99 ?? 0, 3);
+  });
+
+  it("routes between zones with the instances an autoscaled fleet runs at each step", () => {
+    // Three instances match Redis's replicas zone for zone; ten (4, 3 and 3) do not quite.
+    let attempt = cacheAsideAttempt();
+    for (const [name, args] of [
+      ["updateComponent", { id: "api", replicas: 3, zones: 3 }],
+      ["updateComponent", { id: "redis", replicas: 3, zones: 3 }],
+      ["setAutoscale", { id: "api", autoscale: { max: 30, targetUtilization: 0.2 } }],
+      ["setConnectionPolicy", { id: "api--redis", sameZone: true }],
+    ] as const) {
+      attempt = applyCommand(attempt, name, args as never).attempt;
+    }
+    const ctx = context(attempt);
+    const result = simulateTimeline(workload, timeline({ durationSec: 600, stepSec: 10 }), ctx);
+    const steady = simulateEnvironment(
+      workload,
+      EnvironmentSchema.parse({ id: "steady", label: "Steady", rates: { redirect: 6000 } }),
+      ctx,
+    );
+    const last = result.times.length - 1;
+
+    expect(result.components.get("api")?.instances[last]).toBe(
+      steady.components.get("api")?.instances,
+    );
+    expect(result.operations.get("redirect")?.p50[last]).toBeCloseTo(
+      steady.operations.get("redirect")?.latency.p50 ?? 0,
+      3,
+    );
   });
 
   it("shows a fault only while it lasts", () => {

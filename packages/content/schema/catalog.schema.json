@@ -151,6 +151,10 @@
                   "type": "number",
                   "exclusiveMinimum": 0
                 },
+                "crossZoneBilling": {
+                  "type": "string",
+                  "enum": ["each-end", "other-end", "free"]
+                },
                 "sizes": {
                   "default": {},
                   "type": "object",
@@ -231,7 +235,8 @@
                             "capacityUnits",
                             "perKeyCapacityPerSec",
                             "startupSec",
-                            "failoverSec"
+                            "failoverSec",
+                            "crossZoneBilling"
                           ]
                         },
                         "additionalProperties": {
@@ -389,7 +394,8 @@
                       "capacityUnits",
                       "perKeyCapacityPerSec",
                       "startupSec",
-                      "failoverSec"
+                      "failoverSec",
+                      "crossZoneBilling"
                     ]
                   },
                   "additionalProperties": {

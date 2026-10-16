@@ -54,7 +54,8 @@ export type Component = z.infer<typeof ComponentSchema>;
  * How a service treats its calls over a connection: give up after a timeout,
  * retry failed calls, stop calling a dependency that fails most calls (circuit
  * breaker), and cap the call rate (bulkhead). Only calls made by flow steps
- * follow a policy; ingress hops do not.
+ * follow these; ingress hops do not. Every hop between zones follows
+ * `sameZone`.
  */
 export const ConnectionPolicySchema = z.object({
   /** Give up on a call after this long. Without it, a hung call waits for the client default. */
@@ -69,6 +70,14 @@ export const ConnectionPolicySchema = z.object({
   circuitBreaker: z.boolean().default(false),
   /** Bulkhead: calls beyond this rate are rejected locally and never reach the target. */
   maxRps: z.number().positive().max(1e9).optional(),
+  /**
+   * Zone-aware routing: send calls to the target's instances in the caller's
+   * zone, as far as that keeps them evenly loaded (a load balancer target
+   * group without cross-zone load balancing, Kubernetes' PreferClose, Envoy's
+   * zone-aware routing). A write still goes to its shard's primary, wherever
+   * that is.
+   */
+  sameZone: z.boolean().default(false),
 });
 export type ConnectionPolicy = z.infer<typeof ConnectionPolicySchema>;
 /** No timeout, no retries, no circuit breaker, no bulkhead. */

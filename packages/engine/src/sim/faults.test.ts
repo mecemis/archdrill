@@ -22,6 +22,7 @@ import { analyzeAttempt } from "../analyze";
 import { NO_TIMEOUT_WAIT_MS } from "./calls";
 import { failsOverWithZone, resolveFaultHits, resolveFaults, zoneLoss } from "./faults";
 import { simulateEnvironment } from "./simulate";
+import { CROSS_ZONE_RTT_MS, SAME_ZONE_RTT_MS } from "./zone-traffic";
 
 const workload = WorkloadSchema.parse({
   operations: {
@@ -391,8 +392,9 @@ describe("faults and connection policies", () => {
   });
 
   it("slows writes by waiting for replicas under semi-synchronous replication", () => {
-    const p50 = (mode: string) => {
-      const attempt = apply(createLinkAttempt("kgs", 1000), "setDecision", {
+    const mean = (mode: string, zones: number) => {
+      const spread = apply(createLinkAttempt("kgs", 1000), "updateComponent", { id: "db", zones });
+      const attempt = apply(spread, "setDecision", {
         decision: "replication-mode",
         option: mode,
       });
@@ -402,8 +404,11 @@ describe("faults and connection policies", () => {
       );
     };
 
-    expect(p50("semi-sync") - p50("async")).toBeCloseTo(1, 1);
-    expect(p50("sync") - p50("async")).toBeCloseTo(2, 1);
+    // A replica in another zone is a millisecond away; waiting for all of them adds their disks.
+    expect(mean("semi-sync", 2) - mean("async", 2)).toBeCloseTo(CROSS_ZONE_RTT_MS, 1);
+    expect(mean("sync", 2) - mean("async", 2)).toBeCloseTo(2 * CROSS_ZONE_RTT_MS, 1);
+    // Replicas in the primary's zone answer within a tenth of a millisecond, and share its fate.
+    expect(mean("semi-sync", 1) - mean("async", 1)).toBeCloseTo(SAME_ZONE_RTT_MS, 2);
   });
 
   it("finds the overloaded state aggressive retries can get stuck in", () => {

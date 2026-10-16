@@ -9,10 +9,12 @@ description: >-
   Memcached keeps one copy of each key, so a lost zone takes a third of the
   cache with it, and its share of reads lands on a MySQL sized for one
   node's misses: it survives a failover but not a lost zone at peak (S6).
+  A key's one copy is in one zone, so two cache reads in three cross zones
+  whatever the routing; their transfer charges put the design just over
+  S3's budget, which Redis replicas read in the caller's zone avoid.
 expect:
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
-  s3-cache: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: url-shortener
@@ -35,9 +37,9 @@ attempt:
       - { id: etcd, kind: coordination, flavor: etcd, label: etcd, size: m, replicas: 3, zones: 3 }
     connections:
       - { id: visitors--proxy, from: visitors, to: proxy }
-      - { id: proxy--link-api, from: proxy, to: link-api }
+      - { id: proxy--link-api, from: proxy, to: link-api, policy: { sameZone: true } }
       - { id: link-api--memcached, from: link-api, to: memcached, policy: { timeoutMs: 20, circuitBreaker: true } }
-      - { id: link-api--links-db, from: link-api, to: links-db, policy: { timeoutMs: 500 } }
+      - { id: link-api--links-db, from: link-api, to: links-db, policy: { timeoutMs: 500, sameZone: true } }
       - { id: link-api--etcd, from: link-api, to: etcd, policy: { timeoutMs: 200 } }
   flows:
     - operation: redirect

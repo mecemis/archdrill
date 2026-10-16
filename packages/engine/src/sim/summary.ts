@@ -35,6 +35,7 @@ import type {
   OperationMetrics,
   PathMetrics,
 } from "./types";
+import { hopOver, type RouteHops } from "./zone-traffic";
 
 /**
  * Extra wait for requests that an overloaded component does serve: its queue
@@ -79,6 +80,12 @@ export interface Propagation {
   readonly batchedItems: ReadonlyMap<string, Load>;
   /** Requests per second that clients send straight to each component, over connections they open. */
   readonly fromClients: ReadonlyMap<string, number>;
+  /**
+   * Bytes a second each connection carries, both ways, for reads and for
+   * writes: what its calls carry, and on the way in the requests, their
+   * responses and the messages consumers receive.
+   */
+  readonly transfer: ReadonlyMap<string, Load>;
 }
 
 export interface ResolvedOperation {
@@ -230,6 +237,8 @@ export function summarizeComponents(
   faults: ReadonlyMap<string, ComponentFault>,
   /** How clients use connections, which capacity units are billed by. */
   client: ClientConnections,
+  /** Per component: what its calls across zones cost a month. */
+  crossZoneCost: ReadonlyMap<string, number> = new Map(),
 ): Map<string, ComponentMetrics> {
   const metrics = new Map<string, ComponentMetrics>();
   const allFromClients = [...flow.fromClients.values()].reduce((sum, rate) => sum + rate, 0);
@@ -260,6 +269,7 @@ export function summarizeComponents(
         )
       : null;
     const unitCost = units?.monthlyCost ?? 0;
+    const crossZone = crossZoneCost.get(id) ?? 0;
     metrics.set(id, {
       componentId: id,
       readLoad: load.read,
@@ -279,12 +289,13 @@ export function summarizeComponents(
       hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
       storageGb,
       capacityUnits: units,
-      monthlyCost: instanceCost + requestCost + unitCost + storageCost,
+      monthlyCost: instanceCost + requestCost + unitCost + storageCost + crossZone,
       costBreakdown: {
         instances: instanceCost,
         requests: requestCost,
         capacityUnits: unitCost,
         storage: storageCost,
+        crossZone,
       },
     });
   }
@@ -334,16 +345,11 @@ function mixMoments(m: Moments, share: number): Moments {
   };
 }
 
-/** A network round trip: little spread around its mean. */
-export function networkHop(roundTripMs: number): Moments {
-  return { mean: roundTripMs, variance: (0.2 * roundTripMs) ** 2 };
-}
-
-export const NETWORK_HOP: Moments = networkHop(NETWORK_RTT_MS);
-
 /** Everything path latency depends on. */
 export interface LatencyInputs {
   readonly components: ReadonlyMap<string, ComponentMetrics>;
+  /** Round trips over each connection between zones or within one, for reads and writes. */
+  readonly hops: ReadonlyMap<string, RouteHops>;
   readonly callFor: (step: CallPathStep, hotKey: boolean) => CallModel;
   /** Components that run inside their caller, reached without a network hop. */
   readonly inProcess: ReadonlySet<string>;
@@ -403,7 +409,10 @@ function windowWait(windowSec: number): Moments {
 function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean): Moments {
   const call = inputs.callFor(step, hotKey);
   if (step.outcome === "error") return call.failureLatency;
-  const hop = inputs.inProcess.has(step.target) ? { mean: 0, variance: 0 } : NETWORK_HOP;
+  const write = ACTIONS[step.action].effect !== "read";
+  const hop = inputs.inProcess.has(step.target)
+    ? NO_WAIT
+    : hopOver(inputs.hops, step.connectionId, write);
   const timeout = inputs.timeoutOf(step);
   const component = inputs.components.get(step.target);
   // Requests for the hot key queue at the shard that holds it.
@@ -411,11 +420,11 @@ function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean)
   // A call that succeeded came back before the caller's timeout.
   const service =
     measured && timeout !== undefined
-      ? truncatedMoments(measured, Math.max(0, timeout - NETWORK_RTT_MS))
+      ? truncatedMoments(measured, Math.max(0, timeout - hop.mean))
       : measured;
   let total = addMoments(service ? addMoments(hop, service) : hop, call.successExtra);
   const ack = inputs.replicaAck.get(step.target) ?? 0;
-  if (ack > 0 && ACTIONS[step.action].effect !== "read") {
+  if (ack > 0 && write) {
     total = addMoments(total, { mean: ack, variance: (0.2 * ack) ** 2 });
   }
   return total;
@@ -552,11 +561,11 @@ export function summarizeOperations(
     };
     const trigger = op.operation.trigger.type;
     const batchers = inputs.components.get(op.analysis.flow?.handler ?? "")?.instances ?? 1;
-    const hops = op.analysis.ingress?.connections.length ?? 0;
-    let ingressLatency: Moments = {
-      mean: hops * NETWORK_HOP.mean,
-      variance: hops * NETWORK_HOP.variance,
-    };
+    // Requests are forwarded to any instance on their way in: read round trips.
+    let ingressLatency = (op.analysis.ingress?.connections ?? []).reduce<Moments>(
+      (sum, connectionId) => addMoments(sum, hopOver(inputs.hops, connectionId, false)),
+      NO_WAIT,
+    );
     for (const id of op.ingress) {
       const latency = inputs.components.get(id)?.latency;
       if (latency) ingressLatency = addMoments(ingressLatency, latency);

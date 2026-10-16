@@ -41,7 +41,7 @@ export const ProvenanceSchema = z.union([
 ]);
 export type Provenance = z.infer<typeof ProvenanceSchema>;
 
-/** Numbers on a size, and on a flavor, that need a provenance. */
+/** Figures on a size, and on a flavor, that need a provenance. */
 export const SIZE_NUMBERS = [
   "capacityPerSec",
   "latencyMs",
@@ -58,6 +58,7 @@ export const FLAVOR_NUMBERS = [
   "perKeyCapacityPerSec",
   "startupSec",
   "failoverSec",
+  "crossZoneBilling",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
@@ -96,6 +97,9 @@ export const SizeSchema = z.object({
 });
 export type Size = z.infer<typeof SizeSchema>;
 
+export const CrossZoneBillingSchema = z.enum(["each-end", "other-end", "free"]);
+export type CrossZoneBilling = z.infer<typeof CrossZoneBillingSchema>;
+
 export const FlavorSchema = z
   .object({
     id: IdSchema,
@@ -116,6 +120,15 @@ export const FlavorSchema = z
      * writes go to a primary.
      */
     failoverSec: z.number().positive().optional(),
+    /**
+     * Who pays for data that crosses zones to or from its instances:
+     * `each-end`, it and the instance at the other end each pay for what
+     * they send and receive (EC2, RDS); `other-end`, only the other end pays
+     * (ElastiCache nodes); `free`, nobody does (a hop through an Application
+     * Load Balancer, a regional service). Without it, instances a design
+     * runs pay at each end and managed offerings are free.
+     */
+    crossZoneBilling: CrossZoneBillingSchema.optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */
@@ -227,6 +240,11 @@ export type Kind = z.infer<typeof KindSchema>;
  */
 export function placedInZones(kind: Kind, flavor: Flavor): boolean {
   return kind.replicable && !kind.inProcess && !flavor.managedRedundancy;
+}
+
+/** Who pays for data crossing zones at a flavor's end, defaults included. */
+export function crossZoneBillingOf(flavor: Flavor): CrossZoneBilling {
+  return flavor.crossZoneBilling ?? (flavor.managedRedundancy ? "free" : "each-end");
 }
 
 /**

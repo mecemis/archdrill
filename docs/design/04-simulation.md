@@ -106,7 +106,7 @@ where `S` is the shard count and `q_1` the hottest key's share. Viral-spike work
   - Between `ρ = 0.98` and `1.0` the queueing wait stays at its capped value, and it jumps to the overload wait above 1.0.
   - Headroom checks (`utilization-below`, usually at 0.8) keep scenarios away from that region.
 - **Node latency.** Moments are `mean = S + W_q` and `variance = (cv·S)² + W_q²`.
-- **Network hops.** Each connection adds a round trip of 0.5 ms within a zone. Zone and region placement arrive with the failure scenarios.
+- **Network hops.** A hop between two components takes 0.1 ms within a zone and 1 ms between zones, weighted by the share of its calls that cross: two in three when caller and target spread over three zones, fewer with zone-aware routing. A client's hop into the region, and a call to a regional service such as DynamoDB, take 0.5 ms ([ADR 0015](../adr/0015-traffic-between-zones.md)).
 
 **Hot keys, near caches and autoscaling (as built, M5).**
 
@@ -195,7 +195,7 @@ Faults on ingress components (a crashed service instance) reduce capacity or rej
 
 Read and write capacity scale separately: for stores whose writes go to primaries, losing a replica costs reads only, and a failover removes one primary's write capacity. Two faults on one component are assumed to hit the same part, so the larger failed share wins and capacity losses compound.
 
-Replication: writes to self-managed stores with a primary and replicas wait for them under semi-synchronous replication (one cross-zone round trip, 1 ms) or synchronous replication (2 ms), from the decision the workload names. Asynchronous replication adds no latency and is assumed until the candidate decides; what it risks is checked by `no-acknowledged-data-loss`.
+Replication: writes to self-managed stores with a primary and replicas wait for them under semi-synchronous replication (the nearest replica's round trip: 1 ms in another zone, 0.1 ms in the primary's) or synchronous replication (twice the farthest one's), from the decision the workload names. Asynchronous replication adds no latency and is assumed until the candidate decides; what it risks is checked by `no-acknowledged-data-loss`.
 
 ### 8. Availability
 

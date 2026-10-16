@@ -346,12 +346,22 @@ function unitDriver(units: NonNullable<ComponentMetrics["capacityUnits"]>): stri
   }
 }
 
-/** A component's monthly cost, and what its capacity units are for when they cost anything. */
+/**
+ * A component's monthly cost, with what its capacity units are for and what
+ * its calls between zones cost, when either costs anything.
+ */
 function costLine(ctx: CheckContext, c: ComponentMetrics): string {
-  const line = `${label(ctx, c.componentId)}: ${usd(c.monthlyCost)}/month`;
+  const parts = [`${label(ctx, c.componentId)}: ${usd(c.monthlyCost)}/month`];
   const units = c.capacityUnits;
-  if (!units || c.costBreakdown.capacityUnits < 1) return line;
-  return `${line}, ${usd(c.costBreakdown.capacityUnits)} of it for ${count(units.units)} capacity units set by ${unitDriver(units)}`;
+  if (units && c.costBreakdown.capacityUnits >= 1) {
+    parts.push(
+      `${usd(c.costBreakdown.capacityUnits)} of it for ${count(units.units)} capacity units set by ${unitDriver(units)}`,
+    );
+  }
+  if ((c.costBreakdown.crossZone ?? 0) >= 1) {
+    parts.push(`${usd(c.costBreakdown.crossZone)} of it for calls between zones`);
+  }
+  return parts.join(", ");
 }
 
 /** Monthly cost of the design under the scenario's load stays within a budget. */

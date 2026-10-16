@@ -98,6 +98,7 @@ describe("commands", () => {
       retries: 2,
       circuitBreaker: true,
       maxRps: 10_000,
+      sameZone: true,
     }).attempt;
     const cleared = applyCommand(set, "setConnectionPolicy", {
       id: "api--redis",
@@ -114,12 +115,14 @@ describe("commands", () => {
       jitter: true,
       circuitBreaker: true,
       maxRps: 10_000,
+      sameZone: true,
     });
     expect(policy(cleared)).toEqual({
       retries: 2,
       backoff: "exponential",
       jitter: true,
       circuitBreaker: true,
+      sameZone: true,
     });
   });
 

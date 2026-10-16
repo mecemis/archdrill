@@ -234,6 +234,17 @@ export function propagate(
   const tallies = new Map<string, CallTally>();
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
   const fromClients = new Map<string, number>();
+  const transfer = new Map<string, Load>();
+  const carry = (connectionId: string | null | undefined, bytes: number, write: boolean) => {
+    if (connectionId == null || bytes <= 0) return;
+    const sent = transfer.get(connectionId) ?? { read: 0, write: 0 };
+    transfer.set(
+      connectionId,
+      write
+        ? { read: sent.read, write: sent.write + bytes }
+        : { read: sent.read + bytes, write: sent.write },
+    );
+  };
   const add = (into: Map<string, Load>, id: string, rate: number, write: boolean, bytes = 0) => {
     const load = into.get(id) ?? { read: 0, write: 0, bytes: 0 };
     const sent = (load.bytes ?? 0) + bytes;
@@ -290,6 +301,7 @@ export function propagate(
     route?.connections.forEach((connectionId, index) => {
       const hop = route.components[index + 1];
       addTraffic(connectionId, arriving);
+      carry(connectionId, arriving * op.hopBytes, false);
       // Clients open their connections to the first hop; proxies keep theirs open.
       if (index === 0 && trigger === "request" && hop) {
         fromClients.set(hop, (fromClients.get(hop) ?? 0) + arriving);
@@ -356,6 +368,7 @@ export function propagate(
                 (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
           const bytes = carried * cost.bytes;
           add(loads, step.target, work, write, bytes);
+          carry(step.connectionId, carried * cost.carriedBytes, write);
           if (batches && !cost.perItem && !cost.perRequest) {
             add(batchedItems, step.target, carried - work, write);
           }
@@ -415,7 +428,10 @@ export function propagate(
     // Redelivered messages pass the queue and the handler again.
     if (redelivered > 0) {
       for (const id of op.ingress) add(loads, id, redelivered, ingress.writes(op, id));
-      for (const connectionId of route?.connections ?? []) addTraffic(connectionId, redelivered);
+      for (const connectionId of route?.connections ?? []) {
+        addTraffic(connectionId, redelivered);
+        carry(connectionId, redelivered * op.hopBytes, false);
+      }
     }
     resolved.set(op.operation.id, { rate, classes, redeliveries: redelivered });
   }
@@ -432,5 +448,6 @@ export function propagate(
     batchArrivals,
     batchedItems,
     fromClients,
+    transfer,
   };
 }

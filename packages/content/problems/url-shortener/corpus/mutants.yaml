@@ -549,6 +549,30 @@ mutants:
       scenario: s6-dependency-failure
       fails: [creates-zone-redundant]
 
+  # Traffic between zones (S3).
+  - id: proxies-route-across-zones
+    base: postgres-redis-cache-aside
+    description: >-
+      NGINX spreads redirects over the Redirect API in every zone, so two in
+      three cross to another one: about $3,000 a month in transfer charges
+      that zone-aware routing would save.
+    apply:
+      - setConnectionPolicy: { id: lb--redirect-api, sameZone: false }
+    expect:
+      scenario: s3-cache
+      fails: [zone-local-calls]
+
+  - id: cache-reads-across-zones
+    base: dynamodb-redis-cache-aside
+    description: >-
+      The Link API reads Redis from any replica rather than the one in its
+      zone, so two cache reads in three cross zones.
+    apply:
+      - setConnectionPolicy: { id: link-api--redis, sameZone: false }
+    expect:
+      scenario: s3-cache
+      fails: [zone-local-calls]
+
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside

@@ -256,6 +256,14 @@ function ComponentRow({
             {compact(metrics.capacityUnits.units)} capacity units
           </span>
         )}
+        {metrics.costBreakdown.crossZone >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title="What its calls send and receive across zones costs, both ends' share"
+          >
+            {usd(metrics.costBreakdown.crossZone)} between zones
+          </span>
+        )}
       </td>
     </tr>
   );
@@ -381,8 +389,9 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
       requests: sum.requests + c.costBreakdown.requests,
       capacityUnits: sum.capacityUnits + c.costBreakdown.capacityUnits,
       storage: sum.storage + c.costBreakdown.storage,
+      crossZone: sum.crossZone + c.costBreakdown.crossZone,
     }),
-    { instances: 0, requests: 0, capacityUnits: 0, storage: 0 },
+    { instances: 0, requests: 0, capacityUnits: 0, storage: 0, crossZone: 0 },
   );
   return (
     <section className="text-sm">
@@ -392,6 +401,7 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
         {usd(totals.instances)} · requests {usd(totals.requests)}
         {totals.capacityUnits >= 1 && <> · capacity units {usd(totals.capacityUnits)}</>} · storage{" "}
         {usd(totals.storage)}
+        {totals.crossZone >= 1 && <> · between zones {usd(totals.crossZone)}</>}
       </p>
       <p className="mt-1 text-xs text-fg-subtle">
         Ballpark list prices for comparing designs, not a quote. Storage counts every replica's

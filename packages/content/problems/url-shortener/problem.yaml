@@ -100,7 +100,8 @@ operations:
     introducedIn: s8-click-analytics
 events:
   - { id: link-created, label: Link created, entity: Link }
-  - { id: link-clicked, label: Link clicked, entity: Link }
+  # A click message carries the code and when it was clicked, not the link.
+  - { id: link-clicked, label: Link clicked, entity: Link, bytes: 100 }
 # Each click comes from a different visitor, so every redirect opens its own
 # connection, which stays open until the load balancer's 60-second idle
 # timeout closes it.

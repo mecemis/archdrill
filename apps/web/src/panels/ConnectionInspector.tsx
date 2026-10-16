@@ -1,4 +1,8 @@
-import type { ConnectionCallMetrics } from "@archdrill/engine";
+import {
+  type ConnectionCallMetrics,
+  type ConnectionZoneMetrics,
+  zoneRoutes,
+} from "@archdrill/engine";
 import {
   type Connection,
   type ConnectionPolicy,
@@ -12,7 +16,7 @@ import { catalogIndex } from "../state/content";
 import { useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
-import { compact, percent } from "../ui/format";
+import { compact, milliseconds, percent, usd } from "../ui/format";
 import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitives";
 
 const RETRY_OPTIONS = Array.from({ length: MAX_RETRIES + 1 }, (_, n) => n);
@@ -53,6 +57,7 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
           the calls a service makes from its flow steps.
         </p>
       )}
+      <ZoneRouting connection={connection} />
       <div className="flex gap-2">
         <Button
           onClick={() => {
@@ -249,6 +254,84 @@ function CallMetrics({ connectionId }: { readonly connectionId: string }) {
   return (
     <section className="rounded-md bg-sunken p-2.5 text-xs">
       <h4 className="mb-1 font-semibold text-fg-muted">At {metrics.environment.label}</h4>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
+        {rows.map(([term, value]) => (
+          <div key={term} className="contents">
+            <dt className="text-fg-muted">{term}</dt>
+            <dd className="text-right text-fg">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** "157 TB", "820 GB": data a month, in the unit that reads best. */
+function dataSize(gb: number): string {
+  return gb >= 1000 ? `${compact(gb / 1000)} TB` : `${compact(gb)} GB`;
+}
+
+/** Zone-aware routing for a hop inside the region, and what crosses zones over it. */
+function ZoneRouting({ connection }: { readonly connection: Connection }) {
+  const dispatch = useAttemptStore((s) => s.dispatch);
+  const attempt = useAttemptStore((s) => s.attempt);
+  const { metrics } = useScenarioLoad();
+  // Hops from clients start outside the region; in-process components have no hop.
+  if (!zoneRoutes(attempt, catalogIndex).has(connection.id)) return null;
+  const on = connection.policy.sameZone;
+  const traffic = metrics?.zoneTraffic.get(connection.id);
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1">
+        <SectionTitle>Zones</SectionTitle>
+      </legend>
+      <Checkbox
+        label="Zone-aware routing (prefer the target in the caller's zone)"
+        checked={on}
+        onChange={(sameZone) => dispatch("setConnectionPolicy", { id: connection.id, sameZone })}
+      />
+      <p className="pl-6 text-xs text-fg-subtle">
+        {on
+          ? "Calls stay in the caller's zone as far as the target's instances there can take them evenly. Writes still go to the primary."
+          : "Calls go to any of the target's instances, in whichever zone. Crossing zones adds most of a millisecond, and the data that crosses is billed $0.01 a GB at each end that runs on EC2."}
+      </p>
+      {metrics && traffic && (
+        <ZoneTrafficMetrics label={metrics.environment.label} traffic={traffic} />
+      )}
+    </fieldset>
+  );
+}
+
+function ZoneTrafficMetrics({
+  label,
+  traffic,
+}: {
+  readonly label: string;
+  readonly traffic: ConnectionZoneMetrics;
+}) {
+  const sameShare = Math.abs(traffic.crossRead - traffic.crossWrite) < 0.005;
+  const rows: [string, string][] = [
+    [
+      "Calls crossing zones",
+      sameShare
+        ? percent(traffic.crossRead, 0)
+        : `reads ${percent(traffic.crossRead, 0)}, writes ${percent(traffic.crossWrite, 0)}`,
+    ],
+    ["Round trip", milliseconds(traffic.roundTripMs.read)],
+  ];
+  if (traffic.crossGbPerMonth >= 1) {
+    rows.push(["Data between zones", `${dataSize(traffic.crossGbPerMonth)}/month`]);
+    rows.push([
+      "Transfer cost",
+      traffic.usdPerGb === 0 ? "free on this hop" : `${usd(traffic.monthlyCost)}/month`,
+    ]);
+  }
+  if (traffic.avoidableMonthlyCost >= 1) {
+    rows.push(["Zone-aware routing would save", `${usd(traffic.avoidableMonthlyCost)}/month`]);
+  }
+  return (
+    <section className="rounded-md bg-sunken p-2.5 text-xs">
+      <h4 className="mb-1 font-semibold text-fg-muted">At {label}</h4>
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
         {rows.map(([term, value]) => (
           <div key={term} className="contents">

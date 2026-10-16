@@ -1,7 +1,12 @@
 import type { ConnectionPolicy } from "@archdrill/model";
 import type { Moments } from "./math/gamma";
 
-/** Round trip of one network hop inside a zone. */
+/**
+ * Round trip of a hop the design does not place in zones: a client's on its
+ * way in, a call to a regional service, and the answer a rejected or refused
+ * attempt waits for. Calls between components the design places take the
+ * round trip of their zones instead (zone-traffic.ts).
+ */
 export const NETWORK_RTT_MS = 0.5;
 /** Wait before the first retry with exponential backoff; it doubles after every attempt. */
 export const BACKOFF_BASE_MS = 10;

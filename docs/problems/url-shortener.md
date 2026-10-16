@@ -180,6 +180,11 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 
 **What the simulation makes visible:** cache memory → hit ratio → database utilisation → p99 → cost. Since M21, the load balancer's capacity units count too: every click is a new visitor's connection.
 
+**As built (M22): traffic between zones.** Data crossing zones is billed in the budget ([ADR 0015](../adr/0015-traffic-between-zones.md)).
+- A senior signal, `zone-local-calls`, names the connections whose crossings zone-aware routing would avoid, from $100 a month: NGINX spreading redirects over three zones sends two in three to another one, about $3,100 a month.
+- The MySQL and Memcached golden no longer passes S3: Memcached keeps a key's one copy in one zone, so two cache reads in three cross zones whatever the routing, and the design costs $40,947.
+- Two mutants: `proxies-route-across-zones` and `cache-reads-across-zones`.
+
 ---
 
 ## S4: Cache outage and invalidation
@@ -331,6 +336,8 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Checks: `redirects-through-zone-loss` (99.9% throughout, critical) and `creates-back-after-zone-loss` (within 45 seconds).
 - Predictions: what happens to creates (half of them fail for 35 s in the PostgreSQL goldens, none in the DynamoDB ones), and to redirects before replacements start.
 
+**As built (M22): traffic between zones.** Hops between zones take 1 ms instead of 0.1, and the data that crosses is billed ([ADR 0015](../adr/0015-traffic-between-zones.md)). The goldens that spread over three zones route within them: NGINX sends to the services in its zone, services read Redis and the database from a replica in theirs, and the click counter reads Kafka in its zone. Click messages are 100 bytes, a code and a time.
+
 **As built (M4)** (`s6-dependency-failure`)
 - Environments: `failover` (a primary of the link store is lost and connections to it hang) and `instance-crash` (one instance of the redirect handler crashes), at the S4 peak. The zone outage came in M22.
 - Gates: `no-acknowledged-loss` (from the `replication-mode` decision: asynchronous replication loses about one second of creates) and `creates-fail-fast` (store calls time out within a second).
@@ -459,7 +466,7 @@ Each golden design declares the scenario bands it is expected to achieve. CI enf
 | `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones; clicks go fire-and-forget to Kafka, Flink sums them per link and writes window totals to Cassandra (all eight scenarios) |
 | `postgres-redis-fixed-fleet` | as above, without the gateway | the same with fixed fleets and no near cache (expected not to pass S5) |
 | `dynamodb-redis-cache-aside` | random 8-character codes, one retry; a URL check before answering, failing open into a rescan | an autoscaling service with a near cache → Redis cache-aside → DynamoDB; the same service purges in batches of 25 |
-| `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL |
+| `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL (expected to pass S1 and S2 only) |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
 | `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |
 | `postgres-sized-for-cache-loss` | random 8-character codes, one retry | Redis → Postgres sized for the full read peak (expected not to pass S3) |

@@ -1,4 +1,4 @@
-import { ACTIONS, type Flavor } from "@archdrill/model";
+import { ACTIONS, type Flavor, type Problem } from "@archdrill/model";
 import type { CallPathStep, Path } from "../paths/types";
 import type { SimulationContext } from "./setup";
 
@@ -21,6 +21,12 @@ export interface StepCost {
   readonly payload: { readonly itemBytes: number; readonly unitBytes: number } | null;
   /** Bytes one item returns over the network; 0 where bandwidth is not modelled. */
   readonly bytes: number;
+  /**
+   * Bytes of the item the call carries, either way: the value a read
+   * returns, or what a write or a message sends. Keys and headers are left
+   * out; 0 for calls that carry no item (deletes, counters, id blocks).
+   */
+  readonly carriedBytes: number;
 }
 
 export const PLAIN_COST: StepCost = {
@@ -29,6 +35,7 @@ export const PLAIN_COST: StepCost = {
   perRequest: false,
   payload: null,
   bytes: 0,
+  carriedBytes: 0,
 };
 
 /** Units one call takes on a payload meter, for the items it carries. */
@@ -43,14 +50,28 @@ const RETURNS_VALUE: Readonly<Record<string, string>> = {
   "store.read": "found",
 };
 
+/** Calls that send the item itself, or ask another service about it. */
+const SENDS_ITEM: ReadonlySet<string> = new Set([
+  "cache.set",
+  "store.insert",
+  "store.update",
+  "queue.publish",
+  "connection.push",
+  "service.call",
+]);
+
 const unitsOf = (bytes: number, unitBytes: number) => Math.max(1, Math.ceil(bytes / unitBytes));
 
+/** Bytes of one message about an event: its own size, or its entity's. */
+export function messageBytes(problem: Problem, eventId: string | undefined): number {
+  const event = problem.events.find((e) => e.id === eventId);
+  if (!event) return 0;
+  return event.bytes ?? problem.entities.find((e) => e.name === event.entity)?.avgBytes ?? 0;
+}
+
 function itemBytes(step: CallPathStep, ctx: SimulationContext): number {
-  const entity =
-    step.action === "queue.publish"
-      ? ctx.problem.events.find((e) => e.id === step.event)?.entity
-      : step.entity;
-  return ctx.problem.entities.find((e) => e.name === entity)?.avgBytes ?? 0;
+  if (step.action === "queue.publish") return messageBytes(ctx.problem, step.event);
+  return ctx.problem.entities.find((e) => e.name === step.entity)?.avgBytes ?? 0;
 }
 
 /** Units one item, or one request, takes on a flavor that counts them. */
@@ -73,8 +94,11 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
   const meter = flavor?.requestUnits;
   const returnsValue = RETURNS_VALUE[step.action] === step.outcome;
   const bandwidth = size?.networkGbps !== undefined;
-  if (!meter && !(returnsValue && bandwidth)) return PLAIN_COST;
   const bytes = itemBytes(step, ctx);
+  const carriedBytes = returnsValue || SENDS_ITEM.has(step.action) ? bytes : 0;
+  if (!meter && !(returnsValue && bandwidth)) {
+    return carriedBytes === 0 ? PLAIN_COST : { ...PLAIN_COST, carriedBytes };
+  }
   const perRequest = meter?.per === "request";
   return {
     units: meter && !perRequest ? unitsFor(meter, step, bytes) : 1,
@@ -88,6 +112,7 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
           }
         : null,
     bytes: returnsValue && bandwidth ? bytes : 0,
+    carriedBytes,
   };
 }
 

@@ -55,7 +55,7 @@ Redis's change moved lessons, as Part 2's URL-safety quotas did:
 - **Calibrated: PostgreSQL reads, etcd writes, Redis.**
   - PostgreSQL's writes are not calibrated: a TPC-B transaction is seven round trips, which a single-step replay cannot express.
   - NGINX, Kafka, Cassandra, MySQL, ZooKeeper, Flink and the service handlers are not calibrated yet. Their models still cite what they rest on, or say they are assumptions.
-- **The network round trip.** The engine's 0.5 ms per hop is a constant of its own, not a catalog number with a source. The zone figure is bounded by the benchmarks themselves: at 50 clients ElastiCache answered within 0.47 ms, service included.
+- **The network round trip.** The engine's 0.5 ms per hop is a constant of its own, not a catalog number with a source. ([ADR 0015](0015-traffic-between-zones.md) gives hops between components 0.1 ms within a zone and 1 ms between zones, and keeps 0.5 ms for a client's hop.) The zone figure is bounded by the benchmarks themselves: at 50 clients ElastiCache answered within 0.47 ms, service included.
 
 ## Consequences
 
