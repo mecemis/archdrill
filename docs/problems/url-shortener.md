@@ -178,7 +178,7 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 | Senior | Cache sizing from the working set |
 | Staff | Stampede protection (request coalescing / single-flight, early refresh). Its effect is shown in v0.2 with the DES. |
 
-**What the simulation makes visible:** cache memory → hit ratio → database utilisation → p99 → cost.
+**What the simulation makes visible:** cache memory → hit ratio → database utilisation → p99 → cost. Since M21, the load balancer's capacity units count too: every click is a new visitor's connection.
 
 ---
 
@@ -433,6 +433,8 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 | `log-first-durability` | Create acks after a Kafka write (`acks=all`); a consumer persists to Postgres; the create path primes the cache for read-your-writes |
 
 Each golden design declares the scenario bands it is expected to achieve. CI enforces them.
+
+**As built (M21).** Load balancers billed by connections are priced ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)). Every click is a new visitor's connection, so an ALB in front of 100,000 redirects a second takes 4,000 capacity units, about $23,000 a month, and fails S3's budget. The three goldens that pass S3 (`postgres-redis-cache-aside`, `dynamodb-redis-cache-aside`, `postgres-redis-fixed-fleet`) now front their services with an NGINX fleet (25, 25 and 8 instances of 4 vCPUs), and the `alb-for-redirects` mutant keeps the lesson: 82 mutants.
 
 **As built (M11).** S8 adds ten mutants, 79 in all, and the Postgres golden now passes all eight scenarios.
 

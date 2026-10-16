@@ -169,6 +169,19 @@ mutants:
       fails: [within-budget]
       band: not-passing
 
+  - id: alb-for-redirects
+    base: postgres-redis-cache-aside
+    description: >-
+      A managed load balancer instead of the NGINX fleet. Every click is a new
+      visitor's connection, and ALB bills a capacity unit for every 25 new
+      connections a second: about $23,000 a month on an average day.
+    apply:
+      - updateComponent: { id: lb, flavor: alb, size: managed, replicas: 1 }
+    expect:
+      scenario: s3-cache
+      fails: [within-budget]
+      band: not-passing
+
   # Write path (S1): uniqueness, durability, collisions and code space.
   - id: put-instead-of-conditional-insert
     base: postgres-redis-cache-aside

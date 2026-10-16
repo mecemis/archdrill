@@ -109,6 +109,7 @@ export function simulateEnvironment(
     model.loop.drop,
     storedGb(workload, ctx),
     faults,
+    { ...ctx.problem.client, held: fixtures.clientConnections },
   );
   const connections = fixtures.connections;
   return {

@@ -34,11 +34,13 @@ entities:
     key: orderId
     fields: [orderId, warehouse, status]
     avgBytes: 300
+# bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: place-order
     label: Place order
     method: POST
     path: /orders
+    bytes: { request: 1500, response: 500 }
     class: write
     idempotent: false
     successStatuses: [201, 202, 402]
@@ -64,7 +66,9 @@ operations:
     introducedIn: s3-provider-trouble
 events:
   - { id: order-confirmed, label: Order confirmed, entity: Order }
-client: { flavor: browser, label: Shoppers }
+# A shopper's browser opens a connection for the checkout page and places
+# the order over it; it closes a minute or two later.
+client: { flavor: browser, label: Shoppers, requestsPerConnection: 1, connectionSec: 120 }
 logic: []
 estimates:
   - id: orders-per-day

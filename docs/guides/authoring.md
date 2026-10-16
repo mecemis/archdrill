@@ -30,6 +30,7 @@ Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/00
 - **Where it goes.** A provenance on the flavor applies to all of its sizes; a size can override it.
 - **Stands for.** Name the real offering: `standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)`.
 - **Request units and bandwidth.** A flavor that meters requests by size gives `requestUnits`: `per` (`item` or `request`), `readBytes`, `writeBytes` and `readUnits` (0.5 for eventually consistent reads); see [ADR 0011](../adr/0011-work-units-and-bandwidth.md). A size gives `networkGbps`, the baseline bandwidth in each direction, not the burst. Entities' `avgBytes` decide both: units round up per item, and the values reads return fill the bandwidth.
+- **Capacity units.** A managed load balancer that bills by connections and bytes gives `capacityUnits` on its flavor: `pricePerHour`, and what one unit covers of `newConnectionsPerSec`, `activeConnections` and `processedGbPerHour`. Each hour is billed for the dimension that needs the most ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)).
 - **Calibrations.** When a benchmark publishes runs (clients and the throughput or latency they saw), add it to `calibrations` ([ADR 0010](../adr/0010-calibrated-against-published-benchmarks.md)): the size it ran on and its replicas, its setup, `network` (`zone` or `region`), the share of `reads`, and the runs as measured. If its requests are lighter than the catalog's, give `work: { ratio, why }`. The content tests replay every run and fail beyond 15%; mark a run the engine is known to miss with `beyondModel: true` and say why in the calibration's `beyondModel`. The calibrated size's throughput and latency must cite the benchmark.
 
 ## problem.yaml
@@ -37,9 +38,13 @@ Components live in `packages/content/catalog/catalog.yaml` ([ADR 0009](../adr/00
 - `requirements`: functional (`FR-n`) and non-functional (`NFR-n`) requirements; checks cite them.
 - `entities`: what is stored, with its key, fields and average size. `ephemeral: true` marks short-lived entities (rate counters, block markers) that may live in memory-only stores. `existsFor: <fact>` says entries exist only for requests with that fact. `hotFor: <fact>` makes the entity's one hot key the target of requests with that fact (a celebrity's recent posts, read by all their followers).
 - `counts`: numbers that size fan-out steps, with a label and a default (`{ id: followers, label: followers of the author, default: 200 }`). Request classes override them (`counts: { followers: 50000000 }`), and a call step with `each: followers` is made once per follower.
-- `client`: the client a new design starts with (`{ flavor: api-client, label: API clients }`; visitors in a browser by default).
+- `client`: the client a new design starts with (`{ flavor: api-client, label: API clients }`; visitors in a browser by default), and how it uses connections, which load balancers bill by:
+  - `requestsPerConnection`: requests a client sends over one connection (1 by default: every request is a new visitor's);
+  - `connectionSec`: how long a connection stays open, the idle time before it is closed included (60 by default, ALB's idle timeout).
+  - Where a scenario's environment gives `connections` (clients holding WebSockets), those are the open connections, each lasting `connectionSec`, spread over the components clients connect to by their share of requests.
+  - Say why in a comment: a click on a short link is a new visitor's connection; API clients keep pooled connections for an hour.
 - `operations`: each with `id`, `label`, `class` (`read`/`write`), `idempotent`, `successStatuses` and `requirements`. How it starts is its `trigger`:
-  - a client request (the default) needs a `method` and a `path`;
+  - a client request (the default) needs a `method`, a `path` and `bytes: { request, response }`, its size on the wire with HTTP headers (compressed, where responses would be);
   - `{ type: event, event: link-created }` makes it a consumer of that event;
   - `{ type: schedule, description: … }` makes it a background job.
 - `events`: things that happen to an entity and can be published to a queue (`{ id, label, entity }`).

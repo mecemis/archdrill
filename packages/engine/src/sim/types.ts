@@ -1,4 +1,5 @@
 import type { Environment } from "@archdrill/model";
+import type { CapacityUnitUsage } from "./capacity-units";
 import type { Moments } from "./math/gamma";
 
 export interface ComponentMetrics {
@@ -12,7 +13,7 @@ export interface ComponentMetrics {
   readonly utilization: number;
   /** Utilisation of the shard that holds the hot key; equals `utilization` without one. */
   readonly hottestShardUtilization: number;
-  /** Bytes a second its reads return over the network. */
+  /** Bytes a second it sends: the values its reads return, or what a proxy forwards. */
   readonly bytesOut: number;
   /**
    * Share of its outbound bandwidth those bytes take, at the shard that holds
@@ -33,10 +34,13 @@ export interface ComponentMetrics {
   readonly hotLatency: Moments;
   /** Data stored, counting every copy. */
   readonly storageGb: number;
+  /** Capacity units it is billed for (a managed load balancer's), or null. */
+  readonly capacityUnits: CapacityUnitUsage | null;
   readonly monthlyCost: number;
   readonly costBreakdown: {
     readonly instances: number;
     readonly requests: number;
+    readonly capacityUnits: number;
     readonly storage: number;
   };
 }

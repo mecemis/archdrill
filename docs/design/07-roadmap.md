@@ -424,7 +424,7 @@ A first scenario now takes a handful of clicks from an empty canvas to a score.
 
 The flow editor was then rebuilt around a top-to-bottom list of steps in plain sentences. One searchable picker chooses each step, and outcomes that end a request get their conventional response, changeable in place. It replaces the indented tree and its per-branch forms.
 
-## M21: A realism foundation (in progress)
+## M21: A realism foundation
 
 **Part 1, sources (as built).** Every catalog number is published (cited, with the date read) or a model (reasoning and basis), and each size names the real offering it stands for ([ADR 0009](../adr/0009-every-number-has-a-source.md)). Tests enforce the coverage, and the inspector shows it. Prices and memory now match their sources; no score in the corpus changed.
 
@@ -459,8 +459,17 @@ The flow editor was then rebuilt around a top-to-bottom list of steps in plain s
   - All 124 mutants are caught, and no golden's score changed.
 - **Shown.** The inspector lists request units and bandwidth with their sources. The load panel and the headroom finding say when the network is what fills up.
 
-**Next:**
-- **Load balancer capacity units.** ALB bills LCUs by new connections, active connections and processed bytes. That needs request and response sizes on operations, and how many requests a client sends over one connection.
+**Part 6, load balancer capacity units (as built).** A managed load balancer bills by connections and bytes, as ALB does ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)).
+- **What it needs.**
+  - Every operation clients request has request and response sizes on the wire.
+  - Each problem says how its clients use connections: requests per connection, and how long one stays open. Where a scenario gives clients' WebSockets, those are the open connections.
+- **What it bills.** ALB's capacity unit, as published: 25 new connections a second, 3,000 open connections, or 1 GB processed an hour, whichever needs the most, at $0.008 an hour.
+- **Proxies' bandwidth.** NGINX and Kong forward every request and response, and the instance they stand for (c6i.xlarge) has a baseline of 1.562 Gbps.
+- **The corpus.**
+  - A short link's click is a new visitor's connection, so ALB in front of 100,000 redirects a second takes 4,000 units, about $23,000 a month, and fails S3's budget.
+  - The three URL-shortener goldens that pass S3 front their services with NGINX fleets instead, and a new mutant (`alb-for-redirects`) keeps the lesson: 125 mutants, all caught.
+  - The rate limiter's API clients reuse their connections, so its ALB is billed by bytes ($12,600 a month on an average day), and the news feed's pages by bytes too ($21,300). Both stay within budget.
+- **Shown.** The inspector lists capacity units with their source; the load panel shows a load balancer's units, the cost summary their total, and the budget check what sets them.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

@@ -2,7 +2,7 @@
 id: postgres-redis-fixed-fleet
 title: PostgreSQL and Redis on a fixed fleet
 description: >-
-  The same cache-aside design with fixed fleets and no near cache: ALB →
+  The same cache-aside design with fixed fleets and no near cache: NGINX (8 × 4 vCPU) →
   Redirect API (25 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis (3 shards × 2
   replicas) → PostgreSQL (16 vCPU, 2 shards × 2 replicas, semi-synchronous),
   with the redirect bulkhead and the cache's circuit breaker. The bulkhead
@@ -23,7 +23,7 @@ attempt:
   architecture:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
-      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 8 }
       - { id: redirect-api, kind: service, flavor: generic, label: Redirect API, size: l, replicas: 25 }
       - { id: link-api, kind: service, flavor: generic, label: Link API, size: m, replicas: 3 }
       - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2 }

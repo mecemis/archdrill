@@ -15,6 +15,7 @@ type Field =
   | "storagePricePerGbMonth"
   | "requestCost"
   | "requestUnits"
+  | "capacityUnits"
   | "perKeyCapacityPerSec"
   | "startupSec";
 
@@ -22,6 +23,7 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
   { field: "requestCost", label: "Request price" },
   { field: "requestUnits", label: "Request units" },
+  { field: "capacityUnits", label: "Capacity units" },
   { field: "storagePricePerGbMonth", label: "Storage price" },
   { field: "capacityPerSec", label: "Throughput" },
   { field: "perKeyCapacityPerSec", label: "Per-key limit" },
@@ -67,6 +69,12 @@ export function unitsText(units: NonNullable<Flavor["requestUnits"]>): string {
   return `${reads}, ${units.per === "item" ? "per item" : "per request's payload"}`;
 }
 
+/** What one capacity unit covers: "$0.008 an hour each: 25 new connections a second, 3,000 open, or 1 GB an hour". */
+export function capacityUnitsText(units: NonNullable<Flavor["capacityUnits"]>): string {
+  const count = (value: number) => value.toLocaleString("en-US");
+  return `${price(units.pricePerHour)} an hour each: ${count(units.newConnectionsPerSec)} new connections a second, ${count(units.activeConnections)} open, or ${count(units.processedGbPerHour)} GB an hour`;
+}
+
 /** A number as it reads in the catalog, or null when the component has none. */
 function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): string | null {
   const rate = (r: { read?: number; write?: number } | undefined, unit: string) =>
@@ -99,6 +107,8 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
       return size?.networkGbps === undefined ? null : `${size.networkGbps} Gbps each way`;
     case "requestUnits":
       return flavor.requestUnits ? unitsText(flavor.requestUnits) : null;
+    case "capacityUnits":
+      return flavor.capacityUnits ? capacityUnitsText(flavor.capacityUnits) : null;
     case "latencyMs":
       return size ? `${size.latencyMs.base} ms` : null;
     case "startupSec":

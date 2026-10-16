@@ -337,7 +337,10 @@ export function simulateTimeline(
     const paths = new Map<string, PathShare[]>();
     const profiles = profilesOf(model, fixtures, true);
     const flow = propagateModel(model, fixtures);
-    const metrics = summarizeComponents(profiles, flow, model.loop.drop, stored, fixtures.faults);
+    const metrics = summarizeComponents(profiles, flow, model.loop.drop, stored, fixtures.faults, {
+      ...ctx.problem.client,
+      held: fixtures.clientConnections,
+    });
     const summary = summarizeOperations(
       fixtures.operations,
       flow.operations,

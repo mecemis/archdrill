@@ -168,6 +168,18 @@ function ComponentsTable({ metrics }: { readonly metrics: EnvironmentMetrics }) 
   );
 }
 
+/** What sets a load balancer's capacity units, for people. */
+function unitDriver(units: NonNullable<ComponentMetrics["capacityUnits"]>): string {
+  switch (units.by) {
+    case "new-connections":
+      return `${compact(units.newConnectionsPerSec)} new connections a second`;
+    case "active-connections":
+      return `${compact(units.activeConnections)} open connections`;
+    case "processed-bytes":
+      return `${compact(units.processedGbPerHour)} GB processed an hour`;
+  }
+}
+
 function ComponentRow({
   metrics,
   label,
@@ -224,7 +236,7 @@ function ComponentRow({
           metrics.networkUtilization > 0.05 && (
             <span
               className={`block text-xs ${metrics.networkUtilization > 1 ? "font-semibold text-bad-fg" : "text-fg-subtle"}`}
-              title={`Its reads return ${compact(metrics.bytesOut / 1e6)} MB/s`}
+              title={`It sends ${compact(metrics.bytesOut / 1e6)} MB/s`}
             >
               limited by its network
             </span>
@@ -235,6 +247,14 @@ function ComponentRow({
         {usd(metrics.monthlyCost)}
         {autoscaled && (
           <span className="block text-xs text-fg-subtle">{metrics.instances} instances</span>
+        )}
+        {metrics.capacityUnits && metrics.costBreakdown.capacityUnits >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title={`${usd(metrics.costBreakdown.capacityUnits)}/month, set by ${unitDriver(metrics.capacityUnits)}`}
+          >
+            {compact(metrics.capacityUnits.units)} capacity units
+          </span>
         )}
       </td>
     </tr>
@@ -353,16 +373,19 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
     (sum, c) => ({
       instances: sum.instances + c.costBreakdown.instances,
       requests: sum.requests + c.costBreakdown.requests,
+      capacityUnits: sum.capacityUnits + c.costBreakdown.capacityUnits,
       storage: sum.storage + c.costBreakdown.storage,
     }),
-    { instances: 0, requests: 0, storage: 0 },
+    { instances: 0, requests: 0, capacityUnits: 0, storage: 0 },
   );
   return (
     <section className="text-sm">
       <h4 className="mb-1 text-xs font-semibold text-fg-muted">Cost at this load</h4>
       <p className="tabular-nums">
         <span className="font-semibold">{usd(metrics.monthlyCost)}</span> / month · instances{" "}
-        {usd(totals.instances)} · requests {usd(totals.requests)} · storage {usd(totals.storage)}
+        {usd(totals.instances)} · requests {usd(totals.requests)}
+        {totals.capacityUnits >= 1 && <> · capacity units {usd(totals.capacityUnits)}</>} · storage{" "}
+        {usd(totals.storage)}
       </p>
       <p className="mt-1 text-xs text-fg-subtle">
         Ballpark list prices for comparing designs, not a quote. Storage counts every replica's

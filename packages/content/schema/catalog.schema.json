@@ -220,6 +220,7 @@
                             "storagePricePerGbMonth",
                             "requestCost",
                             "requestUnits",
+                            "capacityUnits",
                             "perKeyCapacityPerSec",
                             "startupSec"
                           ]
@@ -313,6 +314,33 @@
                   },
                   "required": ["per", "readBytes", "writeBytes"]
                 },
+                "capacityUnits": {
+                  "type": "object",
+                  "properties": {
+                    "pricePerHour": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "newConnectionsPerSec": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "activeConnections": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "processedGbPerHour": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "pricePerHour",
+                    "newConnectionsPerSec",
+                    "activeConnections",
+                    "processedGbPerHour"
+                  ]
+                },
                 "requestCost": {
                   "type": "object",
                   "properties": {
@@ -349,6 +377,7 @@
                       "storagePricePerGbMonth",
                       "requestCost",
                       "requestUnits",
+                      "capacityUnits",
                       "perKeyCapacityPerSec",
                       "startupSec"
                     ]

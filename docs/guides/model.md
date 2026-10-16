@@ -12,7 +12,7 @@ ArchDrill simulates a design analytically: it solves for the steady state of eac
 - **Background work.** Consumers receive what is published to their queue, failed messages are delivered again and then dead-lettered, and consumers or jobs that cannot keep up report a growing backlog.
 - **Counting.** Fire-and-forget publishes that never hold up a request, consumers that sum per key over a window before writing (distinct keys under Zipf popularity), batched writes, counters spread over several rows, and per-key write limits such as DynamoDB's 1,000 writes a second per item.
 - **Timelines.** A timeline re-solves the steady state every step, carrying over what changes at its own pace: caches warming up after a restart, autoscalers waiting for new instances, breakers holding open, backlogs building and draining ([ADR 0008](../adr/0008-time-stepped-timelines-instead-of-per-request-des.md)).
-- **Cost.** Instances, storage for every stored copy, and per-request prices, which bill every item of a batch.
+- **Cost.** Instances, storage for every stored copy, per-request prices (in units of item size where a provider counts them, and for every item of a batch), and a managed load balancer's capacity units, billed by the connections clients open and hold and the bytes it forwards.
 
 ## What it assumes
 

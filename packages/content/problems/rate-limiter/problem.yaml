@@ -39,17 +39,23 @@ entities:
     avgBytes: 32
     ephemeral: true
     existsFor: overLimit
+# bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: api-request
     label: API request
     method: GET
     path: "/v1/{resource}"
+    # An API key header and a small JSON resource; a 429 is smaller still.
+    bytes: { request: 500, response: 1000 }
     class: read
     idempotent: true
     successStatuses: [200, 429]
     requirements: [FR-1, FR-2, NFR-1, NFR-2, NFR-3]
     introducedIn: s1-enforce
-client: { flavor: api-client, label: API clients }
+# API clients keep pooled connections open until the load balancer ends them
+# after an hour (ALB's default keep-alive duration), by which time each has
+# carried tens of thousands of requests.
+client: { flavor: api-client, label: API clients, requestsPerConnection: 30000, connectionSec: 3600 }
 logic: [checkLimit, checkLocalLimit]
 decisionPoints:
   - id: window-algorithm

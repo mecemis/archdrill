@@ -6,6 +6,7 @@ const NO_STEPS: readonly PathStep[] = [];
 import type { CallModel } from "./calls";
 import { NETWORK_RTT_MS } from "./calls";
 import { type ComponentProfile, HOURS_PER_MONTH, SECONDS_PER_MONTH } from "./capacity";
+import { type ClientConnections, capacityUnitUsage } from "./capacity-units";
 import type { ComponentFault } from "./faults";
 import {
   type Moments,
@@ -44,7 +45,9 @@ export const OVERLOAD_WAIT_MS = 1000;
 
 /**
  * What reaches a component a second: reads and writes in its units (requests,
- * or units of item size where it counts them), and the bytes its reads return.
+ * or units of item size where it counts them), and the bytes it sends: the
+ * values its reads return, or for a proxy the requests and responses it
+ * forwards.
  */
 export type Load = { readonly read: number; readonly write: number; readonly bytes?: number };
 
@@ -74,6 +77,8 @@ export interface Propagation {
    * Providers that price per request bill every item, batched or not.
    */
   readonly batchedItems: ReadonlyMap<string, Load>;
+  /** Requests per second that clients send straight to each component, over connections they open. */
+  readonly fromClients: ReadonlyMap<string, number>;
 }
 
 export interface ResolvedOperation {
@@ -101,7 +106,7 @@ function requestShare(load: Load | undefined, profile: ComponentProfile): number
   return read + write;
 }
 
-/** Share of the component's outbound bandwidth the values its reads return take. */
+/** Share of the component's outbound bandwidth that what it sends takes. */
 export function networkShare(load: Load | undefined, profile: ComponentProfile): number {
   if (!load?.bytes || !Number.isFinite(profile.outboundBytesPerSec)) return 0;
   return load.bytes / profile.outboundBytesPerSec;
@@ -223,8 +228,11 @@ export function summarizeComponents(
   drop: ReadonlyMap<string, number>,
   stored: ReadonlyMap<string, number>,
   faults: ReadonlyMap<string, ComponentFault>,
+  /** How clients use connections, which capacity units are billed by. */
+  client: ClientConnections,
 ): Map<string, ComponentMetrics> {
   const metrics = new Map<string, ComponentMetrics>();
+  const allFromClients = [...flow.fromClients.values()].reduce((sum, rate) => sum + rate, 0);
   for (const [id, profile] of profiles) {
     const load = flow.loads.get(id) ?? { read: 0, write: 0 };
     const hotLoad = flow.hotLoads.get(id);
@@ -240,6 +248,18 @@ export function summarizeComponents(
     const network = networkShare(load, profile);
     const hotNetwork = profile.sharded ? networkShare(hotLoad, profile) : 0;
     const storageCost = storageGb * profile.storagePricePerGbMonth;
+    const units = profile.capacityUnits
+      ? capacityUnitUsage(
+          profile.capacityUnits,
+          {
+            fromClients: flow.fromClients.get(id) ?? 0,
+            allFromClients,
+            bytesPerSec: load.bytes ?? 0,
+          },
+          client,
+        )
+      : null;
+    const unitCost = units?.monthlyCost ?? 0;
     metrics.set(id, {
       componentId: id,
       readLoad: load.read,
@@ -257,8 +277,14 @@ export function summarizeComponents(
       latency: componentLatency(load, profile, hotLoad),
       hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
       storageGb,
-      monthlyCost: instanceCost + requestCost + storageCost,
-      costBreakdown: { instances: instanceCost, requests: requestCost, storage: storageCost },
+      capacityUnits: units,
+      monthlyCost: instanceCost + requestCost + unitCost + storageCost,
+      costBreakdown: {
+        instances: instanceCost,
+        requests: requestCost,
+        capacityUnits: unitCost,
+        storage: storageCost,
+      },
     });
   }
   return metrics;

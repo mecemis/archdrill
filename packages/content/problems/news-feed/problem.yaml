@@ -40,11 +40,13 @@ entities:
     avgBytes: 1600
     ephemeral: true
     hotFor: followsCelebrity
+# bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: create-post
     label: Create post
     method: POST
     path: /posts
+    bytes: { request: 1200, response: 300 }
     class: write
     idempotent: false
     successStatuses: [201]
@@ -54,6 +56,8 @@ operations:
     label: Read timeline
     method: GET
     path: /timeline
+    # A page of 20 posts is about 20 KB of JSON, compressed about threefold on the wire.
+    bytes: { request: 700, response: 6000 }
     class: read
     idempotent: true
     successStatuses: [200]
@@ -73,6 +77,9 @@ counts:
   - { id: followers, label: followers of the author, default: 200 }
   - { id: followees, label: accounts the reader follows, default: 200 }
   - { id: celebritiesFollowed, label: celebrities the reader follows, default: 0 }
+# A reading session pages through about ten timelines over one connection,
+# open for a few minutes and then until the idle timeout closes it.
+client: { flavor: browser, label: Visitors, requestsPerConnection: 10, connectionSec: 300 }
 logic: [isCelebrity]
 decisionPoints:
   - id: pagination

@@ -62,6 +62,14 @@ export const OperationSchema = z.object({
   /** HTTP method and path, for operations that clients request. */
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
   path: z.string().min(1).optional(),
+  /**
+   * Bytes on the wire for one request and its response, headers included,
+   * for operations that clients request. Load balancers carry both and bill
+   * by them.
+   */
+  bytes: z
+    .object({ request: z.number().int().positive(), response: z.number().int().positive() })
+    .optional(),
   trigger: TriggerSchema.prefault({ type: "request" }),
   class: z.enum(["read", "write"]),
   idempotent: z.boolean(),
@@ -71,6 +79,21 @@ export const OperationSchema = z.object({
   introducedIn: IdSchema.optional(),
 });
 export type Operation = z.infer<typeof OperationSchema>;
+
+/**
+ * The problem's clients and how they use connections, which load balancers
+ * bill by. The default is the costliest: every request opens a connection,
+ * held until a load balancer's usual 60-second idle timeout closes it.
+ */
+export const ClientSchema = z.object({
+  flavor: IdSchema,
+  label: z.string().min(1),
+  /** Requests a client sends over one connection: 1 when every request is a new visitor's. */
+  requestsPerConnection: z.number().min(1).default(1),
+  /** Seconds a connection stays open, the idle time before it is closed included. */
+  connectionSec: z.number().positive().default(60),
+});
+export type Client = z.infer<typeof ClientSchema>;
 
 export const DecisionPointSchema = z
   .object({
@@ -106,10 +129,8 @@ export const ProblemSchema = z
     operations: z.array(OperationSchema).min(1),
     events: z.array(EventSchema).default([]),
     decisionPoints: z.array(DecisionPointSchema).default([]),
-    /** Where traffic comes from: the client a new design starts with. */
-    client: z
-      .object({ flavor: IdSchema, label: z.string().min(1) })
-      .default({ flavor: "browser", label: "Visitors" }),
+    /** Where traffic comes from: the client a new design starts with, and how it connects. */
+    client: ClientSchema.prefault({ flavor: "browser", label: "Visitors" }),
     /**
      * Counts that size fan-out steps (`each`): followers of a post's author,
      * accounts a reader follows. Request classes can override the default.
@@ -154,6 +175,20 @@ export const ProblemSchema = z
           code: "custom",
           message: `operation "${op.id}" is requested by clients, so it needs a method and a path`,
           path: ["operations", i],
+        });
+      }
+      if (op.trigger.type === "request" && !op.bytes) {
+        ctx.addIssue({
+          code: "custom",
+          message: `operation "${op.id}" is requested by clients, so it needs request and response sizes`,
+          path: ["operations", i, "bytes"],
+        });
+      }
+      if (op.trigger.type !== "request" && op.bytes) {
+        ctx.addIssue({
+          code: "custom",
+          message: `operation "${op.id}" is not requested by clients, so nothing carries its sizes`,
+          path: ["operations", i, "bytes"],
         });
       }
       if (op.trigger.type === "event" && !events.has(op.trigger.event)) {

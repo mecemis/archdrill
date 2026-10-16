@@ -1,4 +1,9 @@
-import { describeStep, type EnvironmentMetrics, type OperationMetrics } from "@archdrill/engine";
+import {
+  type ComponentMetrics,
+  describeStep,
+  type EnvironmentMetrics,
+  type OperationMetrics,
+} from "@archdrill/engine";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
 import { isSuccessPath } from "../predicates";
@@ -183,7 +188,7 @@ export const utilizationBelow = defineCheck({
           : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`;
       // Say so when the network, not the CPU, is what fills up.
       return c.networkUtilization >= busiest(c) - 1e-9
-        ? `${where}. The values its reads return fill its network bandwidth.`
+        ? `${where}. The bytes it sends fill its network bandwidth.`
         : where;
     });
     const overloaded = hot.some((c) => busiest(c) > 1);
@@ -324,6 +329,28 @@ export const hitRatioAbove = defineCheck({
   },
 });
 
+const count = (value: number) => Math.round(value).toLocaleString("en-US");
+
+/** What sets a load balancer's capacity units, for people. */
+function unitDriver(units: NonNullable<ComponentMetrics["capacityUnits"]>): string {
+  switch (units.by) {
+    case "new-connections":
+      return `${count(units.newConnectionsPerSec)} new connections a second`;
+    case "active-connections":
+      return `${count(units.activeConnections)} open connections`;
+    case "processed-bytes":
+      return `${count(units.processedGbPerHour)} GB processed an hour`;
+  }
+}
+
+/** A component's monthly cost, and what its capacity units are for when they cost anything. */
+function costLine(ctx: CheckContext, c: ComponentMetrics): string {
+  const line = `${label(ctx, c.componentId)}: ${usd(c.monthlyCost)}/month`;
+  const units = c.capacityUnits;
+  if (!units || c.costBreakdown.capacityUnits < 1) return line;
+  return `${line}, ${usd(c.costBreakdown.capacityUnits)} of it for ${count(units.units)} capacity units set by ${unitDriver(units)}`;
+}
+
 /** Monthly cost of the design under the scenario's load stays within a budget. */
 export const costWithinBudget = defineCheck({
   id: "cost-within-budget",
@@ -335,7 +362,7 @@ export const costWithinBudget = defineCheck({
     const top = [...env.components.values()]
       .sort((a, b) => b.monthlyCost - a.monthlyCost)
       .slice(0, 3);
-    const details = top.map((c) => `${label(ctx, c.componentId)}: ${usd(c.monthlyCost)}/month`);
+    const details = top.map((c) => costLine(ctx, c));
     const evidence: Evidence[] = top.map((c) => ({
       type: "component",
       componentId: c.componentId,

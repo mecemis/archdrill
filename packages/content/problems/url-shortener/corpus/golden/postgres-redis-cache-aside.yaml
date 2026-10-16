@@ -2,7 +2,7 @@
 id: postgres-redis-cache-aside
 title: PostgreSQL with a Redis cache
 description: >-
-  ALB → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
+  NGINX (25 × 4 vCPU) → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
   (2 vCPU, 2 to 12 instances) → Redis
   cache-aside with negative caching (3 shards × 2 replicas) → PostgreSQL
   (16 vCPU, 2 shards × 2 replicas, semi-synchronous). Redirects run in their own
@@ -34,7 +34,7 @@ attempt:
   architecture:
     components:
       - { id: visitors, kind: client, flavor: browser, label: Visitors }
-      - { id: lb, kind: load-balancer, flavor: alb, label: ALB, size: managed }
+      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25 }
       - id: redirect-api
         kind: service
         flavor: generic
