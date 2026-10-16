@@ -94,14 +94,53 @@ export function resolveFaults(
   catalog: CatalogIndex,
   running?: ReadonlyMap<string, number>,
 ): Map<string, ComponentFault> {
+  const hits = faults.flatMap((fault) =>
+    faultedComponents(fault, attempt, catalog).map((component) => ({ fault, component })),
+  );
+  return resolveFaultHits(hits, catalog, running);
+}
+
+/** One fault on one component; a lost zone may still be failing over its primaries. */
+export interface FaultHit {
+  readonly fault: Fault;
+  readonly component: Component;
+  readonly failingOver?: boolean;
+}
+
+/** Per component, the combined effect of the faults that hit it. */
+export function resolveFaultHits(
+  hits: readonly FaultHit[],
+  catalog: CatalogIndex,
+  running?: ReadonlyMap<string, number>,
+): Map<string, ComponentFault> {
   const result = new Map<string, ComponentFault>();
-  for (const fault of faults) {
-    for (const component of faultedComponents(fault, attempt, catalog)) {
-      const effect = faultEffect(fault, shapeOf(component, catalog, running?.get(component.id)));
-      result.set(component.id, combine(result.get(component.id) ?? NO_FAULT, effect));
-    }
+  for (const { fault, component, failingOver } of hits) {
+    const shape = shapeOf(component, catalog, running?.get(component.id));
+    const effect = faultEffect(fault, shape, failingOver ?? false);
+    result.set(component.id, combine(result.get(component.id) ?? NO_FAULT, effect));
   }
   return result;
+}
+
+/**
+ * Seconds until a replica has taken over a lost primary: the catalog's
+ * figure for a store whose writes go to a primary, 0 when there is none to
+ * replace or the provider fails over unseen, and undefined when no replica
+ * can take over or the catalog does not say.
+ */
+export function failoverSecOf(component: Component, catalog: CatalogIndex): number | undefined {
+  const shape = shapeOf(component, catalog);
+  if (shape.managed || !shape.primaries) return 0;
+  if (shape.replicas < 2) return undefined;
+  return catalog.flavor(component.kind, component.flavor)?.failoverSec;
+}
+
+/** Whether losing a zone makes the store fail over: a primary was there, and its shard survives. */
+export function failsOverWithZone(component: Component, catalog: CatalogIndex): boolean {
+  if (!runsInZones(component, catalog)) return false;
+  const shape = shapeOf(component, catalog);
+  const settled = zoneDown(shape, false, "down");
+  return zoneDown(shape, false, "down", true).failWrite > settled.failWrite;
 }
 
 /**
@@ -153,7 +192,8 @@ function shapeOf(component: Component, catalog: CatalogIndex, running?: number):
     replicas,
     shards,
     managed,
-    primaries: (kind?.holdsData ?? false) && kind?.writeScaling === "primaries",
+    // Quorum stores (Cassandra) write to a majority of replicas, with no primary to replace.
+    primaries: (kind?.holdsData ?? false) && kind?.writeScaling === "primaries" && !kind.quorum,
     writesToPrimaries: kind?.writeScaling === "primaries",
     quorum: kind?.quorum ?? false,
     zones: placed ? Math.max(1, Math.min(component.zones, replicas * shards)) : 1,
@@ -169,7 +209,7 @@ const fail = (share: number, hang: boolean, labels: string[]): ComponentFault =>
   labels,
 });
 
-function faultEffect(fault: Fault, shape: Shape): ComponentFault {
+function faultEffect(fault: Fault, shape: Shape, failingOver: boolean): ComponentFault {
   const hangs = "mode" in fault && fault.mode === "hang";
   const how = hangs ? "hanging" : "down";
   switch (fault.kind) {
@@ -189,7 +229,7 @@ function faultEffect(fault: Fault, shape: Shape): ComponentFault {
       if (fault.scope === "one-node") return nodeDown(shape, hangs, how);
       return shardDown(shape, hangs, how);
     case "zone-down":
-      return zoneDown(shape, hangs, how);
+      return zoneDown(shape, hangs, how, failingOver);
   }
 }
 
@@ -242,17 +282,19 @@ function quorumLost(shape: Shape, hangs: boolean, label: string): ComponentFault
 }
 
 /**
- * Instances of one shard in a zone. Instances are numbered shard by shard
- * and dealt over the zones in turn, as providers balance them: a shard's
- * replicas land in different zones first, and the zones hold as many
- * instances as each other, give or take one.
+ * Instances of one shard in a zone. Each shard's replicas are dealt over the
+ * zones in turn, starting one zone further than the shard before, as
+ * providers balance them: a shard's replicas land in different zones first,
+ * its first one (the primary) moves round the zones from shard to shard,
+ * and the zones hold as many instances as each other, give or take one.
  */
 function replicasIn(zone: number, shard: number, shape: Shape): number {
-  const first = (((zone - shard * shape.replicas) % shape.zones) + shape.zones) % shape.zones;
+  const first = (((zone - shard) % shape.zones) + shape.zones) % shape.zones;
   return first < shape.replicas ? Math.floor((shape.replicas - 1 - first) / shape.zones) + 1 : 0;
 }
 
 interface ZoneOutcome {
+  readonly zone: number;
   readonly lostInstances: number;
   /** Shards left without a replica, or without a majority of them. */
   readonly failedShards: number;
@@ -260,9 +302,12 @@ interface ZoneOutcome {
   readonly quorumLost: boolean;
 }
 
-/** The zone whose loss hurts most: the most shards failed, then the most instances lost. */
+/**
+ * The zone whose loss hurts most: the most shards failed, then the most
+ * instances lost, then the most primaries to replace.
+ */
 function worstZone(shape: Shape): ZoneOutcome {
-  let worst: ZoneOutcome = { lostInstances: 0, failedShards: -1, quorumLost: false };
+  let worst: ZoneOutcome = { zone: 0, lostInstances: 0, failedShards: -1, quorumLost: false };
   for (let zone = 0; zone < shape.zones; zone++) {
     let lostInstances = 0;
     let failedShards = 0;
@@ -277,26 +322,55 @@ function worstZone(shape: Shape): ZoneOutcome {
         quorumLost = true;
       }
     }
-    const worse =
-      failedShards > worst.failedShards ||
-      (failedShards === worst.failedShards && lostInstances > worst.lostInstances);
-    if (worse) worst = { lostInstances, failedShards, quorumLost };
+    const rank = [failedShards, lostInstances, primariesIn(zone, shape)];
+    const best = [worst.failedShards, worst.lostInstances, primariesIn(worst.zone, shape)];
+    const differs = rank.findIndex((value, i) => value !== best[i]);
+    const worse = differs >= 0 && (rank[differs] ?? 0) > (best[differs] ?? 0);
+    if (worse) worst = { zone, lostInstances, failedShards, quorumLost };
   }
   return worst;
 }
 
+/** Shards whose primary, each shard's first replica, sits in the zone. */
+function primariesIn(zone: number, shape: Shape): number {
+  return Math.floor((shape.shards - 1 - zone) / shape.zones) + 1;
+}
+
 /**
  * Losing an availability zone and every instance in it, in the zone where
- * that hurts most. A shard with a replica left elsewhere keeps its keys (a
- * primary there has failed over); one without, or without a majority of its
- * replicas where it needs one, loses them. Nothing has replaced the lost
- * instances yet, so the rest carry the load.
+ * that hurts most. A shard with a replica left elsewhere keeps its keys; one
+ * without, or without a majority of its replicas where it needs one, loses
+ * them. While the store is `failingOver`, writes to the shards whose primary
+ * was in the zone fail too; after that a replica there has taken over.
+ * Nothing has replaced the lost instances yet, so the rest carry the load.
  */
-function zoneDown(shape: Shape, hangs: boolean, how: string): ComponentFault {
+function zoneDown(shape: Shape, hangs: boolean, how: string, failingOver = false): ComponentFault {
   // The provider runs it in every zone and moves the lost zone's share to the others.
   if (shape.managed) return NO_FAULT;
   if (shape.zones < 2) return fail(1, hangs, [`${how}: every instance was in the lost zone`]);
   const zone = worstZone(shape);
+  const lost = zoneLossEffect(shape, zone, hangs, how);
+  if (!failingOver || !shape.primaries) return lost;
+  const promoting = primariesIn(zone.zone, shape) / shape.shards;
+  if (promoting <= lost.failWrite) return lost;
+  const whose =
+    shape.shards > 1
+      ? `${primariesIn(zone.zone, shape)} of ${shape.shards} primaries`
+      : "its primary";
+  return {
+    ...lost,
+    failWrite: promoting,
+    hang: lost.hang || hangs,
+    labels: [...lost.labels, `${whose} failing over; writes to them fail`],
+  };
+}
+
+function zoneLossEffect(
+  shape: Shape,
+  zone: ZoneOutcome,
+  hangs: boolean,
+  how: string,
+): ComponentFault {
   const instances = shape.replicas * shape.shards;
   const lostShare = shape.autoscaled ? 1 / shape.zones : zone.lostInstances / instances;
   const failedShare = zone.failedShards / shape.shards;

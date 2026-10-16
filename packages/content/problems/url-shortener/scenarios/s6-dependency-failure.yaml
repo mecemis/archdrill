@@ -63,14 +63,14 @@ workload:
     - id: failover-over-time
       label: Failover, second by second
       description: >-
-        Peak traffic. At 30 s a primary of the link store fails; its replica
-        takes over at 75 s.
+        Peak traffic. At 30 s a primary of the link store fails, and a replica
+        takes over once the store's failover completes: about 35 s for RDS
+        PostgreSQL or MySQL, at once for DynamoDB.
       durationSec: 120
       rates: { redirect: 300000, create-link: 3000 }
       events:
         - kind: fault
           at: 30
-          until: 75
           label: Primary failing over
           fault: { kind: failover, target: { capability: durable-store, holds: Link } }
       predictions:
@@ -84,6 +84,34 @@ workload:
             - { id: unaffected, label: Creates are unaffected }
         - id: redirects
           question: And to redirects?
+          measure: { kind: lowest-success, operation: redirect }
+          options:
+            - { id: most-fail, label: Most redirects fail, below: 0.5 }
+            - { id: some-fail, label: Some redirects fail, below: 0.999 }
+            - { id: unaffected, label: Redirects are unaffected }
+    - id: zone-loss-over-time
+      label: A lost zone, second by second
+      description: >-
+        Peak traffic. At 30 s one of the region's zones goes dark with every
+        instance in it and stays down. Primaries there fail over, and
+        autoscalers start replacements, which take a minute to come up.
+      durationSec: 180
+      rates: { redirect: 300000, create-link: 3000 }
+      events:
+        - kind: fault
+          at: 30
+          label: A zone goes dark
+          fault: { kind: zone-down }
+      predictions:
+        - id: creates
+          question: What happens to link creation when the zone goes?
+          measure: { kind: lowest-success, operation: create-link }
+          options:
+            - { id: all-fail, label: Every create fails for a while, below: 0.1 }
+            - { id: share-fails, label: Creates for some keys fail for a while, below: 0.999 }
+            - { id: unaffected, label: Creates are unaffected }
+        - id: redirects
+          question: And redirects, before replacements start?
           measure: { kind: lowest-success, operation: redirect }
           options:
             - { id: most-fail, label: Most redirects fail, below: 0.5 }
@@ -168,7 +196,7 @@ checks:
 
   - id: creates-recover-after-failover
     use: timeline-recovers
-    title: Creates are back within 5 seconds of the new primary
+    title: Creates are back within 45 seconds of losing the primary
     dimension: availability
     weight: 1
     requirements: [NFR-2]
@@ -177,14 +205,56 @@ checks:
       metric: success-rate
       operation: create-link
       threshold: 0.999
-      after: 75
-      withinSec: 5
+      after: 30
+      withinSec: 45
     why: >-
-      Once a replica is promoted, creates should work again at once, not after
-      a pile of stuck requests and retries has drained.
+      How long creates fail (the recovery time) is the store's failover, about
+      35 s for RDS PostgreSQL, plus whatever piled up meanwhile. Once a
+      replica is promoted, creates should work again at once, not after a
+      pile of stuck requests and retries has drained.
     fix: >-
       Fail fast during the failover (a short timeout, no blind retries) so
       nothing is left queued when the new primary takes over.
+
+  - id: redirects-through-zone-loss
+    use: timeline-holds
+    title: Redirects stay at 99.9% while a zone is lost and replaced
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params:
+      timeline: zone-loss-over-time
+      metric: success-rate
+      operation: redirect
+      threshold: 0.999
+    why: >-
+      Replacements for the lost zone's instances take a minute or more to
+      start, and only once an autoscaler has seen the load. Until then, the
+      instances already running in the other zones carry the peak.
+    fix: >-
+      Keep a third of spare capacity across three zones, so that redirects
+      never wait for new instances.
+
+  - id: creates-back-after-zone-loss
+    use: timeline-recovers
+    title: Creates are back within 45 seconds of losing a zone
+    dimension: availability
+    weight: 1
+    requirements: [NFR-2]
+    params:
+      timeline: zone-loss-over-time
+      metric: success-rate
+      operation: create-link
+      threshold: 0.999
+      after: 30
+      withinSec: 45
+    why: >-
+      A primary in the lost zone takes the store's failover time to replace;
+      a store whose replicas all sat in that zone does not come back at all.
+    fix: >-
+      Keep a replica of every shard in another zone, and fail fast while the
+      primary fails over.
 
   - id: failover-p99
     use: latency-below

@@ -57,6 +57,7 @@ export const FLAVOR_NUMBERS = [
   "capacityUnits",
   "perKeyCapacityPerSec",
   "startupSec",
+  "failoverSec",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
@@ -109,6 +110,12 @@ export const FlavorSchema = z
      * asks for it (boot, warm-up, health checks).
      */
     startupSec: z.number().nonnegative().optional(),
+    /**
+     * Seconds from losing a primary until a replica has taken over and takes
+     * writes again (detection, catch-up and promotion), for stores whose
+     * writes go to a primary.
+     */
+    failoverSec: z.number().positive().optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */

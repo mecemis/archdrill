@@ -7,7 +7,7 @@ import type {
   Workload,
 } from "@archdrill/model";
 import type { ComponentFault } from "./faults";
-import { resolveFaults, selectComponents } from "./faults";
+import { resolveFaultHits, resolveFaults, selectComponents } from "./faults";
 import {
   buildFixtures,
   createModel,
@@ -39,6 +39,7 @@ import {
   cacheRestarts,
   type DynamicMarkKind,
 } from "./timeline-dynamics";
+import { activeAt, type FaultEvent, type FaultWindow, faultWindows } from "./timeline-faults";
 import type { ComponentMetrics, OperationMetrics } from "./types";
 
 export interface OperationSeries {
@@ -86,6 +87,8 @@ export interface TimelineMark {
     | "fault-end"
     | "overload-start"
     | "overload-end"
+    /** A store's replica has taken over the primary a lost zone held. */
+    | "failed-over"
     | DynamicMarkKind;
   readonly label: string;
   readonly componentIds: readonly string[];
@@ -122,7 +125,6 @@ const STEP_TOLERANCE = 1e-5;
 const STEP_MAX_ITERATIONS = 40;
 
 type LoadEvent = Extract<TimelineEvent, { kind: "load" }>;
-type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
 
 /** Rates at time `t`: events apply in order, each moving rates to its targets over its ramp. */
 export function ratesAt(timeline: Timeline, t: number): Record<string, number> {
@@ -144,14 +146,16 @@ export function ratesAt(timeline: Timeline, t: number): Record<string, number> {
   return rates;
 }
 
-function activeAt(event: FaultEvent, t: number): boolean {
-  return event.at <= t && (event.until === undefined || t < event.until);
-}
-
 /** Step times from 0 to the duration, inclusive. */
 function stepTimes(timeline: Timeline): number[] {
   const count = Math.floor(timeline.durationSec / timeline.stepSec + 1e-9);
   return Array.from({ length: count + 1 }, (_, k) => Number((k * timeline.stepSec).toFixed(6)));
+}
+
+/** When a failover the event leaves open is over: once every store it hits has failed over. */
+function failoverEnd(windows: readonly FaultWindow[], event: FaultEvent): number | undefined {
+  const ends = windows.filter((w) => w.event === event && w.failoverEnds).map((w) => w.until ?? 0);
+  return event.fault.kind === "failover" && ends.length > 0 ? Math.max(...ends) : undefined;
 }
 
 function describeFault(fault: Fault): string {
@@ -191,17 +195,13 @@ export function simulateTimeline(
   timeline: Timeline,
   ctx: SimulationContext,
 ): TimelineMetrics {
-  const faultEvents = timeline.events.filter((e): e is FaultEvent => e.kind === "fault");
+  const windows = faultWindows(timeline, ctx);
   const segments = new Map<string, Segment>();
-  const segmentFor = (active: readonly FaultEvent[]): Segment => {
-    const key = active.map((e) => faultEvents.indexOf(e)).join(",");
+  const segmentFor = (active: readonly FaultWindow[]): Segment => {
+    const key = active.map((w) => windows.indexOf(w)).join(",");
     const known = segments.get(key);
     if (known) return known;
-    const faults = resolveFaults(
-      active.map((e) => e.fault),
-      ctx.attempt,
-      ctx.catalog,
-    );
+    const faults = resolveFaultHits(active, ctx.catalog);
     const segment = { faults, caches: buildCacheSpecs(workload, buildProfiles(ctx, faults), ctx) };
     segments.set(key, segment);
     return segment;
@@ -253,10 +253,22 @@ export function simulateTimeline(
       const label = event.label ?? describeFault(event.fault);
       const componentIds = [...resolveFaults([event.fault], ctx.attempt, ctx.catalog).keys()];
       marks.push({ at: event.at, kind: "fault-start", label, componentIds });
-      if (event.until !== undefined && event.until <= timeline.durationSec) {
-        marks.push({ at: event.until, kind: "fault-end", label, componentIds });
+      const end = event.until ?? failoverEnd(windows, event);
+      if (end !== undefined && end <= timeline.durationSec) {
+        marks.push({ at: end, kind: "fault-end", label, componentIds });
       }
     }
+  }
+  // A lost zone stays lost, but the stores whose primaries it held fail over.
+  for (const window of windows) {
+    if (window.fault.kind !== "zone-down" || !window.failoverEnds) continue;
+    if (window.until === undefined || window.until > timeline.durationSec) continue;
+    marks.push({
+      at: window.until,
+      kind: "failed-over",
+      label: `${window.component.label} failed over`,
+      componentIds: [window.component.id],
+    });
   }
 
   // A step with the same inputs whose state did not move repeats the last results.
@@ -266,7 +278,7 @@ export function simulateTimeline(
     marks.push(...restarts.advance(t));
     if (step > 0) marks.push(...scaler.launchReady(t, loop));
     breakerState.hold(t, loop);
-    const active = faultEvents.filter((e) => activeAt(e, t));
+    const active = windows.filter((w) => activeAt(w, t));
     const segment = segmentFor(active);
     const rates = ratesAt(timeline, t);
     const environment: Environment = {
@@ -275,7 +287,7 @@ export function simulateTimeline(
       rates,
       connections: timeline.connections,
       classShares: timeline.classShares,
-      faults: active.map((e) => e.fault),
+      faults: [...new Set(active.map((w) => w.fault))],
     };
     const base = buildFixtures(
       workload,
@@ -294,7 +306,7 @@ export function simulateTimeline(
       fixedReplicas: step > 0,
     };
     const inputs = JSON.stringify([
-      active.map((e) => faultEvents.indexOf(e)),
+      active.map((w) => windows.indexOf(w)),
       rates,
       [...fixtures.cacheWindows],
       [...drains],

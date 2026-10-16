@@ -70,3 +70,14 @@ test("shows autoscaling catching up with a spreading link on the S5 timeline", a
     page.getByText(/Redirect API: scaling out to \d+ instances, ready at/).first(),
   ).toBeVisible();
 });
+
+test("loses a zone second by second on the S6 timeline", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S6 / }).click();
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await page.getByRole("tab", { name: "A lost zone, second by second" }).click();
+  await page.getByRole("button", { name: "Skip and show it" }).click();
+
+  await expect(page.getByText("A zone goes dark starts", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Links DB failed over")).toBeVisible();
+});

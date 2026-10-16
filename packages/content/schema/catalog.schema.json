@@ -147,6 +147,10 @@
                   "type": "number",
                   "minimum": 0
                 },
+                "failoverSec": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
                 "sizes": {
                   "default": {},
                   "type": "object",
@@ -226,7 +230,8 @@
                             "requestUnits",
                             "capacityUnits",
                             "perKeyCapacityPerSec",
-                            "startupSec"
+                            "startupSec",
+                            "failoverSec"
                           ]
                         },
                         "additionalProperties": {
@@ -383,7 +388,8 @@
                       "requestUnits",
                       "capacityUnits",
                       "perKeyCapacityPerSec",
-                      "startupSec"
+                      "startupSec",
+                      "failoverSec"
                     ]
                   },
                   "additionalProperties": {

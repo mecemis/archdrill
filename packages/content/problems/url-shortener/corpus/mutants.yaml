@@ -503,7 +503,7 @@ mutants:
       - updateComponent: { id: links-db, zones: 1 }
     expect:
       scenario: s6-dependency-failure
-      fails: [creates-zone-redundant]
+      fails: [creates-zone-redundant, creates-back-after-zone-loss]
 
   - id: cache-in-one-zone
     base: postgres-redis-cache-aside
@@ -525,7 +525,7 @@ mutants:
       - setAutoscale: { id: redirect-api, autoscale: { max: 120, targetUtilization: 0.7 } }
     expect:
       scenario: s6-dependency-failure
-      fails: [redirects-survive-zone-loss]
+      fails: [redirects-survive-zone-loss, redirects-through-zone-loss]
 
   - id: fixed-fleet-without-zone-spare
     base: postgres-redis-fixed-fleet
@@ -536,7 +536,7 @@ mutants:
       - updateComponent: { id: redirect-api, replicas: 25 }
     expect:
       scenario: s6-dependency-failure
-      fails: [redirects-survive-zone-loss]
+      fails: [redirects-survive-zone-loss, redirects-through-zone-loss]
 
   - id: consensus-across-two-zones
     base: mysql-memcached-cache-aside

@@ -490,8 +490,16 @@ Where a design runs, and what it survives when part of a region, or a whole regi
   - Six mutants keep the lesson: 131 in all, every one caught.
 - **Shown.** A Zones control in the inspector, zones on the nodes, and faults that only cost instances in amber.
 
+**Part 2, failover times (as built).** How long writes fail when a primary is lost comes from the catalog, so recovery depends on the store chosen ([ADR 0014](../adr/0014-failover-times.md)).
+- **The catalog.** PostgreSQL and MySQL fail over in 35 s, as AWS publishes for a Multi-AZ DB cluster; managed stores fail over unseen.
+- **Timelines.** A failover without an end lasts as long as the store's. A lost zone fails over the primaries it held for as long, and the timeline marks when each store has failed over.
+- **Placement.** Each shard's replicas start one zone further than the shard before, so primaries spread over the zones.
+- **The corpus.**
+  - S6's failover timeline ends with the store, and creates must be back within 45 seconds of losing the primary.
+  - A new timeline loses a zone at peak for good: redirects stay at 99.9% before any replacement starts, creates are back within 45 seconds, and two predictions ask what happens to each.
+  - Every golden keeps its scores, and the zone mutants also fail the new timeline: 131 mutants, all caught.
+
 **Next.**
-- Failover times from the catalog, so recovery depends on the store chosen (RTO).
 - The latency and the price of crossing zones, and zone-aware routing.
 - Regions: designs in two regions, a lost region, and what cross-region replication loses on the way (RPO).
 

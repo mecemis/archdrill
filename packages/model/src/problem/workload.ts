@@ -202,7 +202,13 @@ export const TimelineEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("fault"),
     at: z.number().min(0),
-    /** When the fault ends; without it, it lasts to the end of the timeline. */
+    /**
+     * When the fault ends. Without it, a failover lasts as long as the
+     * store's failover takes (`failoverSec` in the catalog), or to the end
+     * when no replica can take over or the catalog gives no time; other
+     * faults last to the end of the timeline. A lost zone also fails over
+     * the primaries that were in it, for as long.
+     */
     until: z.number().positive().optional(),
     fault: FaultSchema,
     label: z.string().min(1).optional(),

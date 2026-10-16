@@ -326,6 +326,11 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - The MySQL and Memcached golden scores 79: Memcached keeps one copy of each key, so a lost zone sends a third of the cache's reads to MySQL.
 - Six mutants: redirect servers, the database or Redis in one zone, redirect servers scaling to 70%, a fixed fleet with one server to spare, and etcd over two zones.
 
+**As built (M22): failover times.** The failover timeline ends when the store's failover does, from the catalog ([ADR 0014](../adr/0014-failover-times.md)): 35 s for RDS PostgreSQL or MySQL, none for DynamoDB. `creates-recover-after-failover` asks for creates back within 45 seconds of losing the primary.
+- A new timeline, `zone-loss-over-time`, loses a zone 30 s into the peak and keeps it lost. Primaries in that zone fail over in 35 s, and autoscalers start replacements after their window and a minute's startup.
+- Checks: `redirects-through-zone-loss` (99.9% throughout, critical) and `creates-back-after-zone-loss` (within 45 seconds).
+- Predictions: what happens to creates (half of them fail for 35 s in the PostgreSQL goldens, none in the DynamoDB ones), and to redirects before replacements start.
+
 **As built (M4)** (`s6-dependency-failure`)
 - Environments: `failover` (a primary of the link store is lost and connections to it hang) and `instance-crash` (one instance of the redirect handler crashes), at the S4 peak. The zone outage came in M22.
 - Gates: `no-acknowledged-loss` (from the `replication-mode` decision: asynchronous replication loses about one second of creates) and `creates-fail-fast` (store calls time out within a second).

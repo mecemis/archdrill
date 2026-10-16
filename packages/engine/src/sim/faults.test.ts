@@ -20,7 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
 import { NO_TIMEOUT_WAIT_MS } from "./calls";
-import { resolveFaults, zoneLoss } from "./faults";
+import { failsOverWithZone, resolveFaultHits, resolveFaults, zoneLoss } from "./faults";
 import { simulateEnvironment } from "./simulate";
 
 const workload = WorkloadSchema.parse({
@@ -251,6 +251,34 @@ describe("a lost zone", () => {
 
     expect(lost?.failRead).toBe(0);
     expect(lost?.readCapacity).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("spreads primaries over the zones when shards have a replica in every zone", () => {
+    // Four shards of three replicas: shard s has its primary in zone s mod 3.
+    const db = spread("db", { shards: 4, replicas: 3, zones: 3 });
+    const component = db.architecture.components.find((c) => c.id === "db");
+    if (!component) throw new Error("no db");
+
+    const failing = resolveFaultHits(
+      [{ fault: zoneDown, component, failingOver: true }],
+      testCatalogIndex,
+    ).get("db");
+
+    // Zone A holds the primaries of two shards of four.
+    expect(failing).toMatchObject({ failRead: 0, failWrite: 0.5 });
+    expect(failing?.labels).toContain("2 of 4 primaries failing over; writes to them fail");
+    expect(effects(db).get("db")).toMatchObject({ failRead: 0, failWrite: 0 });
+  });
+
+  it("fails over only the stores whose primary the lost zone held", () => {
+    // One shard over two of three zones: the zone holding the primary is the one lost.
+    const pair = spread("db", { replicas: 2, zones: 2 });
+    const inOneZone = cacheAsideAttempt();
+    const db = (attempt: Attempt) => component(attempt, "db");
+
+    expect(failsOverWithZone(db(pair), testCatalogIndex)).toBe(true);
+    expect(failsOverWithZone(db(inOneZone), testCatalogIndex)).toBe(false);
+    expect(failsOverWithZone(component(pair, "api"), testCatalogIndex)).toBe(false);
   });
 
   it("stops a quorum store of two replicas when it loses one node", () => {
