@@ -121,6 +121,9 @@ const FailureModeSchema = z.enum(["crash", "hang"]);
  * - `zone-down`: an availability zone is lost with every instance in it, in
  *   any component. Primaries there have failed over, and no instance has
  *   been launched to replace the lost ones yet.
+ * - `region-down`: the primary region is lost with everything in it. DNS has
+ *   sent traffic to the standby region, where components with a standby copy
+ *   serve it; the rest are gone.
  */
 export const FaultSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -148,8 +151,15 @@ export const FaultSchema = z.discriminatedUnion("kind", [
     kind: z.literal("zone-down"),
     mode: FailureModeSchema.default("crash"),
   }),
+  z.strictObject({
+    kind: z.literal("region-down"),
+    mode: FailureModeSchema.default("crash"),
+  }),
 ]);
 export type Fault = z.infer<typeof FaultSchema>;
+
+/** A lost region and a lost zone are separate stories: the zone would be in the lost region. */
+const ZONE_AND_REGION = "a lost zone and a lost region cannot be combined";
 
 export const EnvironmentSchema = z.object({
   /** Clients holding a persistent connection (WebSockets), spread over the gateways that hold them. */
@@ -166,7 +176,16 @@ export const EnvironmentSchema = z.object({
    * out keep their workload share; the result must still add up to 1.
    */
   classShares: z.record(IdSchema, z.record(IdSchema, z.number().min(0).max(1))).default({}),
-  faults: z.array(FaultSchema).default([]),
+  faults: z
+    .array(FaultSchema)
+    .default([])
+    .refine(
+      (faults) =>
+        !(
+          faults.some((f) => f.kind === "zone-down") && faults.some((f) => f.kind === "region-down")
+        ),
+      { message: ZONE_AND_REGION },
+    ),
 });
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
@@ -207,7 +226,10 @@ export const TimelineEventSchema = z.discriminatedUnion("kind", [
      * store's failover takes (`failoverSec` in the catalog), or to the end
      * when no replica can take over or the catalog gives no time; other
      * faults last to the end of the timeline. A lost zone also fails over
-     * the primaries that were in it, for as long.
+     * the primaries that were in it, for as long. A lost region sends
+     * traffic to the standby region once DNS fails over, and promotes the
+     * standby copies of stores for as long as each takes; it never ends,
+     * since failing back is not modelled.
      */
     until: z.number().positive().optional(),
     fault: FaultSchema,
@@ -290,7 +312,31 @@ export const TimelineSchema = z
     predictions: z.array(PredictionSchema).default([]),
   })
   .superRefine((timeline, ctx) => {
+    const lost = (kind: Fault["kind"]) =>
+      timeline.events.filter((e) => e.kind === "fault" && e.fault.kind === kind).length;
+    if (lost("region-down") > 1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "a timeline loses the region at most once",
+        path: ["events"],
+      });
+    }
+    if (lost("region-down") > 0 && lost("zone-down") > 0) {
+      ctx.addIssue({ code: "custom", message: ZONE_AND_REGION, path: ["events"] });
+    }
     timeline.events.forEach((event, i) => {
+      // The standby region keeps the traffic: failing back is not modelled.
+      if (
+        event.kind === "fault" &&
+        event.fault.kind === "region-down" &&
+        event.until !== undefined
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: `event ${i} ends a lost region, but failing back to it is not modelled`,
+          path: ["events", i, "until"],
+        });
+      }
       if (event.at > timeline.durationSec) {
         ctx.addIssue({
           code: "custom",

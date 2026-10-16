@@ -271,8 +271,14 @@ export const successRateAbove = defineCheck({
     const base = `${percent(op.successRate)} of requests succeed at ${env.environment.label}; the target is ${percent(params.min)}.`;
     if (op.successRate >= params.min - EPSILON) return passed(base);
     const { rejected, unhandled, errorStatus } = op.failures;
+    // A component on the way in that is down rejects requests as surely as an overloaded one.
+    const ingress = ctx.analysis.operations.get(params.operation)?.ingress?.components ?? [];
+    const downOnTheWayIn = ingress.some((id) => env.components.get(id)?.faultDisrupts);
+    const rejectedBy = downOnTheWayIn
+      ? "components that are down or overloaded"
+      : "overloaded components";
     const causes = [
-      rejected > 0 ? `${percent(rejected)} rejected by overloaded components on the way in` : null,
+      rejected > 0 ? `${percent(rejected)} rejected by ${rejectedBy} on the way in` : null,
       errorStatus > 0 ? `${percent(errorStatus)} answered with an error status` : null,
       unhandled > 0 ? `${percent(unhandled)} end at an outcome the flow does not handle` : null,
     ].filter((c): c is string => c !== null);

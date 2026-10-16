@@ -109,11 +109,19 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
           </div>
         </div>
       </div>
-      {(data.entities.length > 0 || data.isHandler) && (
+      {(data.entities.length > 0 || data.isHandler || data.standby) && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {data.isHandler && (
             <span className="rounded-md bg-accent-soft px-1.5 text-[10px] font-semibold text-accent-fg">
               handler
+            </span>
+          )}
+          {data.standby && (
+            <span
+              className="rounded-md bg-muted px-1.5 text-[10px] font-semibold text-fg-muted"
+              title="Keeps a standby copy in a second region"
+            >
+              standby region
             </span>
           )}
           {data.entities.map((entity) => (

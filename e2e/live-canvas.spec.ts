@@ -98,6 +98,32 @@ test("spreads a fleet over zones, and shows what losing one takes down", async (
   ).toBeVisible();
 });
 
+test("keeps a standby in a second region, and shows what losing the primary takes", async ({
+  page,
+}) => {
+  await importGolden(page, "postgres-redis-two-regions");
+  await page.getByRole("button", { name: /S9 / }).click();
+  await page.getByRole("tab", { name: "Load" }).click();
+  await page.getByRole("tab", { name: "Peak, primary region lost" }).click();
+  await expect(page.getByTestId("node-Links DB")).toContainText("standby region");
+
+  await page.getByTestId("node-Links DB").click();
+  const regions = page.getByRole("group", { name: "Regions" });
+  await expect(regions.getByRole("button", { name: "+ Standby" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(regions.getByText(/takes writes once promoted, 3 minutes after/)).toBeVisible();
+  await regions.getByRole("button", { name: "Primary only" }).click();
+
+  await expect(page.getByText("Links DB: down: it ran only in the lost region")).toBeVisible();
+  await expect(page.getByTestId("node-Links DB")).not.toContainText("standby region");
+  await page.getByRole("tab", { name: /Findings/ }).click();
+  await expect(
+    page.getByText("Losing the primary region takes down", { exact: false }).first(),
+  ).toBeVisible();
+});
+
 test("keeps calls in their zone, and shows what crossing zones costs", async ({ page }) => {
   await importGolden(page, "postgres-redis-cache-aside");
   await page.getByRole("button", { name: /S3 / }).click();

@@ -29,6 +29,7 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 | NFR-3 | Codes are unique and not enumerable |
 | NFR-4 | An acknowledged link is never lost |
 | NFR-5 | Creation is protected against abuse (per-client limits) |
+| NFR-7 | Losing the whole region brings redirects back within 4 minutes and creates within 5, losing at most the last second of new links |
 
 ## Operations and entities
 
@@ -420,7 +421,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - no 301 or 308;
   - under $60,000 a month at peak.
 - **Signals:** summing per link before writing (senior), and writing window totals rather than increments (staff).
-- **Golden:** the Postgres design publishes clicks to Kafka (8 brokers) in batches of 100, fire-and-forget. A Flink job sums them per link over 10-second windows and writes the windows' totals to Cassandra (one range, three replicas) in batches of 1,000. Totals keyed by link and window make replays harmless. The pipeline costs about $5,000 a month, and the design passes all eight scenarios.
+- **Golden:** the Postgres design publishes clicks to Kafka (8 brokers) in batches of 100, fire-and-forget. A Flink job sums them per link over 10-second windows and writes the windows' totals to Cassandra (one range, three replicas) in batches of 1,000. Totals keyed by link and window make replays harmless. The pipeline costs about $5,000 a month, and the design passes S1 to S8.
 - **Mutants (10):**
   - an increment on the redirect path;
   - a publish that waits for the queue;
@@ -442,6 +443,30 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 
 ---
 
+## S9: Lose a region
+
+**Story.** "A DNS fault inside DynamoDB took much of us-east-1 down for most of a day. Keep a standby in a second region: redirects back within four minutes, creates within five, at most the last second of links lost, for up to $80,000 a month."
+
+**As built (M22)** (`s9-region-loss`, [ADR 0016](../adr/0016-a-standby-region.md))
+- **Requirement:** NFR-7.
+- **Environments:** an average day (100,000 redirects and 1,000 creates a second) for the budget, and the peak with the primary region lost, once the failover has settled.
+- **Timeline:** the region goes dark 30 s into the peak and stays down. Clients reach the standby region at 180 s, an RDS standby takes writes at 300 s, and standby fleets scale up from their minimum. Two predictions ask how long redirects and creates take to come back.
+- **Gate:** `redirects-region-redundant` (nothing a redirect needs runs only in the primary region).
+- **Checks:**
+  - creates do not depend on the region either;
+  - `no-link-lost-with-region` (at most the last second of creates, the RPO);
+  - the standby region carries the peak at 99.9%, with redirect p99 under 50 ms, and takes creates;
+  - redirects back within four minutes (critical), and creates within five;
+  - under $80,000 a month on an average day.
+- **Signal (staff):** `hot-standby`, redirects back as soon as clients reach the standby region, which takes the peak's instances running there every day.
+- **Goldens:** the single-region goldens score 20 here. Two new ones keep a warm standby of every component:
+  - `postgres-redis-two-regions` ($75,367 a month): redirects back after 210 s, creates after 270 s, once the RDS standby is promoted;
+  - `dynamodb-redis-two-regions` ($60,464 a month): both back after 210 s, since a global table takes writes in both regions.
+  The second copy of the links makes each cost about twice its single-region design, so neither passes S3's budget.
+- **Mutants (4):** the database, NGINX or Redis without a standby copy, and a single-region DynamoDB table.
+
+---
+
 ## Golden corpus (must pass)
 
 | ID | Design |
@@ -457,19 +482,21 @@ Each golden design declares the scenario bands it is expected to achieve. CI enf
 
 **As built (M21).** Load balancers billed by connections are priced ([ADR 0012](../adr/0012-load-balancer-capacity-units.md)). Every click is a new visitor's connection, so an ALB in front of 100,000 redirects a second takes 4,000 capacity units, about $23,000 a month, and fails S3's budget. The three goldens that pass S3 (`postgres-redis-cache-aside`, `dynamodb-redis-cache-aside`, `postgres-redis-fixed-fleet`) now front their services with an NGINX fleet (25, 25 and 8 instances of 4 vCPUs), and the `alb-for-redirects` mutant keeps the lesson: 82 mutants.
 
-**As built (M11).** S8 adds ten mutants, 79 in all, and the Postgres golden now passes all eight scenarios.
+**As built (M11).** S8 adds ten mutants, 79 in all, and the Postgres golden now passes all eight scenarios (S9, a lost region, came in M22).
 
 **As built (M6).** The corpus in `packages/content/problems/url-shortener/corpus/` holds seven golden designs, covering all four code strategies, and 69 mutants. Two of them pass S7 in different ways: the Postgres design publishes every new link to a managed queue that a worker scans; the DynamoDB design checks each link before the create answers and publishes only the links whose check failed, for a batched rescan.
 
 | ID | Create path | Read path |
 |---|---|---|
-| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones; clicks go fire-and-forget to Kafka, Flink sums them per link and writes window totals to Cassandra (all eight scenarios) |
+| `postgres-redis-cache-aside` | KGS ×2 with batches of 1,000, one retry, behind a rate-limiting gateway; publishes `link-created` | an autoscaling Redirect API with a near cache → Redis cache-aside with negative caching → Postgres behind a bulkhead; a worker scans new links and purges expired ones; clicks go fire-and-forget to Kafka, Flink sums them per link and writes window totals to Cassandra (S1 to S8) |
 | `postgres-redis-fixed-fleet` | as above, without the gateway | the same with fixed fleets and no near cache (expected not to pass S5) |
 | `dynamodb-redis-cache-aside` | random 8-character codes, one retry; a URL check before answering, failing open into a rescan | an autoscaling service with a near cache → Redis cache-aside → DynamoDB; the same service purges in batches of 25 |
 | `mysql-memcached-cache-aside` | etcd ×3 range leases of 10,000 + `obfuscateId` + base62 | Memcached cache-aside → MySQL (expected to pass S1 and S2 only) |
 | `dynamodb-direct` | random 7-character codes, two retries | DynamoDB only (expected not to pass S3) |
 | `postgres-hash-based` | 8-character URL hashes, one retry with `rehashWithSalt` | none (write path only) |
 | `postgres-sized-for-cache-loss` | random 8-character codes, one retry | Redis → Postgres sized for the full read peak (expected not to pass S3) |
+| `postgres-redis-two-regions` | as `postgres-redis-cache-aside` | the same, with a warm standby of every component in a second region (S9; expected not to pass S3) |
+| `dynamodb-redis-two-regions` | as `dynamodb-redis-cache-aside` | the same, with a DynamoDB global table and a warm standby of the rest (S9; expected not to pass S3) |
 
 ## Mutant expectations (excerpt)
 

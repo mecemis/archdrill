@@ -190,6 +190,7 @@ Each scenario environment is evaluated as its own steady state, for example "dur
 - `down` with `scope: all` fails every call; `one-node` is absorbed by replicas (capacity drops by one instance), or loses that node's shard of keys without them; `one-shard` loses a shard with all its replicas. `mode: hang` makes calls wait for the caller's timeout instead of being refused.
 - `slow(factor)` multiplies service time (capacity divides by it); `degraded(capacity)` multiplies capacity.
 - `failover` loses one primary of a store with primaries: writes to that shard fail, reads continue on replicas if there are any, and managed stores fail over transparently.
+- `zone-down` loses an availability zone with every instance in it ([ADR 0013](../adr/0013-availability-zones.md)); `region-down` loses the primary region with every component that has no standby copy in a second one ([ADR 0016](../adr/0016-a-standby-region.md)). Over a timeline, a lost region fails every request until DNS sends clients to the standby region, and its stores take writes once promoted.
 
 Faults on ingress components (a crashed service instance) reduce capacity or reject requests before the handler runs.
 

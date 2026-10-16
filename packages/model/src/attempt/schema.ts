@@ -10,6 +10,8 @@ export const MAX_REPLICAS = 1000;
 export const MAX_SHARDS = 1024;
 /** A region has at least three availability zones, so a design spreads over up to three. */
 export const MAX_ZONES = 3;
+/** A design runs in its primary region, and may keep a standby copy in a second one. */
+export const MAX_REGIONS = 2;
 export const MAX_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 10;
 export const MAX_AGGREGATE_SEC = 3600;
@@ -35,6 +37,13 @@ export const ComponentSchema = z.object({
    * in it. Managed offerings span zones on their own.
    */
   zones: z.number().int().min(1).max(MAX_ZONES).default(1),
+  /**
+   * Regions it runs in: 1, the primary region only, or 2, with a standby
+   * copy in a second region that takes over when the primary region is
+   * lost. The standby copy is placed like the primary one and runs its
+   * minimum instances; stores replicate to it asynchronously.
+   */
+  regions: z.number().int().min(1).max(MAX_REGIONS).default(1),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
   /**

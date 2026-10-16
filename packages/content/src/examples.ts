@@ -10,10 +10,12 @@ import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sl
 import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
 import dynamodbDirect from "../problems/url-shortener/corpus/golden/dynamodb-direct.yaml";
 import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redis-cache-aside.yaml";
+import dynamodbTwoRegions from "../problems/url-shortener/corpus/golden/dynamodb-redis-two-regions.yaml";
 import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
 import postgresHash from "../problems/url-shortener/corpus/golden/postgres-hash-based.yaml";
 import postgresRedisCacheAside from "../problems/url-shortener/corpus/golden/postgres-redis-cache-aside.yaml";
 import postgresFixedFleet from "../problems/url-shortener/corpus/golden/postgres-redis-fixed-fleet.yaml";
+import postgresTwoRegions from "../problems/url-shortener/corpus/golden/postgres-redis-two-regions.yaml";
 import postgresSized from "../problems/url-shortener/corpus/golden/postgres-sized-for-cache-loss.yaml";
 
 /**
@@ -43,6 +45,8 @@ export const goldenDesigns: Readonly<Record<string, readonly Golden[]>> = {
     postgresHash,
     postgresSized,
     postgresFixedFleet,
+    postgresTwoRegions,
+    dynamodbTwoRegions,
   ].map((g) => GoldenSchema.parse(g)),
   "rate-limiter": [redisSlidingCounter, redisTokenBucket].map((g) => GoldenSchema.parse(g)),
   "news-feed": [hybridFanOut, pushPostgres].map((g) => GoldenSchema.parse(g)),

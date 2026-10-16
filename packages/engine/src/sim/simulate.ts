@@ -10,6 +10,7 @@ import {
   solve,
   warmCaches,
 } from "./model";
+import { standbyCosts } from "./regions";
 import { replicaAckMs, type SimulationContext, storedGb, wholeInstances } from "./setup";
 import {
   type Propagation,
@@ -140,14 +141,16 @@ export function simulateEnvironment(
   );
   const routes = zoneRoutes(ctx.attempt, ctx.catalog, running);
   const zoneTraffic = summarizeZoneTraffic(final.transfer, routes);
+  const stored = storedGb(workload, ctx);
   const components = summarizeComponents(
     profiles,
     final,
     model.loop.drop,
-    storedGb(workload, ctx),
+    stored,
     faults,
     { ...ctx.problem.client, held: fixtures.clientConnections },
     crossZoneCostByCaller(zoneTraffic, ctx.attempt),
+    standbyCosts(ctx.attempt, ctx.catalog, stored, final),
   );
   const connections = fixtures.connections;
   return {

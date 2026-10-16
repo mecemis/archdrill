@@ -35,6 +35,7 @@ import urlShortenerS5 from "../problems/url-shortener/scenarios/s5-hot-keys.yaml
 import urlShortenerS6 from "../problems/url-shortener/scenarios/s6-dependency-failure.yaml";
 import urlShortenerS7 from "../problems/url-shortener/scenarios/s7-edge-cases.yaml";
 import urlShortenerS8 from "../problems/url-shortener/scenarios/s8-click-analytics.yaml";
+import urlShortenerS9 from "../problems/url-shortener/scenarios/s9-region-loss.yaml";
 
 export interface ProblemPack {
   readonly problem: Problem;
@@ -99,6 +100,7 @@ export const problemPacks: readonly ProblemPack[] = [
     urlShortenerS6,
     urlShortenerS7,
     urlShortenerS8,
+    urlShortenerS9,
   ]),
   loadProblemPack(rateLimiterProblem, [rateLimiterS1, rateLimiterS2, rateLimiterS3]),
   loadProblemPack(newsFeedProblem, [newsFeedS1, newsFeedS2, newsFeedS3]),

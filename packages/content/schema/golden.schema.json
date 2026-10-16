@@ -102,6 +102,12 @@
                     "minimum": 1,
                     "maximum": 3
                   },
+                  "regions": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2
+                  },
                   "data": {
                     "default": [],
                     "type": "array",

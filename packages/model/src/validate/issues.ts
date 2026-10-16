@@ -10,6 +10,7 @@ export const ISSUE_CODES = [
   "replicas-ignored",
   "zones-ignored",
   "zones-exceed-instances",
+  "regions-ignored",
   "autoscale-not-supported",
   "autoscale-below-minimum",
   "in-process-shared",

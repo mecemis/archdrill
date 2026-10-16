@@ -1,6 +1,7 @@
 import type { Attempt, CatalogIndex, Component, ComponentSelector, Fault } from "@archdrill/model";
 import type { ComponentProfile } from "./capacity";
 import { primariesIn, replicasIn, runsInZones, type Shape, shapeOf } from "./placement";
+import { hasStandby, inRegion, type RegionPhase } from "./regions";
 
 /** The combined effect of an environment's faults on one component. */
 export interface ComponentFault {
@@ -57,17 +58,23 @@ export function selectComponents(
 }
 
 /**
- * Components a fault hits: those its selector picks, or for a lost zone every
- * component with instances of its own on the network. Clients are outside
- * the region, and in-process components fail with their service's instances.
+ * Components a fault hits: those its selector picks, for a lost zone every
+ * component with instances of its own on the network, and for a lost region
+ * every component in it. Clients and external services are outside the
+ * region, and in-process components fail with their service's instances.
  */
 export function faultedComponents(
   fault: Fault,
   attempt: Attempt,
   catalog: CatalogIndex,
 ): Component[] {
-  if (fault.kind !== "zone-down") return selectComponents(fault.target, attempt, catalog);
-  return attempt.architecture.components.filter((c) => runsInZones(c, catalog));
+  if (fault.kind === "zone-down") {
+    return attempt.architecture.components.filter((c) => runsInZones(c, catalog));
+  }
+  if (fault.kind === "region-down") {
+    return attempt.architecture.components.filter((c) => inRegion(c, catalog));
+  }
+  return selectComponents(fault.target, attempt, catalog);
 }
 
 /**
@@ -86,11 +93,15 @@ export function resolveFaults(
   return resolveFaultHits(hits, catalog, running);
 }
 
-/** One fault on one component; a lost zone may still be failing over its primaries. */
+/**
+ * One fault on one component; a lost zone may still be failing over its
+ * primaries, and a lost region may still be on its way to the standby one.
+ */
 export interface FaultHit {
   readonly fault: Fault;
   readonly component: Component;
   readonly failingOver?: boolean;
+  readonly regionPhase?: RegionPhase;
 }
 
 /** Per component, the combined effect of the faults that hit it. */
@@ -100,9 +111,12 @@ export function resolveFaultHits(
   running?: ReadonlyMap<string, number>,
 ): Map<string, ComponentFault> {
   const result = new Map<string, ComponentFault>();
-  for (const { fault, component, failingOver } of hits) {
+  for (const { fault, component, failingOver, regionPhase } of hits) {
     const shape = shapeOf(component, catalog, running?.get(component.id));
-    const effect = faultEffect(fault, shape, failingOver ?? false);
+    const effect =
+      fault.kind === "region-down"
+        ? regionDown(component, catalog, fault.mode === "hang", regionPhase)
+        : faultEffect(fault, shape, failingOver ?? false);
     result.set(component.id, combine(result.get(component.id) ?? NO_FAULT, effect));
   }
   return result;
@@ -175,7 +189,40 @@ function faultEffect(fault: Fault, shape: Shape, failingOver: boolean): Componen
       return shardDown(shape, hangs, how);
     case "zone-down":
       return zoneDown(shape, hangs, how, failingOver);
+    case "region-down":
+      // Resolved per component, since what it does depends on the standby copy.
+      return NO_FAULT;
   }
+}
+
+/**
+ * Losing the primary region: a component without a standby copy is gone.
+ * One with a copy fails until DNS sends clients to the standby region, and
+ * a store's copy takes no writes until it has been promoted; after that,
+ * the standby copy serves as the primary did.
+ */
+function regionDown(
+  component: Component,
+  catalog: CatalogIndex,
+  hangs: boolean,
+  phase: RegionPhase | undefined,
+): ComponentFault {
+  const how = hangs ? "hanging" : "down";
+  if (!hasStandby(component, catalog)) {
+    return fail(1, hangs, [`${how}: it ran only in the lost region`]);
+  }
+  if (phase === "redirecting") {
+    return fail(1, hangs, [`${how} until DNS sends clients to the standby region`]);
+  }
+  if (phase === "promoting") {
+    return {
+      ...NO_FAULT,
+      failWrite: 1,
+      hang: hangs,
+      labels: ["standby copy being promoted; writes fail, reads continue"],
+    };
+  }
+  return NO_FAULT;
 }
 
 /** Losing one instance: replicas or the provider absorb it, otherwise its keys fail. */

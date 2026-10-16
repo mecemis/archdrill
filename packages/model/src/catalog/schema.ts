@@ -59,6 +59,8 @@ export const FLAVOR_NUMBERS = [
   "startupSec",
   "failoverSec",
   "crossZoneBilling",
+  "regionFailoverSec",
+  "crossRegionReplication",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
@@ -129,6 +131,19 @@ export const FlavorSchema = z
      * runs pay at each end and managed offerings are free.
      */
     crossZoneBilling: CrossZoneBillingSchema.optional(),
+    /**
+     * Seconds from declaring the primary region lost until the standby
+     * region's copy has been promoted and takes writes, for stores whose
+     * writes go to a primary. Stores that take writes in every region
+     * (DynamoDB global tables) need no promotion.
+     */
+    regionFailoverSec: z.number().positive().optional(),
+    /**
+     * A cache that keeps its standby region's copy filled (ElastiCache Global
+     * Datastore). Without it, a standby cache starts empty when traffic
+     * arrives. Stores always replicate to their standby copy.
+     */
+    crossRegionReplication: z.boolean().optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */
@@ -240,6 +255,16 @@ export type Kind = z.infer<typeof KindSchema>;
  */
 export function placedInZones(kind: Kind, flavor: Flavor): boolean {
   return kind.replicable && !kind.inProcess && !flavor.managedRedundancy;
+}
+
+/**
+ * Whether a component runs in the design's region, so that losing the
+ * region takes it: not a client, nor an external service reached over the
+ * internet, nor in-process (it lives in its service's instances).
+ */
+export function runsInRegion(kind: Kind, flavor: Flavor): boolean {
+  const caps = new Set([...kind.capabilities, ...flavor.capabilities]);
+  return !kind.inProcess && !caps.has("traffic-source") && !caps.has("external");
 }
 
 /** Who pays for data crossing zones at a flavor's end, defaults included. */

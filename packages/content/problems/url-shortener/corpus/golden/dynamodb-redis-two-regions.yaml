@@ -1,0 +1,242 @@
+# yaml-language-server: $schema=../../../../schema/golden.schema.json
+id: dynamodb-redis-two-regions
+title: DynamoDB and Redis in two regions
+description: >-
+  The DynamoDB and Redis design, with a standby copy of every component in
+  a second region (warm standby). The links table is a DynamoDB global
+  table, which takes writes in both regions, so creates come back as soon
+  as clients reach the standby region; the standby Redis is a Global
+  Datastore secondary, kept filled. Standby fleets run their autoscaling
+  minimum. The table's second copy doubles its storage bill, so it is not an
+  answer to the budget of S3.
+expect:
+  s1-create: { minScore: 90 }
+  s2-redirect: { minScore: 90 }
+  s4-cache-outage: { minScore: 90 }
+  s6-dependency-failure: { minScore: 90 }
+  s7-edge-cases: { minScore: 90 }
+  s9-region-loss: { minScore: 90 }
+notPassing: [s3-cache]
+attempt:
+  schemaVersion: 1
+  problemId: url-shortener
+  problemVersion: 1
+  architecture:
+    components:
+      - { id: visitors, kind: client, flavor: browser, label: Visitors }
+      - { id: lb, kind: load-balancer, flavor: nginx, label: NGINX, size: m, replicas: 25, zones: 3, regions: 2 }
+      - id: link-api
+        kind: service
+        flavor: generic
+        label: Link API
+        regions: 2
+        size: l
+        replicas: 10
+        zones: 3
+        autoscale: { max: 120, targetUtilization: 0.6 }
+      - { id: near, kind: near-cache, flavor: in-process-lru, label: Near cache, size: m }
+      - { id: redis, kind: cache, flavor: redis, label: Redis, size: m, shards: 3, replicas: 2, zones: 3, regions: 2 }
+      - id: links
+        kind: key-value-db
+        flavor: dynamodb
+        label: Links table
+        regions: 2
+        size: on-demand
+        data: [{ entity: Link }]
+      - { id: link-events, kind: queue, flavor: managed-queue, label: Link events, size: on-demand, regions: 2 }
+      - { id: safety, kind: external-api, flavor: url-safety-list, label: URL safety, size: quota }
+    connections:
+      - { id: visitors--lb, from: visitors, to: lb }
+      - { id: lb--link-api, from: lb, to: link-api, policy: { sameZone: true } }
+      - { id: link-api--redis, from: link-api, to: redis, policy: { timeoutMs: 20, circuitBreaker: true, sameZone: true } }
+      - { id: link-api--links, from: link-api, to: links, policy: { timeoutMs: 500 } }
+      - { id: link-api--near, from: link-api, to: near }
+      - { id: link-api--safety, from: link-api, to: safety, policy: { timeoutMs: 300 } }
+      - id: link-api--link-events
+        from: link-api
+        to: link-events
+        policy: { timeoutMs: 100, retries: 1 }
+  flows:
+    - operation: redirect
+      handler: link-api
+      root: near-get
+      steps:
+        near-get:
+          type: call
+          target: near
+          action: cache.get
+          entity: Link
+          next: { hit: status-hit, miss: get, error: get }
+        get:
+          type: call
+          target: redis
+          action: cache.get
+          entity: Link
+          next: { hit: near-set, miss: read, error: read }
+        near-set:
+          type: call
+          target: near
+          action: cache.set
+          entity: Link
+          ttlSec: 10
+          next: { ok: status-hit, error: status-hit }
+        status-hit:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-hit, disabled: r410 }
+        expiry-hit:
+          type: logic
+          logic: checkExpiry
+          next: { valid: r302, expired: r410 }
+        read:
+          type: call
+          target: links
+          action: store.read
+          entity: Link
+          next: { found: status-db, notFound: r404, error: r503 }
+        status-db:
+          type: logic
+          logic: checkStatus
+          next: { active: expiry-db, disabled: r410 }
+        expiry-db:
+          type: logic
+          logic: checkExpiry
+          next: { valid: populate, expired: r410 }
+        populate:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: r302, error: r302 }
+        r302: { type: respond, status: 302 }
+        r404: { type: respond, status: 404 }
+        r410: { type: respond, status: 410 }
+        r503: { type: respond, status: 503 }
+    - operation: create-link
+      handler: link-api
+      root: validate
+      steps:
+        validate:
+          type: logic
+          logic: validateUrl
+          next: { valid: alias, invalid: c400 }
+        alias:
+          type: logic
+          logic: hasCustomAlias
+          next: { custom: insert-alias, generated: generate }
+        insert-alias:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          ttlSec: 31536000
+          next: { ok: match, conflict: c409, error: c503 }
+        generate:
+          type: logic
+          logic: generateRandomCode
+          next: { ok: insert }
+        insert:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          ttlSec: 31536000
+          next: { ok: match, conflict: generate-retry, error: c503 }
+        generate-retry:
+          type: logic
+          logic: generateRandomCode
+          next: { ok: insert-retry }
+        insert-retry:
+          type: call
+          target: links
+          action: store.insertIfAbsent
+          entity: Link
+          ttlSec: 31536000
+          next: { ok: match, conflict: c503, error: c503 }
+        match:
+          type: logic
+          logic: matchThreatList
+          next: { clean: c201, match: check }
+        check:
+          type: call
+          target: safety
+          action: external.check
+          next: { clean: c201, malicious: reject, error: publish }
+        reject:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: c400, notFound: c400, error: c503 }
+        publish:
+          type: call
+          target: link-events
+          action: queue.publish
+          event: link-created
+          next: { ok: c201, error: c503 }
+        c201: { type: respond, status: 201 }
+        c400: { type: respond, status: 400 }
+        c409: { type: respond, status: 409 }
+        c503: { type: respond, status: 503 }
+    - operation: disable-link
+      handler: link-api
+      root: update
+      steps:
+        update:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: d404, error: d503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: d204, error: d503 }
+        d204: { type: respond, status: 204 }
+        d404: { type: respond, status: 404 }
+        d503: { type: respond, status: 503 }
+    - operation: scan-link
+      handler: link-api
+      root: match
+      steps:
+        match:
+          type: logic
+          logic: matchThreatList
+          next: { clean: s200, match: check }
+        check:
+          type: call
+          target: safety
+          action: external.check
+          next: { clean: s200, malicious: disable, error: s503 }
+        disable:
+          type: call
+          target: links
+          action: store.update
+          entity: Link
+          next: { ok: evict, notFound: s200, error: s503 }
+        evict:
+          type: call
+          target: redis
+          action: cache.delete
+          entity: Link
+          next: { ok: s200, error: s503 }
+        s200: { type: respond, status: 200 }
+        s503: { type: respond, status: 503 }
+  decisions:
+    code-strategy: random-conditional
+    code-length: "8"
+    redirect-status: "302"
+    expired-status: "410"
+    code-reuse: after-grace
+  layout:
+    visitors: { x: 0, y: 120 }
+    lb: { x: 220, y: 120 }
+    link-api: { x: 440, y: 120 }
+    near: { x: 440, y: -40 }
+    redis: { x: 680, y: 20 }
+    links: { x: 680, y: 220 }
+    link-events: { x: 680, y: 380 }
+    safety: { x: 440, y: 320 }

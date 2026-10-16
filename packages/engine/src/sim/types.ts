@@ -49,6 +49,11 @@ export interface ComponentMetrics {
     readonly storage: number;
     /** Data its calls send and receive across zones, both ends' share. */
     readonly crossZone: number;
+    /**
+     * Its copy in the standby region: instances, stored data, the writes a
+     * managed store applies there, and the data replicated to it.
+     */
+    readonly standbyRegion: number;
   };
 }
 

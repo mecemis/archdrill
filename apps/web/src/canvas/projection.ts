@@ -6,6 +6,7 @@ import {
   type Issue,
   liveStepIds,
   placedInZones,
+  runsInRegion,
 } from "@archdrill/model";
 import type { Edge, Node } from "@xyflow/react";
 import type { Highlight, Selection } from "../state/ui-store";
@@ -32,6 +33,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly shards: number | null;
   /** Zones its instances are spread over, for components a design places; otherwise null. */
   readonly zones: number | null;
+  /** It keeps a standby copy in a second region. */
+  readonly standby: boolean;
   readonly replicable: boolean;
   readonly entities: readonly string[];
   readonly isHandler: boolean;
@@ -145,6 +148,11 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         replicas: component.replicas,
         shards: kind?.shardable ? component.shards : null,
         zones: kind && flavor && placedInZones(kind, flavor) ? component.zones : null,
+        standby:
+          kind !== undefined &&
+          flavor !== undefined &&
+          runsInRegion(kind, flavor) &&
+          component.regions > 1,
         replicable: (kind?.replicable ?? false) && !(flavor?.managedRedundancy ?? false),
         entities: component.data.map((d) => d.entity),
         isHandler: flow?.handler === component.id,

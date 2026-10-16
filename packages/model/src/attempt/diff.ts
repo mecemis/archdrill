@@ -11,6 +11,9 @@ function componentChanges(before: Component, after: Component): string[] {
   if (before.replicas !== after.replicas)
     changes.push(`replicas ${before.replicas} → ${after.replicas}`);
   if (before.zones !== after.zones) changes.push(`zones ${before.zones} → ${after.zones}`);
+  if (before.regions !== after.regions) {
+    changes.push(after.regions > 1 ? "standby region added" : "standby region removed");
+  }
   if (!sameJson(before.autoscale, after.autoscale)) {
     changes.push(after.autoscale ? `autoscaling up to ${after.autoscale.max}` : "no autoscaling");
   }

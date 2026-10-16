@@ -1,5 +1,6 @@
 import type { Component, Timeline, TimelineEvent } from "@archdrill/model";
 import { type FaultHit, failoverSecOf, failsOverWithZone, faultedComponents } from "./faults";
+import { hasStandby, REGION_DNS_FAILOVER_SEC, standbyWritesAt } from "./regions";
 import type { SimulationContext } from "./setup";
 
 export type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
@@ -19,13 +20,16 @@ export interface FaultWindow extends FaultHit {
  * lasts as long as the store's failover takes, or to the end when no replica
  * can take over or the catalog does not say; a lost zone fails over the
  * primaries that were in it for as long, and then only its instances are
- * missing. Other faults last as the event says, or to the end.
+ * missing. A lost region fails everything until DNS sends clients to the
+ * standby region, where stores take writes once promoted. Other faults last
+ * as the event says, or to the end.
  */
 export function faultWindows(timeline: Timeline, ctx: SimulationContext): FaultWindow[] {
   return timeline.events
     .filter((e): e is FaultEvent => e.kind === "fault")
     .flatMap((event) =>
       faultedComponents(event.fault, ctx.attempt, ctx.catalog).flatMap((component) => {
+        if (event.fault.kind === "region-down") return regionWindows(event, component, ctx);
         // A lost zone only fails over the stores whose primary it held.
         const failsOver =
           event.fault.kind !== "zone-down" || failsOverWithZone(component, ctx.catalog);
@@ -55,6 +59,31 @@ function windowsOf(
     { ...hit, failingOver: true, until: promoted, failoverEnds: true },
     { ...hit, from: promoted, until: event.until, failoverEnds: false },
   ];
+}
+
+/**
+ * A lost region, for one component: down for good without a standby copy;
+ * with one, down until clients reach the standby region, then taking reads
+ * and, once its copy is promoted, writes. A lost region does not come back
+ * (the schema rejects an end), so the last phase lasts to the end.
+ */
+function regionWindows(
+  event: FaultEvent,
+  component: Component,
+  ctx: SimulationContext,
+): FaultWindow[] {
+  const hit = { event, fault: event.fault, component, failoverEnds: false };
+  if (!hasStandby(component, ctx.catalog)) {
+    return [{ ...hit, from: event.at, until: undefined }];
+  }
+  const redirected = event.at + REGION_DNS_FAILOVER_SEC;
+  const writable = event.at + standbyWritesAt(component, ctx.catalog);
+  const phases: FaultWindow[] = [
+    { ...hit, regionPhase: "redirecting", from: event.at, until: redirected },
+    { ...hit, regionPhase: "promoting", from: redirected, until: writable },
+    { ...hit, from: writable, until: undefined },
+  ];
+  return phases.filter((w) => w.until === undefined || w.until > w.from);
 }
 
 export function activeAt(window: FaultWindow, t: number): boolean {

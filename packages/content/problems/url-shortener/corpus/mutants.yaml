@@ -573,6 +573,55 @@ mutants:
       scenario: s3-cache
       fails: [zone-local-calls]
 
+  # A lost region (S9).
+  - id: database-without-standby
+    base: postgres-redis-two-regions
+    description: >-
+      The database runs only in the primary region. Losing it takes every
+      link with it: creates stop, and redirects that miss the cache fail.
+    apply:
+      - updateComponent: { id: links-db, regions: 1 }
+    expect:
+      scenario: s9-region-loss
+      fails: [creates-region-redundant, no-link-lost-with-region, redirects-survive-region-loss]
+      band: not-passing
+
+  - id: proxies-without-standby
+    base: postgres-redis-two-regions
+    description: >-
+      NGINX runs only in the primary region, so the standby region has
+      everything behind it and no way in.
+    apply:
+      - updateComponent: { id: lb, regions: 1 }
+    expect:
+      scenario: s9-region-loss
+      fails: [redirects-region-redundant, redirects-back-after-region-loss]
+      band: not-passing
+
+  - id: cache-without-standby
+    base: postgres-redis-two-regions
+    description: >-
+      Redis runs only in the primary region. Redirects survive on the
+      database alone, but the bulkhead in front of it sheds most of the
+      peak once the standby region takes over.
+    apply:
+      - updateComponent: { id: redis, regions: 1 }
+    expect:
+      scenario: s9-region-loss
+      fails: [redirects-survive-region-loss, redirects-back-after-region-loss]
+
+  - id: single-region-table
+    base: dynamodb-redis-two-regions
+    description: >-
+      The links table is a single-region table, not a global table, so it
+      goes with the region.
+    apply:
+      - updateComponent: { id: links, regions: 1 }
+    expect:
+      scenario: s9-region-loss
+      fails: [creates-region-redundant, no-link-lost-with-region]
+      band: not-passing
+
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside

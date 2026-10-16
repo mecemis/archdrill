@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   type Attempt,
   DEFAULT_POLICY,
+  MAX_REGIONS,
   MAX_REPLICAS,
   MAX_RETRIES,
   MAX_SHARDS,
@@ -37,6 +38,7 @@ export const addComponent = defineCommand(
       replicas: args.replicas ?? 1,
       shards: 1,
       zones: 1,
+      regions: 1,
       data: [],
     });
     draft.layout[id] = { ...args.position };
@@ -69,6 +71,7 @@ export const updateComponent = defineCommand(
     replicas: z.number().int().min(1).max(MAX_REPLICAS).optional(),
     shards: z.number().int().min(1).max(MAX_SHARDS).optional(),
     zones: z.number().int().min(1).max(MAX_ZONES).optional(),
+    regions: z.number().int().min(1).max(MAX_REGIONS).optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -80,6 +83,7 @@ export const updateComponent = defineCommand(
     if (args.replicas !== undefined) component.replicas = args.replicas;
     if (args.shards !== undefined) component.shards = args.shards;
     if (args.zones !== undefined) component.zones = args.zones;
+    if (args.regions !== undefined) component.regions = args.regions;
     // Instances cannot be spread over more zones than there are of them.
     component.zones = Math.max(1, Math.min(component.zones, component.replicas * component.shards));
   },

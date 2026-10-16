@@ -21,6 +21,7 @@ import {
   warmCaches,
 } from "./model";
 import { emptyLoopState } from "./propagate";
+import { standbyCosts } from "./regions";
 import {
   buildCacheSpecs,
   buildProfiles,
@@ -39,6 +40,7 @@ import {
   breakers,
   cacheRestarts,
   type DynamicMarkKind,
+  regionTakeovers,
 } from "./timeline-dynamics";
 import { activeAt, type FaultEvent, type FaultWindow, faultWindows } from "./timeline-faults";
 import type { ComponentMetrics, OperationMetrics } from "./types";
@@ -169,6 +171,7 @@ function failoverEnd(windows: readonly FaultWindow[], event: FaultEvent): number
 
 function describeFault(fault: Fault): string {
   if (fault.kind === "zone-down") return "zone-down: every component";
+  if (fault.kind === "region-down") return "region-down: the primary region";
   const target = Object.entries(fault.target)
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
@@ -244,6 +247,7 @@ export function simulateTimeline(
   const scaler = autoscalers(ctx);
   const breakerState = breakers(ctx);
   const restarts = cacheRestarts(timeline, ctx);
+  const takeovers = regionTakeovers(timeline, ctx);
   const backlog = backlogs();
   // Latency of the stores behind caches, which sets how long a cold key's first miss takes.
   let missLatencyMs: (entity: string) => number = () => 0;
@@ -283,6 +287,32 @@ export function simulateTimeline(
       }
     }
   }
+  // Clients reach the standby region, and its stores are promoted one by one.
+  for (const event of timeline.events) {
+    if (event.kind !== "fault" || event.fault.kind !== "region-down") continue;
+    const regional = windows.filter((w) => w.event === event);
+    const redirected = regional.find((w) => w.regionPhase === "redirecting");
+    if (redirected?.until !== undefined && redirected.until <= timeline.durationSec) {
+      marks.push({
+        at: redirected.until,
+        kind: "failed-over",
+        label: "Clients reach the standby region",
+        componentIds: regional
+          .filter((w) => w.regionPhase === "redirecting")
+          .map((w) => w.component.id),
+      });
+    }
+    for (const window of regional) {
+      if (window.regionPhase !== "promoting" || window.until === undefined) continue;
+      if (window.until > timeline.durationSec) continue;
+      marks.push({
+        at: window.until,
+        kind: "failed-over",
+        label: `${window.component.label} promoted in the standby region`,
+        componentIds: [window.component.id],
+      });
+    }
+  }
   // A lost zone stays lost, but the stores whose primaries it held fail over.
   for (const window of windows) {
     if (window.fault.kind !== "zone-down" || !window.failoverEnds) continue;
@@ -300,6 +330,7 @@ export function simulateTimeline(
 
   times.forEach((t, step) => {
     marks.push(...restarts.advance(t));
+    scaler.takeOver(takeovers.due(t), loop);
     if (step > 0) marks.push(...scaler.launchReady(t, loop));
     breakerState.hold(t, loop);
     const active = windows.filter((w) => activeAt(w, t));
@@ -355,7 +386,7 @@ export function simulateTimeline(
     previous = { inputs, summary };
     record(t, step, summary, drains);
 
-    marks.push(...scaler.observe(t, summary.components, loop));
+    marks.push(...scaler.observe(t, summary.components, loop, takeovers.waiting(t)));
     marks.push(...breakerState.observe(t, summary.breakers));
     backlog.observe(summary.operations, drains, timeline.stepSec);
     missLatencyMs = missLatencyOf(summary.components);
@@ -386,6 +417,7 @@ export function simulateTimeline(
       fixtures.faults,
       { ...ctx.problem.client, held: fixtures.clientConnections },
       crossZoneCostByCaller(summarizeZoneTraffic(flow.transfer, routes), ctx.attempt),
+      standbyCosts(ctx.attempt, ctx.catalog, stored, flow),
     );
     const summary = summarizeOperations(
       fixtures.operations,

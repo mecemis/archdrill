@@ -329,6 +329,43 @@ describe("no-single-point-of-failure across zones", () => {
   });
 });
 
+describe("no-single-point-of-failure across regions", () => {
+  const params = { operation: "redirect", scope: "region" };
+  const standby = (ids: readonly string[]) =>
+    ids.reduce(
+      (attempt, id) => mutated("updateComponent", { id, regions: 2 }, attempt),
+      cacheAsideAttempt(),
+    );
+
+  it("names everything that runs only in the primary region", () => {
+    const outcome = runCheck("no-single-point-of-failure", params, standby(["api"]));
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe(
+      "Losing the primary region takes down ALB (runs only in the primary region); Redis (runs only in the primary region); Postgres (runs only in the primary region).",
+    );
+  });
+
+  it("passes once everything a redirect needs has a standby copy", () => {
+    const outcome = runCheck(
+      "no-single-point-of-failure",
+      params,
+      standby(["lb", "api", "redis", "db"]),
+    );
+
+    expect(outcome.message).toBe(
+      "Every kind of request keeps a way to succeed when the primary region is lost.",
+    );
+  });
+
+  it("counts on the store behind a cache that runs only in the primary region", () => {
+    // A cache miss reads the store, so redirects do without the cache.
+    const outcome = runCheck("no-single-point-of-failure", params, standby(["lb", "api", "db"]));
+
+    expect(outcome.status).toBe("pass");
+  });
+});
+
 describe("unused-components", () => {
   it("lists components no flow uses", () => {
     const attempt = mutated("addComponent", {
