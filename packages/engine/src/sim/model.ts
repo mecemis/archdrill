@@ -6,9 +6,18 @@ import {
   type Workload,
 } from "@archdrill/model";
 import { relaxCaches } from "./cache-loop";
+import { NETWORK_RTT_MS } from "./calls";
 import type { ComponentProfile } from "./capacity";
 import { type ComponentFault, resolveFaults } from "./faults";
 import type { OutcomeState } from "./outcomes";
+import {
+  IDLE_POOL,
+  liveInstances,
+  type PoolSpec,
+  type PoolState,
+  poolSpecs,
+  poolState,
+} from "./pools";
 import {
   type CallModels,
   callModels,
@@ -32,6 +41,7 @@ import {
   componentLatency,
   dropAt,
   type Propagation,
+  saturatedLatency,
   shardUtilizations,
   timeoutShare,
   utilizationOf,
@@ -78,6 +88,8 @@ export interface Fixtures {
   readonly operations: readonly OperationModel[];
   readonly caches: readonly CacheSpec[];
   readonly connections: readonly Connection[];
+  /** Pools the callers keep to stores that run one statement per connection. */
+  readonly pools: readonly PoolSpec[];
   readonly autoscaled: readonly Component[];
   readonly faults: ReadonlyMap<string, ComponentFault>;
   readonly occupancy: ReadonlyMap<string, { all: number; aliases: number }>;
@@ -172,6 +184,7 @@ export function buildFixtures(
     operations: buildOperations(workload, environment, ctx),
     caches,
     connections: ctx.attempt.architecture.connections,
+    pools: poolSpecs(ctx),
     autoscaled: ctx.attempt.architecture.components.filter((c) => c.autoscale),
     faults,
     occupancy,
@@ -196,6 +209,7 @@ export function solve(
         ? 0
         : relaxAutoscaling(fixtures.autoscaled, profiles, flow, model.loop, damping),
       relaxConnections(fixtures.connections, profiles, flow, model.loop, damping),
+      relaxPools(fixtures.pools, profiles, flow, fixtures.faults, model.loop, damping),
       relaxCaches(fixtures.caches, flow, model.loop, damping, instancesIn(profiles), (key) =>
         fixtures.cacheWindows.get(key),
       ),
@@ -301,6 +315,63 @@ function relaxConnections(
       const after = loop.callRates.get(connection.id) ?? 0;
       delta = Math.max(delta, Math.abs(after - before) / Math.max(1, rate));
     }
+  }
+  return delta;
+}
+
+/** Milliseconds a call holds its pooled connection: the store's latency, the round trip and any proxy. */
+function holdMs(
+  spec: PoolSpec,
+  profiles: ReadonlyMap<string, ComponentProfile>,
+  flow: Propagation,
+): number {
+  const profile = profiles.get(spec.target);
+  if (!profile) return 0;
+  const latency = componentLatency(
+    flow.loads.get(spec.target),
+    profile,
+    flow.hotLoads.get(spec.target),
+  );
+  // The pools themselves keep the store's queue from growing without end.
+  const served = Math.min(latency.mean, saturatedLatency(profile).mean);
+  return served + NETWORK_RTT_MS + spec.proxyMs;
+}
+
+/** How full each caller's pools are, from the attempts it makes and how long each holds a connection. */
+export function poolStates(
+  pools: readonly PoolSpec[],
+  profiles: ReadonlyMap<string, ComponentProfile>,
+  flow: Propagation,
+  faults: ReadonlyMap<string, ComponentFault>,
+): Map<string, PoolState> {
+  return new Map(
+    pools.map((spec) => {
+      const attempts = flow.calls.get(spec.connectionId)?.attempts ?? 0;
+      const instances = liveInstances(spec.caller, profiles, faults);
+      const state =
+        attempts > 0
+          ? poolState(spec, attempts, instances, holdMs(spec, profiles, flow))
+          : IDLE_POOL;
+      return [spec.connectionId, state];
+    }),
+  );
+}
+
+/** Pools follow the calls: more in flight than connections leaves attempts waiting. */
+function relaxPools(
+  pools: readonly PoolSpec[],
+  profiles: ReadonlyMap<string, ComponentProfile>,
+  flow: Propagation,
+  faults: ReadonlyMap<string, ComponentFault>,
+  loop: LoopState,
+  damping: number,
+): number {
+  let delta = 0;
+  for (const [id, state] of poolStates(pools, profiles, flow, faults)) {
+    delta = Math.max(delta, relax(loop.poolExhausted, id, state.exhausted, damping));
+    // Relative change, so the tolerance means the same for any wait.
+    const change = relax(loop.poolWait, id, state.waitMs, damping);
+    delta = Math.max(delta, change / Math.max(1, state.waitMs));
   }
   return delta;
 }

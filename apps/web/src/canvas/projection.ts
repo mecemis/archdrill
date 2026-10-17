@@ -35,6 +35,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly zones: number | null;
   /** It keeps a standby copy in a second region. */
   readonly standby: boolean;
+  /** A connection proxy in front of it holds its callers' pools. */
+  readonly proxied: boolean;
   readonly replicable: boolean;
   readonly entities: readonly string[];
   readonly isHandler: boolean;
@@ -153,6 +155,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
           flavor !== undefined &&
           runsInRegion(kind, flavor) &&
           component.regions > 1,
+        proxied: component.proxy && flavor?.connectionProxy !== undefined,
         replicable: (kind?.replicable ?? false) && !(flavor?.managedRedundancy ?? false),
         entities: component.data.map((d) => d.entity),
         isHandler: flow?.handler === component.id,

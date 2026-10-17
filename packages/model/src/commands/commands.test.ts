@@ -32,6 +32,7 @@ describe("commands", () => {
       shards: 1,
       zones: 1,
       regions: 1,
+      proxy: false,
       data: [],
     });
   });

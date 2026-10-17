@@ -268,6 +268,33 @@ export const testCatalog: Catalog = CatalogSchema.parse({
 
 export const testCatalogIndex = createCatalogIndex(testCatalog);
 
+/**
+ * The test catalog with Postgres as RDS runs it: one statement per
+ * connection, 25 connections an instance (low enough to reach), 8 vCPUs and
+ * a connection proxy.
+ */
+export const pooledCatalogIndex = createCatalogIndex({
+  ...testCatalog,
+  kinds: testCatalog.kinds.map((kind) =>
+    kind.id === "relational-db"
+      ? {
+          ...kind,
+          pooledConnections: true,
+          flavors: kind.flavors.map((f) => ({
+            ...f,
+            connectionProxy: { latencyMs: 2, pricePerVcpuHour: 0.015 },
+            sizes: Object.fromEntries(
+              Object.entries(f.sizes).map(([id, s]) => [
+                id,
+                { ...s, maxConnections: 25, vcpus: 8 },
+              ]),
+            ),
+          })),
+        }
+      : kind,
+  ),
+});
+
 export const testProblem: Problem = ProblemSchema.parse({
   id: "url-shortener",
   version: 1,

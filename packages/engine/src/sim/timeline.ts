@@ -21,6 +21,7 @@ import {
   TOLERANCE,
   warmCaches,
 } from "./model";
+import { poolSpecs, withProxyHops } from "./pools";
 import { emptyLoopState } from "./propagate";
 import { activeActive, crossRegionShare, standbyCosts, withActiveStandby } from "./regions";
 import {
@@ -248,7 +249,7 @@ export function simulateTimeline(
     const known = routesByCount.get(key);
     if (known) return known;
     const routes = zoneRoutes(design.attempt, ctx.catalog, running);
-    const entry = { routes, hops: routeHops(routes) };
+    const entry = { routes, hops: withProxyHops(routeHops(routes), poolSpecs(design)) };
     routesByCount.set(key, entry);
     return entry;
   };

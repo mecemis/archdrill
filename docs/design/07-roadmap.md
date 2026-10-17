@@ -558,6 +558,32 @@ What replicas give up for the capacity they add, and what two regions taking wri
 
 **Next.** M24, resource saturation.
 
+## M24: Resource saturation
+
+What fills up before the CPU does. In parts, like M22 and M23:
+
+**Part 1, connection pools (as built).** A relational database runs one statement per connection, and accepts only so many ([ADR 0019](../adr/0019-connection-pools.md)).
+- **Pools.**
+  - Every caller instance keeps a pool to each copy of the database it calls: `poolSize` on the connection, 10 by default as in HikariCP and node-postgres.
+  - A pool holds calls a second × their latency (Little's law).
+  - Beyond it, calls wait for a connection until they give up, without reaching the database.
+- **The limit.**
+  - Each shard's primary holds every caller instance's pool, against RDS's `max_connections`. PostgreSQL s, m and l accept 831, 3,326 and 5,000; MySQL m accepts 2,520.
+  - Beyond it, the database refuses the rest.
+- **A proxy.** RDS Proxy holds the callers' pools instead, for 2 ms a call and $0.015 an hour per vCPU behind it.
+- **The check.** `connection-pools` shows the sums: instances × pool size against the limit, and calls a second × latency against the pool.
+- **The corpus.**
+  - S4 gains `pools-without-the-cache`, S5 `connections-at-spike`. No golden moved: the busiest pool is 57% full with the cache down, and the largest fleet holds 1,110 of 5,000 connections at the spike.
+  - Two mutants: 143, every one caught. Pools of 50 on an autoscaled fleet open 5,310 connections at the spike. Pools of 4 sized for a warm cache run 142% busy when it is gone.
+- **Shown.**
+  - A "Connection pool" section on connections to the database: the pool size, and how full it is.
+  - A "Connection proxy" switch on the database, and a "proxy" tag on its node.
+  - Open and accepted connections in the results.
+
+**Part 2, memory and disk (next).** The catalog's database capacity is measured with the data in memory. Next:
+- the buffer cache's hit ratio from its memory and the keys' popularity, as for caches;
+- reads that miss it go to the volume, whose IOPS (gp3's 3,000 baseline, provisioned up to 16,000, or io2) are the next limit.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

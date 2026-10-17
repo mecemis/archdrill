@@ -48,6 +48,10 @@ export interface LoopState {
   readonly replicas: Map<string, number>;
   /** Per connection: share of calls a breaker that opened recently keeps failing (timelines). */
   readonly breakerHeld: Map<string, number>;
+  /** Per pooled connection: share of attempts that find no free connection. */
+  readonly poolExhausted: Map<string, number>;
+  /** Per pooled connection: milliseconds an attempt waits for its connection. */
+  readonly poolWait: Map<string, number>;
 }
 
 export function emptyLoopState(): LoopState {
@@ -61,6 +65,8 @@ export function emptyLoopState(): LoopState {
     negativeHit: new Map(),
     replicas: new Map(),
     breakerHeld: new Map(),
+    poolExhausted: new Map(),
+    poolWait: new Map(),
   };
 }
 
@@ -114,6 +120,8 @@ export function callModels(
       overload: drops.get(step.target) ?? 0,
       timeout: loop.timedOut.get(connection) ?? 0,
       heldOpen: loop.breakerHeld.get(connection) ?? 0,
+      pool: loop.poolExhausted.get(connection) ?? 0,
+      poolWaitMs: loop.poolWait.get(connection) ?? 0,
     };
     const shed =
       shedding.get(connection) ?? bulkheadShed(risks, policy, loop.callRates.get(connection) ?? 0);

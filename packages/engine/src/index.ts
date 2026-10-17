@@ -9,6 +9,7 @@ export * from "./sim/capacity-units";
 export * from "./sim/consistency";
 export * from "./sim/faults";
 export type { Moments, WeightedMoments } from "./sim/math/gamma";
+export { DEFAULT_POOL_SIZE } from "./sim/pools";
 export * from "./sim/regions";
 export * from "./sim/simulate";
 export * from "./sim/timeline";

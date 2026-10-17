@@ -85,6 +85,10 @@
             "default": false,
             "type": "boolean"
           },
+          "pooledConnections": {
+            "default": false,
+            "type": "boolean"
+          },
           "flavors": {
             "minItems": 1,
             "type": "array",
@@ -162,6 +166,21 @@
                 "crossRegionReplication": {
                   "type": "boolean"
                 },
+                "connectionProxy": {
+                  "type": "object",
+                  "properties": {
+                    "latencyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "pricePerVcpuHour": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["latencyMs", "pricePerVcpuHour"],
+                  "additionalProperties": false
+                },
                 "sizes": {
                   "default": {},
                   "type": "object",
@@ -220,6 +239,11 @@
                         "type": "number",
                         "minimum": 0
                       },
+                      "vcpus": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
                       "standsFor": {
                         "type": "string",
                         "minLength": 1
@@ -236,6 +260,7 @@
                             "memoryGb",
                             "maxConnections",
                             "networkGbps",
+                            "vcpus",
                             "storagePricePerGbMonth",
                             "requestCost",
                             "requestUnits",
@@ -245,7 +270,8 @@
                             "failoverSec",
                             "crossZoneBilling",
                             "regionFailoverSec",
-                            "crossRegionReplication"
+                            "crossRegionReplication",
+                            "connectionProxy"
                           ]
                         },
                         "additionalProperties": {
@@ -397,6 +423,7 @@
                       "memoryGb",
                       "maxConnections",
                       "networkGbps",
+                      "vcpus",
                       "storagePricePerGbMonth",
                       "requestCost",
                       "requestUnits",
@@ -406,7 +433,8 @@
                       "failoverSec",
                       "crossZoneBilling",
                       "regionFailoverSec",
-                      "crossRegionReplication"
+                      "crossRegionReplication",
+                      "connectionProxy"
                     ]
                   },
                   "additionalProperties": {

@@ -46,6 +46,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
     shards?: number;
     zones?: number;
     regions?: number;
+    proxy?: boolean;
   }) => dispatch("updateComponent", { id: component.id, ...changes });
   const profile = componentProfile(component, catalogIndex);
 
@@ -103,6 +104,20 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       {kind && flavor && runsInRegion(kind, flavor) && (
         <RegionPicker component={component} onChange={(regions) => update({ regions })} />
       )}
+      {kind?.pooledConnections && flavor?.connectionProxy && profile && (
+        <ConnectionProxy
+          component={component}
+          monthlyUsd={
+            flavor.connectionProxy.pricePerVcpuHour *
+            (size?.vcpus ?? 0) *
+            profile.instances *
+            HOURS_PER_MONTH
+          }
+          latencyMs={flavor.connectionProxy.latencyMs}
+          maxConnections={size?.maxConnections}
+          onChange={(proxy) => update({ proxy })}
+        />
+      )}
       {kind?.replicable && !kind.holdsData && !flavor?.managedRedundancy && (
         <AutoscaleEditor component={component} />
       )}
@@ -121,6 +136,12 @@ function ComponentInspector({ component }: { readonly component: Component }) {
           )}
           <dt>Base latency</dt>
           <dd className="tabular-nums">{size.latencyMs.base} ms</dd>
+          {size.maxConnections !== undefined && (
+            <>
+              <dt>Connections</dt>
+              <dd className="tabular-nums">{compact(size.maxConnections)} per instance</dd>
+            </>
+          )}
           <dt>Instances</dt>
           <dd className="tabular-nums">
             {profile.instances} · {usd(profile.costPerHour * HOURS_PER_MONTH)} / month
@@ -143,6 +164,41 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       {flavor?.notes && <p className="text-xs text-fg-subtle">{flavor.notes}</p>}
       <ProvenancePanel kind={component.kind} flavor={component.flavor} sizeId={component.size} />
       <RemoveComponentButton component={component} />
+    </div>
+  );
+}
+
+/** A managed proxy in front of a store whose callers pool connections, and what it changes. */
+function ConnectionProxy({
+  component,
+  monthlyUsd,
+  latencyMs,
+  maxConnections,
+  onChange,
+}: {
+  readonly component: Component;
+  readonly monthlyUsd: number;
+  readonly latencyMs: number;
+  readonly maxConnections: number | undefined;
+  readonly onChange: (proxy: boolean) => void;
+}) {
+  const limit =
+    maxConnections === undefined ? "" : ` of the ${compact(maxConnections)} each primary accepts`;
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="flex items-center gap-2 text-sm text-fg">
+        <input
+          type="checkbox"
+          checked={component.proxy}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        Connection proxy (RDS Proxy)
+      </label>
+      <p className="pl-6 text-xs text-fg-subtle">
+        {component.proxy
+          ? `Callers' pools connect to the proxy, which opens a database connection only while a statement runs. Adds ${latencyMs} ms a call, for ${usd(monthlyUsd)} a month.`
+          : `Every caller instance's pool connects straight to the database, and each takes its connections${limit}.`}
+      </p>
     </div>
   );
 }

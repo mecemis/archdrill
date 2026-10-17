@@ -30,6 +30,13 @@ const ZERO: Moments = { mean: 0, variance: 0 };
 export interface AttemptRisks {
   /** Rejected by the caller's bulkhead; the attempt never leaves the caller. */
   readonly shed: number;
+  /**
+   * Found no free connection in the caller's pool and waited until it gave
+   * up (its timeout, or the pool's 30 seconds); the attempt never left the caller.
+   */
+  readonly pool?: number;
+  /** Milliseconds an attempt that gets a pooled connection waited for it. */
+  readonly poolWaitMs?: number;
   /** Share of calls whose key a fault has taken out. */
   readonly fault: number;
   /** The fault hangs instead of refusing the connection. */
@@ -94,15 +101,21 @@ function mixture(parts: readonly Weighted[]): Moments {
 
 /** Chance that one attempt to a working part of the target fails. */
 const independentFailure = (risks: Omit<AttemptRisks, "fault" | "faultHangs">) =>
-  1 - (1 - risks.shed) * (1 - risks.overload) * (1 - risks.timeout);
+  1 - (1 - risks.shed) * (1 - (risks.pool ?? 0)) * (1 - risks.overload) * (1 - risks.timeout);
+
+/** Share of attempts that never leave the caller: shed by its bulkhead, or left waiting by its pool. */
+const keptLocally = (risks: AttemptRisks) => risks.shed + (1 - risks.shed) * (risks.pool ?? 0);
 
 /** Cost of one failed attempt to a working part of the target, by why it failed. */
 function liveAttemptCost(risks: AttemptRisks, policy: ConnectionPolicy): Moments {
   const wait = policy.timeoutMs ?? NO_TIMEOUT_WAIT_MS;
-  const overload = (1 - risks.shed) * risks.overload;
-  const timeout = (1 - risks.shed) * (1 - risks.overload) * risks.timeout;
+  const sent = 1 - keptLocally(risks);
+  const pooled = (1 - risks.shed) * (risks.pool ?? 0);
+  const overload = sent * risks.overload;
+  const timeout = sent * (1 - risks.overload) * risks.timeout;
   return mixture([
     { weight: risks.shed, mean: 0, variance: 0 },
+    { weight: pooled, mean: wait, variance: 0 },
     { weight: overload, mean: NETWORK_RTT_MS, variance: 0 },
     { weight: timeout, mean: wait, variance: 0 },
   ]);
@@ -139,7 +152,9 @@ function backoffBefore(failures: number, policy: ConnectionPolicy): Moments {
  */
 function breakerOpenShare(risks: AttemptRisks, policy: ConnectionPolicy): number {
   if (!policy.circuitBreaker) return 0;
-  const downstream = 1 - (1 - risks.fault) * (1 - risks.overload) * (1 - risks.timeout);
+  // A call that waited out the pool fails like a slow dependency's (HikariCP throws a SQLException).
+  const downstream =
+    1 - (1 - risks.fault) * (1 - (risks.pool ?? 0)) * (1 - risks.overload) * (1 - risks.timeout);
   const ramp = (downstream - BREAKER_THRESHOLD) / (BREAKER_FULL_OPEN - BREAKER_THRESHOLD);
   return Math.min(1, Math.max(0, ramp, risks.heldOpen ?? 0));
 }
@@ -190,7 +205,15 @@ export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallMo
   const e = independentFailure(risks);
   // A breaker still open from earlier failures fails calls to a healthy dependency too.
   const held = policy.circuitBreaker && (risks.heldOpen ?? 0) > 0;
-  if (f <= 0 && e <= 0 && !held) return HEALTHY_CALL;
+  // The attempt that succeeds waited for its connection first.
+  const poolWait = risks.poolWaitMs ?? 0;
+  const waited = (extra: Moments): Moments =>
+    poolWait > 0
+      ? { mean: extra.mean + poolWait, variance: extra.variance + poolWait ** 2 }
+      : extra;
+  if (f <= 0 && e <= 0 && !held) {
+    return poolWait > 0 ? { ...HEALTHY_CALL, successExtra: waited(ZERO) } : HEALTHY_CALL;
+  }
   const attempts = policy.retries + 1;
   const live = liveAttemptCost(risks, policy);
   const backoffAll = backoffBefore(attempts - 1, policy);
@@ -216,7 +239,7 @@ export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallMo
   const succeeds = 1 - liveFailsAll;
   const perSuccess = succeeds > 0 ? attemptsOnSuccess / succeeds : 1;
   // Failed attempts to working keys that still reached them (timed out or rejected there).
-  const reachedWhenFailing = e > 0 ? (e - risks.shed) / e : 0;
+  const reachedWhenFailing = e > 0 ? (e - keptLocally(risks)) / e : 0;
 
   const open = breakerOpenShare(risks, policy);
   const callsFailing = f + (1 - f) * liveFailsAll;
@@ -230,7 +253,7 @@ export function callModel(risks: AttemptRisks, policy: ConnectionPolicy): CallMo
     reachOnSuccess: (1 + (perSuccess - 1) * reachedWhenFailing) / perSuccess,
     reachOnFailure:
       callsFailing > 0 ? ((1 - f) * liveFailsAll * reachedWhenFailing) / callsFailing : 0,
-    successExtra: mixture(successes),
+    successExtra: waited(mixture(successes)),
     failureLatency: mixture([
       { weight: open, mean: 0, variance: 0 },
       { weight: (1 - open) * f, ...failedAfter(deadAttemptCost(risks, policy)) },

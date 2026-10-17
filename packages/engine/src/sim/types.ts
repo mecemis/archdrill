@@ -41,6 +41,12 @@ export interface ComponentMetrics {
   readonly storageGb: number;
   /** Capacity units it is billed for (a managed load balancer's), or null. */
   readonly capacityUnits: CapacityUnitUsage | null;
+  /**
+   * Client connections held open on its fullest instance (a shard's primary,
+   * for a store its callers pool to), and how many one instance accepts; null
+   * where none are held.
+   */
+  readonly connections: { readonly open: number; readonly limit: number } | null;
   readonly monthlyCost: number;
   readonly costBreakdown: {
     readonly instances: number;
@@ -54,7 +60,31 @@ export interface ComponentMetrics {
      * managed store applies there, and the data replicated to it.
      */
     readonly standbyRegion: number;
+    /** The connection proxy in front of it. */
+    readonly proxy: number;
   };
+}
+
+/** How full a caller's pools to a store are (Little's law) and what that does to its calls. */
+export interface PoolMetrics {
+  readonly connectionId: string;
+  /** Connections each caller instance keeps to each copy it calls. */
+  readonly poolSize: number;
+  /** Copies of the store each caller instance keeps a pool to. */
+  readonly copies: number;
+  readonly callerInstances: number;
+  /** Milliseconds a call holds its connection: the store's latency, the round trip and any proxy. */
+  readonly holdMs: number;
+  /** Statements in flight per caller instance: its calls a second times `holdMs`. */
+  readonly inFlight: number;
+  /** In-flight statements over the connections its pools hold; above 1 some calls find none free. */
+  readonly utilization: number;
+  /** Share of attempts that find no free connection and wait until they give up. */
+  readonly exhausted: number;
+  /** Milliseconds an attempt that gets a connection waits for it. */
+  readonly waitMs: number;
+  /** The store's connection proxy holds these pools, not the store. */
+  readonly proxied: boolean;
 }
 
 /** How the calls over one connection cross zones, and what that costs. */
@@ -187,6 +217,8 @@ export interface EnvironmentMetrics {
   readonly calls: ReadonlyMap<string, ConnectionCallMetrics>;
   /** Per connection between components the region holds: what crosses zones. */
   readonly zoneTraffic: ReadonlyMap<string, ConnectionZoneMetrics>;
+  /** Per connection to a store that runs one statement per connection: its pools. */
+  readonly pools: ReadonlyMap<string, PoolMetrics>;
   readonly monthlyCost: number;
   /** False if the overload feedback loop did not settle; metrics are then the last iterate. */
   readonly converged: boolean;

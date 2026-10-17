@@ -49,6 +49,7 @@ export const SIZE_NUMBERS = [
   "memoryGb",
   "maxConnections",
   "networkGbps",
+  "vcpus",
 ] as const;
 export const FLAVOR_NUMBERS = [
   "storagePricePerGbMonth",
@@ -61,6 +62,7 @@ export const FLAVOR_NUMBERS = [
   "crossZoneBilling",
   "regionFailoverSec",
   "crossRegionReplication",
+  "connectionProxy",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
@@ -79,7 +81,10 @@ export const SizeSchema = z.object({
     .partial()
     .default({}),
   memoryGb: z.number().positive().optional(),
-  /** Open client connections one instance can hold (persistent-connection gateways). */
+  /**
+   * Client connections one instance can hold open: a persistent-connection
+   * gateway's clients, or a database's `max_connections`.
+   */
   maxConnections: z.number().positive().optional(),
   /**
    * Network bandwidth one instance sustains in each direction, in Gbps: the
@@ -93,6 +98,8 @@ export const SizeSchema = z.object({
     cv: z.number().nonnegative(),
   }),
   costPerHour: z.number().nonnegative(),
+  /** vCPUs of one instance, for what is billed by them (a connection proxy). */
+  vcpus: z.number().int().positive().optional(),
   /** The real offering this size stands for, such as "db.m6i.large (AWS RDS)". */
   standsFor: z.string().min(1).optional(),
   provenance: ProvenanceMapSchema.default({}),
@@ -144,6 +151,19 @@ export const FlavorSchema = z
      * arrives. Stores always replicate to their standby copy.
      */
     crossRegionReplication: z.boolean().optional(),
+    /**
+     * A managed proxy a design can put in front of the store (RDS Proxy). It
+     * multiplexes its callers' pools: it holds a database connection only
+     * while a statement runs on it, so the callers' pools no longer count
+     * against `maxConnections`. It adds a hop, and is billed per vCPU of the
+     * instances behind it.
+     */
+    connectionProxy: z
+      .strictObject({
+        latencyMs: z.number().nonnegative(),
+        pricePerVcpuHour: z.number().nonnegative(),
+      })
+      .optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */
@@ -244,6 +264,13 @@ export const KindSchema = z.object({
    * quorum reads and writes): a shard that loses half of them stops.
    */
   quorum: z.boolean().default(false),
+  /**
+   * Runs one statement at a time on each client connection (PostgreSQL and
+   * MySQL serve a connection with a process or a thread of its own). Every
+   * caller instance keeps a pool of connections to each copy it calls, and
+   * each of them counts against the copy's `maxConnections`.
+   */
+  pooledConnections: z.boolean().default(false),
   flavors: z.array(FlavorSchema).min(1),
 });
 export type Kind = z.infer<typeof KindSchema>;
