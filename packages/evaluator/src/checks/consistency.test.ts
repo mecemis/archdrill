@@ -1,4 +1,4 @@
-import { applyCommand, WorkloadSchema } from "@archdrill/model";
+import { type Attempt, applyCommand, type CommandName, WorkloadSchema } from "@archdrill/model";
 import { cacheAsideAttempt, createLinkAttempt, disableLinkAttempt } from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { runCheck, runCheckWithLoad } from "../test-support";
@@ -212,5 +212,191 @@ describe("decision-excludes", () => {
       status: "partial",
       fraction: 0.5,
     });
+  });
+});
+
+describe("read-your-writes", () => {
+  const params = {
+    writeOperation: "create-link",
+    readOperation: "redirect",
+    entity: "Link",
+    decision: "replication-mode",
+  };
+  const apply = (attempt: Attempt, name: CommandName, args: unknown) =>
+    applyCommand(attempt, name, args as never).attempt;
+  const decided = (attempt: Attempt, option: string) =>
+    apply(attempt, "setDecision", { decision: "replication-mode", option });
+  /** Every create fills the cache with the new link once it is stored. */
+  const primed = (attempt: Attempt) => {
+    const added = apply(attempt, "addStep", {
+      operation: "create-link",
+      id: "prime",
+      step: { type: "call", target: "redis", action: "cache.set", entity: "Link", ttlSec: 3600 },
+      attach: { to: "outcome", stepId: "insert", outcome: "ok" },
+      continueWith: { outcome: "ok" },
+    });
+    return ["insert-alias:ok", "prime:error"].reduce((a, link) => {
+      const [stepId, outcome] = link.split(":");
+      return apply(a, "linkOutcome", {
+        operation: "create-link",
+        stepId,
+        outcome,
+        target: stepId === "prime" ? "r201" : "prime",
+      });
+    }, added);
+  };
+
+  it("names the replica a redirect can read before it has a new link", () => {
+    const outcome = runCheck("read-your-writes", params, createLinkAttempt("kgs", 1000));
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe(
+      "Redirect can read Postgres within about 1 s of create link without seeing the new Link: its replicas apply writes after the primary has acknowledged them. It answers 404.",
+    );
+  });
+
+  it("says how long a negative cache keeps the wrong answer", () => {
+    const attempt = apply(createLinkAttempt("kgs", 1000), "addStep", {
+      operation: "redirect",
+      id: "negative",
+      step: {
+        type: "call",
+        target: "redis",
+        action: "cache.setNegative",
+        entity: "Link",
+        ttlSec: 60,
+      },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "ok" },
+    });
+
+    expect(runCheck("read-your-writes", params, attempt).message).toMatch(
+      /It answers 404, and the negative cache keeps that answer for 60 s\.$/,
+    );
+  });
+
+  it("passes when every replica applies a write before it is acknowledged", () => {
+    const outcome = runCheck(
+      "read-your-writes",
+      params,
+      decided(createLinkAttempt("kgs", 1000), "sync"),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "pass",
+      message: "Postgres answers every read with the latest acknowledged write.",
+    });
+  });
+
+  it("still fails with semi-synchronous replication, which does not wait for replicas to apply", () => {
+    const outcome = runCheck(
+      "read-your-writes",
+      params,
+      decided(createLinkAttempt("kgs", 1000), "semi-sync"),
+    );
+
+    expect(outcome.message).toMatch(/replicas may not have applied it yet/);
+  });
+
+  it("passes when every create fills the cache that redirects look in first", () => {
+    const outcome = runCheck("read-your-writes", params, primed(createLinkAttempt("kgs", 1000)));
+
+    expect(outcome.message).toBe(
+      "A read right after a create finds it: Create link fills Redis before answering, and redirect looks there first.",
+    );
+  });
+
+  it("fails when one create answers without filling the cache", () => {
+    // Only generated codes fill Redis; a custom alias answers 201 straight after its insert.
+    const partly = apply(createLinkAttempt("kgs", 1000), "addStep", {
+      operation: "create-link",
+      id: "prime",
+      step: { type: "call", target: "redis", action: "cache.set", entity: "Link", ttlSec: 3600 },
+      attach: { to: "outcome", stepId: "insert", outcome: "ok" },
+      continueWith: { outcome: "ok" },
+    });
+
+    expect(runCheck("read-your-writes", params, partly).status).toBe("fail");
+  });
+
+  it("passes when a 404 is answered only after a consistent read", () => {
+    // An eventual read first, then the primary before answering 404.
+    const fallback = apply(createLinkAttempt("kgs", 1000), "addStep", {
+      operation: "redirect",
+      id: "read-primary",
+      step: { type: "call", target: "db", action: "store.read", entity: "Link", consistent: true },
+      attach: { to: "outcome", stepId: "read", outcome: "notFound" },
+      continueWith: { outcome: "notFound" },
+    });
+    const linked = apply(fallback, "linkOutcome", {
+      operation: "redirect",
+      stepId: "read-primary",
+      outcome: "found",
+      target: "expiryDb",
+    });
+
+    expect(runCheck("read-your-writes", params, linked).message).toBe(
+      'A read right after a create finds it: Redirect never answers "not found" from a copy that can lag.',
+    );
+  });
+
+  it("fails when a create answers before anything stores the link", () => {
+    // The create publishes the link and answers; a consumer would store it later.
+    const steps: [string, unknown][] = [
+      [
+        "addComponent",
+        {
+          id: "events",
+          kind: "queue",
+          flavor: "managed-queue",
+          label: "Link events",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      ["addConnection", { from: "api", to: "events" }],
+      ["createFlow", { operation: "create-link", handler: "api" }],
+      [
+        "addStep",
+        {
+          operation: "create-link",
+          id: "publish",
+          step: { type: "call", target: "events", action: "queue.publish", event: "link-created" },
+          attach: { to: "root" },
+        },
+      ],
+      [
+        "addStep",
+        {
+          operation: "create-link",
+          id: "r201",
+          step: { type: "respond", status: 201 },
+          attach: { to: "outcome", stepId: "publish", outcome: "ok" },
+        },
+      ],
+    ];
+    const asyncCreate = steps.reduce(
+      (a, [name, args]) => apply(a, name as CommandName, args),
+      cacheAsideAttempt(),
+    );
+
+    const outcome = runCheck("read-your-writes", params, asyncCreate);
+
+    expect(outcome.message).toBe(
+      "Redirect can look for a new Link before anything has stored it: create link answers once it has published the Link, and a consumer stores it later. It answers 404.",
+    );
+  });
+
+  it("does not apply before anything creates the entity", () => {
+    expect(runCheck("read-your-writes", params, cacheAsideAttempt()).status).toBe("n/a");
+  });
+
+  it("passes when the redirect reads the primary before answering 404", () => {
+    const attempt = apply(createLinkAttempt("kgs", 1000), "updateStep", {
+      operation: "redirect",
+      stepId: "read",
+      consistent: true,
+    });
+
+    expect(runCheck("read-your-writes", params, attempt).status).toBe("pass");
   });
 });

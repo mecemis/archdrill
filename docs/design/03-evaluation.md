@@ -95,7 +95,7 @@ Checks are written in TypeScript in `packages/evaluator`, are parameterised from
   2. TTL ≤ budget;
   3. CDN purge when edge caching applies.
   Ordering matters: *delete-then-write* is flagged because of the stale-repopulation race.
-- `read-your-writes(writeOp, readOp)`: a read issued right after a successful write observes it. This is violated by async persistence without cache priming, or by reads from async replicas without a fallback to the primary.
+- `read-your-writes(writeOp, readOp)`: a read issued right after a successful write observes it. This is violated by async persistence without cache priming, or by reads from async replicas without a fallback to the primary. **As built (M23)** with `entity` and the replication `decision`, structurally: every way the read answers "not found" from a store that can lag needs a cache the write fills, a consistent read, or synchronous replication ([ADR 0017](../adr/0017-reading-your-own-writes.md)).
 - `no-sync-write-on-read-path(op)`: for example, click counting must not be a synchronous database increment.
 
 **Topology and resilience checks**

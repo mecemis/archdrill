@@ -15,7 +15,7 @@ import {
   noSyncWriteOnReadPath,
   publishesWithoutWaiting,
 } from "./analytics";
-import { invalidationOnWrite } from "./consistency";
+import { invalidationOnWrite, readYourWrites } from "./consistency";
 import { populateAfterMiss } from "./dataflow";
 import { decisionExcludes } from "./decisions";
 import { noAcknowledgedDataLoss } from "./durability";
@@ -69,6 +69,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     stableUnderRetries,
     noAcknowledgedDataLoss,
     invalidationOnWrite,
+    readYourWrites,
     decisionExcludes,
     overprovisioned,
     autoscalingConfigured,

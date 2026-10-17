@@ -105,7 +105,7 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c409, error: c503 }
+          next: { ok: prime, conflict: c409, error: c503 }
         generate:
           type: logic
           logic: generateRandomCode
@@ -115,7 +115,7 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: generate-retry, error: c503 }
+          next: { ok: prime, conflict: generate-retry, error: c503 }
         generate-retry:
           type: logic
           logic: generateRandomCode
@@ -125,7 +125,14 @@ attempt:
           target: links-db
           action: store.insertIfAbsent
           entity: Link
-          next: { ok: c201, conflict: c503, error: c503 }
+          next: { ok: prime, conflict: c503, error: c503 }
+        prime:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: c201, error: c201 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }

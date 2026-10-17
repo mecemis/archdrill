@@ -141,12 +141,15 @@ mutants:
 
   - id: cache-never-populated
     base: postgres-redis-cache-aside
-    description: Misses never write back, so the cache stays empty.
+    description: >-
+      Misses never write back, so only links created since the cache started
+      are in it. (The simulation counts a cache that creates fill as filled,
+      so the gate catches this one.)
     apply:
       - removeStep: { operation: redirect, stepId: populate, bypass: ok }
     expect:
       scenario: s3-cache
-      fails: [cache-warms, hit-ratio]
+      fails: [cache-warms]
       band: not-passing
 
   - id: undersized-database
@@ -621,6 +624,42 @@ mutants:
       scenario: s9-region-loss
       fails: [creates-region-redundant, no-link-lost-with-region]
       band: not-passing
+
+  # Reading a write right after it (S2), and what consistent reads cost (S4).
+  - id: create-skips-cache-fill
+    base: postgres-redis-cache-aside
+    description: >-
+      Creates no longer fill the cache. A link opened right after it is
+      created reads a replica that may not have it yet, and the negative
+      cache keeps the 404 for a minute.
+    apply:
+      - removeStep: { operation: create-link, stepId: prime, bypass: ok }
+    expect:
+      scenario: s2-redirect
+      fails: [fresh-links-redirect]
+
+  - id: eventual-table-reads
+    base: dynamodb-direct
+    description: >-
+      Redirects read the table with DynamoDB's default, eventually consistent
+      reads, so a brand-new link can answer 404.
+    apply:
+      - updateStep: { operation: redirect, stepId: read, consistent: null }
+    expect:
+      scenario: s2-redirect
+      fails: [fresh-links-redirect]
+
+  - id: consistent-reads-everywhere
+    base: postgres-redis-cache-aside
+    description: >-
+      Every redirect that misses the cache reads the primary. Only one copy
+      of each shard can serve those reads, so when the cache goes, the
+      database cannot take the misses, and creates fail with them.
+    apply:
+      - updateStep: { operation: redirect, stepId: read, consistent: true }
+    expect:
+      scenario: s4-cache-outage
+      fails: [no-cascade]
 
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache

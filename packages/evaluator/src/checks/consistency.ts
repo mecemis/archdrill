@@ -1,9 +1,10 @@
-import type { Path, PathStep } from "@archdrill/engine";
+import { type Path, type PathStep, staleReadReason } from "@archdrill/engine";
 import { ACTIONS, liveStepIds } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
-import { isSuccessPath } from "../predicates";
-import { type CheckContext, defineCheck, graded, notApplicable, passed } from "./types";
+import { isSuccessPath, pathStatus, servesResource } from "../predicates";
+import { ASYNC_REPLICATION_LAG_SEC } from "./durability";
+import { type CheckContext, defineCheck, failed, graded, notApplicable, passed } from "./types";
 
 const STORE_WRITES = new Set(["write", "conditional-write", "delete"]);
 
@@ -141,3 +142,196 @@ export const invalidationOnWrite = defineCheck({
     );
   },
 });
+
+/** Actions that create an entity: what a read right after should find. */
+const CREATES = new Set(["store.insert", "store.insertIfAbsent"]);
+
+const isCreate = (step: PathStep, entity: string) =>
+  step.kind === "call" &&
+  step.outcome === "ok" &&
+  step.entity === entity &&
+  CREATES.has(step.action);
+
+/** A publish of an event about the entity: a consumer stores it later. */
+const isPublishOf = (step: PathStep, entity: string, ctx: CheckContext) =>
+  step.kind === "call" &&
+  step.action === "queue.publish" &&
+  step.outcome === "ok" &&
+  ctx.problem.events.some((e) => e.id === step.event && e.entity === entity);
+
+/**
+ * Caches that every one of the paths fills with the entity after `from`.
+ * The check takes the cache as up: a fill or a lookup that fails is the
+ * outage's problem, which scenarios about cache outages judge.
+ */
+function primedCaches(
+  paths: readonly Path[],
+  entity: string,
+  from: (step: PathStep) => boolean,
+): Set<string> {
+  const filled = paths.map(
+    (path) =>
+      new Set(
+        path.steps.flatMap((s, i) =>
+          s.kind === "call" &&
+          s.action === "cache.set" &&
+          s.entity === entity &&
+          path.steps.slice(0, i).some(from)
+            ? [s.target]
+            : [],
+        ),
+      ),
+  );
+  const [first, ...rest] = filled;
+  return new Set([...(first ?? [])].filter((id) => rest.every((set) => set.has(id))));
+}
+
+/**
+ * The store read that answers "not found" for a fresh entity on this path,
+ * or null: the path's last read of the entity, missing it at a store that
+ * may not have it yet, with no cache the write filled looked up first.
+ * `missing` says whether a read of a store can miss the write.
+ */
+function exposingRead(
+  path: Path,
+  entity: string,
+  missing: (step: Extract<PathStep, { kind: "call" }>) => boolean,
+  primed: ReadonlySet<string>,
+): Extract<PathStep, { kind: "call" }> | null {
+  const reads = path.steps.flatMap((s, i) =>
+    s.kind === "call" && s.action === "store.read" && s.entity === entity ? [i] : [],
+  );
+  const last = reads[reads.length - 1];
+  const step = last === undefined ? undefined : path.steps[last];
+  if (step?.kind !== "call" || step.outcome !== "notFound" || !missing(step)) return null;
+  const looked = path.steps
+    .slice(0, last)
+    .some(
+      (s) =>
+        s.kind === "call" &&
+        s.action === "cache.get" &&
+        s.entity === entity &&
+        primed.has(s.target),
+    );
+  return looked ? null : step;
+}
+
+/** Longest TTL an exposed path gives the "not found" it caches, or null when none caches it. */
+function cachedMiss(paths: readonly Path[], entity: string): number | null {
+  const ttls = paths.flatMap((path) =>
+    path.steps.flatMap((s) =>
+      s.kind === "call" &&
+      s.action === "cache.setNegative" &&
+      s.outcome === "ok" &&
+      s.entity === entity
+        ? [s.ttlSec ?? 0]
+        : [],
+    ),
+  );
+  return ttls.length > 0 ? Math.max(...ttls) : null;
+}
+
+function labelOf(ctx: CheckContext, id: string): string {
+  return ctx.attempt.architecture.components.find((c) => c.id === id)?.label ?? id;
+}
+
+/**
+ * A read made right after a create finds what it created: the create fills
+ * a cache the read looks in first, or the read that answers "not found" is
+ * consistent, or the store has no copy that could lag behind its
+ * acknowledged writes. A create that answers before anything stores the
+ * entity (a consumer stores it later) needs the cache.
+ */
+export const readYourWrites = defineCheck({
+  id: "read-your-writes",
+  description: "A read made right after a create finds what it created.",
+  params: z.strictObject({
+    writeOperation: z.string().min(1),
+    readOperation: z.string().min(1),
+    entity: z.string().min(1),
+    /** Decision point that records how stores with a primary replicate writes. */
+    decision: z.string().min(1).optional(),
+  }),
+  run(params, ctx) {
+    const writeOp = ctx.analysis.operations.get(params.writeOperation);
+    const readOp = ctx.analysis.operations.get(params.readOperation);
+    if (!writeOp || !readOp) return notApplicable("Both operations need a flow.");
+    const entity = params.entity;
+    const answered = writeOp.paths.filter(servesResource);
+    const stored = answered.filter((p) => p.steps.some((s) => isCreate(s, entity)));
+    const published = answered.filter(
+      (p) => !stored.includes(p) && p.steps.some((s) => isPublishOf(s, entity, ctx)),
+    );
+    const writing = [...stored, ...published];
+    if (writing.length === 0) return notApplicable(`Nothing creates ${entity} yet.`);
+    const written = (s: PathStep) => isCreate(s, entity) || isPublishOf(s, entity, ctx);
+    const primed = primedCaches(writing, entity, written);
+    const write = writeOp.operation.label.toLowerCase();
+    const read = readOp.operation.label;
+
+    // A create that answers before the entity is stored: no store has it yet, however it is read.
+    if (published.length > 0) {
+      const exposed = readOp.paths.filter((p) => exposingRead(p, entity, () => true, primed));
+      if (exposed.length === 0) {
+        return passed(
+          `A read right after a create finds it: ${writeOp.operation.label} fills ${[...primed].map((id) => labelOf(ctx, id)).join(", ")} before answering, and ${read.toLowerCase()} looks there first.`,
+        );
+      }
+      return failedRead(
+        params.readOperation,
+        exposed,
+        entity,
+        `${read} can look for a new ${entity} before anything has stored it: ${write} answers once it has published the ${entity}, and a consumer stores it later`,
+      );
+    }
+
+    const stores = new Set(
+      stored.flatMap((p) =>
+        p.steps.flatMap((s) => (s.kind === "call" && isCreate(s, entity) ? [s.target] : [])),
+      ),
+    );
+    const mode = params.decision ? ctx.attempt.decisions[params.decision] : undefined;
+    const components = ctx.attempt.architecture.components.filter((c) => stores.has(c.id));
+    const reasons = new Map(
+      components.flatMap((c) => {
+        const reason = staleReadReason(c, ctx.catalog, mode);
+        return reason === null ? [] : [[c.id, reason] as const];
+      }),
+    );
+    if (reasons.size === 0) {
+      const labels = components.map((c) => c.label).join(", ");
+      return passed(
+        `${labels} answer${components.length === 1 ? "s" : ""} every read with the latest acknowledged write.`,
+      );
+    }
+    const lagging = (s: Extract<PathStep, { kind: "call" }>) =>
+      reasons.has(s.target) && !s.consistent;
+    const exposed = readOp.paths.filter((p) => exposingRead(p, entity, lagging, primed));
+    if (exposed.length === 0) {
+      const how =
+        primed.size > 0
+          ? `${writeOp.operation.label} fills ${[...primed].map((id) => labelOf(ctx, id)).join(", ")} before answering, and ${read.toLowerCase()} looks there first`
+          : `${read} never answers "not found" from a copy that can lag`;
+      return passed(`A read right after a create finds it: ${how}.`);
+    }
+    const step = exposingRead(exposed[0] as Path, entity, lagging, primed);
+    const target = step?.target ?? "";
+    return failedRead(
+      params.readOperation,
+      exposed,
+      entity,
+      `${read} can read ${labelOf(ctx, target)} within about ${ASYNC_REPLICATION_LAG_SEC} s of ${write} without seeing the new ${entity}: ${reasons.get(target)}`,
+    );
+  },
+});
+
+/** A finding for read paths that miss a fresh entity, with what their answer does. */
+function failedRead(operation: string, exposed: readonly Path[], entity: string, why: string) {
+  const status = pathStatus(exposed[0] as Path);
+  const ttl = cachedMiss(exposed, entity);
+  const answer = status === null ? "It finds nothing" : `It answers ${status}`;
+  const kept =
+    ttl === null ? "" : `, and the negative cache keeps that answer for ${duration(ttl)}`;
+  const evidence: Evidence[] = exposed.map((p) => ({ type: "path", operation, pathId: p.id }));
+  return failed(`${why}. ${answer}${kept}.`, evidence);
+}

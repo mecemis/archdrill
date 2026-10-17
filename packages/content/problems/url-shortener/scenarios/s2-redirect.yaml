@@ -250,6 +250,31 @@ checks:
       Before answering 404, store a negative cache entry for the code with a
       short TTL (for example 60 seconds).
 
+  - id: fresh-links-redirect
+    use: read-your-writes
+    title: A link redirects the moment it is created
+    dimension: correctness
+    weight: 2
+    severity: major
+    requirements: [FR-2]
+    params:
+      writeOperation: create-link
+      readOperation: redirect
+      entity: Link
+      decision: replication-mode
+    why: >-
+      People open a short link right after creating it, to test it or to
+      share it. If the redirect reads a replica that has not applied the
+      insert yet, the brand-new link answers 404, and a negative cache keeps
+      that 404 after the replica has caught up. Database replicas apply
+      writes after the primary acknowledges them, and DynamoDB's reads are
+      eventually consistent unless they ask otherwise.
+    fix: >-
+      Fill the cache with the new link when it is created, so that redirects
+      find it there. Or, before answering 404, read the primary (a consistent
+      read on the store read). Synchronous replication works too, at a price
+      on every write.
+
   - id: dead-weight
     use: unused-components
     title: Every component earns its place
@@ -272,4 +297,5 @@ debrief: |
 
   - 301 or 302? A permanent redirect saves a round trip on every repeat visit but can never be revoked, and it hides clicks from your analytics.
   - What should an unknown code cost you? Each one is a store read unless you remember the miss.
+  - A link is opened half a second after it was created. Which copy of it does the redirect read?
   - Where does the 50 ms budget go: network, load balancer, service, store? Which of these would you trade first?

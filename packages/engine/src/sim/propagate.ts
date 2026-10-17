@@ -359,18 +359,20 @@ export function propagate(
             : own
               ? served * (fan / fanOutCalls(step, fan))
               : served * (step.batchSize ?? 1);
+          // Calls' worth of work where the target counts requests, not sizes.
+          const requests =
+            served * (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
           // Targets that meter by size count units: every item's, or every request's payload.
           const work = cost.perItem
             ? carried * cost.units
             : cost.perRequest
               ? served * requestUnitsFor(cost, served > 0 ? carried / served : 1)
-              : served *
-                (own ? ownBatchCost(fan, step.batchSize ?? 1) : batches ? callCost(step) : 1);
+              : requests * cost.weight;
           const bytes = carried * cost.bytes;
           add(loads, step.target, work, write, bytes);
           carry(step.connectionId, carried * cost.carriedBytes, write);
           if (batches && !cost.perItem && !cost.perRequest) {
-            add(batchedItems, step.target, carried - work, write);
+            add(batchedItems, step.target, carried - requests, write);
           }
           // A key spread over counter shards loads each of them with its share.
           if (hot) {

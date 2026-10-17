@@ -110,6 +110,7 @@ Every check instance has an `id`, the check it `use`s, a `title`, a `dimension`,
 |---|---|
 | `no-path`, `all-success-paths-contain`, `status-for-condition`, `outcome-handled` | Path predicates: steps, outcomes, sequences and final statuses, optionally from a decision |
 | `populate-after-miss`, `invalidation-on-write` | Cache data flow and staleness after writes |
+| `read-your-writes` | A read right after a write sees it: a cache the write fills, a consistent read, or a store that cannot lag ([ADR 0017](../adr/0017-reading-your-own-writes.md)) |
 | `latency-below`, `success-rate-above`, `utilization-below`, `hit-ratio-above`, `cost-within-budget` | Simulated metrics per environment (latency reads as lag for consumers and jobs) |
 | `backlog-stable` | Consumers and jobs keep up |
 | `zone-local-calls` | No connection pays more than `minMonthlyUsd` a month for crossings between zones that zone-aware routing would avoid |

@@ -9,6 +9,7 @@ export type TunableValues = Partial<
     | "ttlSec"
     | "batchSize"
     | "coalesce"
+    | "consistent"
     | "aggregateSec"
     | "counterShards"
     | "fireAndForget"
@@ -51,6 +52,7 @@ export function applicableParams(
   return {
     ...(takes("ttlSec") && values.ttlSec !== undefined ? { ttlSec: values.ttlSec } : {}),
     ...(takes("coalesce") && values.coalesce ? { coalesce: true } : {}),
+    ...(takes("consistent") && values.consistent ? { consistent: true } : {}),
     ...(takes("fireAndForget") && values.fireAndForget ? { fireAndForget: true } : {}),
     ...(takes("bufferSize") && values.fireAndForget && values.bufferSize !== undefined
       ? { bufferSize: values.bufferSize }
@@ -137,6 +139,13 @@ export function StepParams({
           label="Coalesce concurrent reads of a key (single-flight)"
           checked={values.coalesce === true}
           onChange={(coalesce) => set({ coalesce })}
+        />
+      )}
+      {takes("consistent") && (
+        <Check
+          label="Consistent read (sees every acknowledged write; costs primary capacity or a full read unit)"
+          checked={values.consistent === true}
+          onChange={(consistent) => set({ consistent })}
         />
       )}
       {takes("aggregateSec") && background && (
@@ -239,6 +248,7 @@ const TUNABLE: readonly (keyof TunableValues)[] = [
   "ttlSec",
   "batchSize",
   "coalesce",
+  "consistent",
   "aggregateSec",
   "counterShards",
   "fireAndForget",

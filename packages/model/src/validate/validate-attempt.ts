@@ -488,6 +488,15 @@ function validateCallStep(
       ),
     );
   }
+  if (step.consistent !== undefined && !actionTakesParam(step.action, "consistent")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) cannot ask for a consistent read; only store reads can.`,
+        loc,
+      ),
+    );
+  }
   if (step.batchSize !== undefined && !actionTakesParam(step.action, "batchSize")) {
     issues.push(
       error(

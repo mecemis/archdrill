@@ -258,7 +258,14 @@ attempt:
           action: queue.publish
           event: link-created
           outbox: true
-          next: { ok: c201 }
+          next: { ok: prime }
+        prime:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: c201, error: c201 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }
