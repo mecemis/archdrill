@@ -1,4 +1,10 @@
-import { ACTIONS, type Flavor, type Problem } from "@archdrill/model";
+import {
+  ACTIONS,
+  type CatalogIndex,
+  type Component,
+  type Flavor,
+  type Problem,
+} from "@archdrill/model";
 import type { CallPathStep, Path } from "../paths/types";
 import type { SimulationContext } from "./setup";
 
@@ -27,6 +33,12 @@ export interface StepCost {
    * out; 0 for calls that carry no item (deletes, counters, id blocks).
    */
   readonly carriedBytes: number;
+  /**
+   * Calls' worth of the target's capacity one call takes, where the target
+   * does not meter by size: a consistent read on a store whose replicas
+   * serve reads can only use its primary (or a majority, for quorum stores).
+   */
+  readonly weight: number;
 }
 
 export const PLAIN_COST: StepCost = {
@@ -36,6 +48,7 @@ export const PLAIN_COST: StepCost = {
   payload: null,
   bytes: 0,
   carriedBytes: 0,
+  weight: 1,
 };
 
 /** Units one call takes on a payload meter, for the items it carries. */
@@ -82,14 +95,30 @@ function unitsFor(
   bytes: number,
 ): number {
   if (ACTIONS[step.action].effect !== "read") return unitsOf(bytes, meter.writeBytes);
-  // A read of an item that does not exist still takes the smallest read.
+  // A read of an item that does not exist still takes the smallest read; a consistent one a full unit.
   const returned = RETURNS_VALUE[step.action] === step.outcome ? bytes : 0;
-  return meter.readUnits * unitsOf(returned, meter.readBytes);
+  const perUnit = step.consistent ? Math.max(1, meter.readUnits) : meter.readUnits;
+  return perUnit * unitsOf(returned, meter.readBytes);
+}
+
+/**
+ * Share of a store's read capacity a consistent read cannot use, as calls'
+ * worth: where replicas serve reads, only the primary can serve it (one
+ * in `replicas`), and a quorum store reads a majority of them.
+ */
+function consistentWeight(step: CallPathStep, component: Component, catalog: CatalogIndex): number {
+  if (!step.consistent || ACTIONS[step.action].effect !== "read") return 1;
+  const kind = catalog.kind(component.kind);
+  const flavor = catalog.flavor(component.kind, component.flavor);
+  if (!kind?.replicable || flavor?.managedRedundancy || component.replicas < 2) return 1;
+  if (kind.quorum) return Math.floor(component.replicas / 2) + 1;
+  return kind.writeScaling === "primaries" ? component.replicas : 1;
 }
 
 function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
   const component = ctx.attempt.architecture.components.find((c) => c.id === step.target);
   if (!component) return PLAIN_COST;
+  const weight = consistentWeight(step, component, ctx.catalog);
   const flavor = ctx.catalog.flavor(component.kind, component.flavor);
   const size = flavor?.sizes[component.size ?? flavor.defaultSize ?? ""];
   const meter = flavor?.requestUnits;
@@ -98,7 +127,9 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
   const bytes = itemBytes(step, ctx);
   const carriedBytes = returnsValue || SENDS_ITEM.has(step.action) ? bytes : 0;
   if (!meter && !(returnsValue && bandwidth)) {
-    return carriedBytes === 0 ? PLAIN_COST : { ...PLAIN_COST, carriedBytes };
+    return carriedBytes === 0 && weight === 1
+      ? PLAIN_COST
+      : { ...PLAIN_COST, carriedBytes, weight };
   }
   const perRequest = meter?.per === "request";
   return {
@@ -114,6 +145,7 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
         : null,
     bytes: returnsValue && bandwidth ? bytes : 0,
     carriedBytes,
+    weight,
   };
 }
 

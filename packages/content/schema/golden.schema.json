@@ -303,6 +303,9 @@
                         "coalesce": {
                           "type": "boolean"
                         },
+                        "consistent": {
+                          "type": "boolean"
+                        },
                         "aggregateSec": {
                           "type": "integer",
                           "minimum": 1,

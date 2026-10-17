@@ -29,6 +29,26 @@ test("shows what writing every click costs a viral link", async ({ page }) => {
   await expect(page.getByTestId("scenario-score")).toHaveText("100");
 });
 
+test("reads a brand-new link consistently, or finds it missing", async ({ page }) => {
+  await importGolden(page, "dynamodb-direct");
+  await page.getByRole("button", { name: /S2 / }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("redirect");
+
+  await stepMenu(page, "Read Link from Links table");
+  await page.getByRole("button", { name: /^Settings/ }).click();
+  const settings = page.getByTestId("step-settings");
+  await settings.getByLabel(/Consistent read/).uncheck();
+  await settings.getByRole("button", { name: "Apply" }).click();
+
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+  await expect(page.getByText("A link redirects the moment it is created")).toBeVisible();
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+});
+
 test("checks back-of-envelope estimates", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("tab", { name: "Estimate" }).click();

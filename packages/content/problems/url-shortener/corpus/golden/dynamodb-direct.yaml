@@ -42,6 +42,7 @@ attempt:
           target: links
           action: store.read
           entity: Link
+          consistent: true
           next: { found: status, notFound: r404, error: r503 }
         status:
           type: logic

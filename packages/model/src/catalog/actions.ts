@@ -23,6 +23,7 @@ export type ActionParam = "ttlSec" | "event";
 export type OptionalActionParam =
   | "batchSize"
   | "coalesce"
+  | "consistent"
   | "aggregateSec"
   | "counterShards"
   | "fireAndForget"
@@ -96,9 +97,9 @@ export const ACTIONS = {
     effect: "read",
     outcomes: ["found", "notFound", "error"],
     params: [],
-    optionalParams: ["coalesce", "each", "batchSize"],
+    optionalParams: ["coalesce", "consistent", "each", "batchSize"],
     description:
-      "Read an entity by key from a durable store. With coalescing (single-flight), concurrent reads of the same key in one instance share one call.",
+      "Read an entity by key from a durable store. With coalescing (single-flight), concurrent reads of the same key in one instance share one call. A consistent read sees every acknowledged write, at a price: only the primary serves it, or the store charges a full read unit.",
   },
   "store.insert": {
     label: "put",

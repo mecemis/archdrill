@@ -133,9 +133,17 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 
 | Level | Signal |
 |---|---|
-| Senior | Read replicas with `readFrom` chosen deliberately |
+| Senior | Read replicas with `readFrom` chosen deliberately (M23 made this the baseline check below, with consistent reads) |
 | Senior | Ingress through a CDN or edge with an explicit redirect cache rule |
 | Staff | Geo-routing for global p99 |
+
+**As built (M23): fresh links** ([ADR 0017](../adr/0017-reading-your-own-writes.md)).
+- **The check.** `fresh-links-redirect` (major, `read-your-writes`): a link opened right after it is created must redirect.
+  - Database replicas apply writes after the primary acknowledges them, even under semi-synchronous replication, and DynamoDB's default reads are eventually consistent. So a redirect that misses the cache can read a copy without the new link, and answer 404.
+  - A negative cache then keeps that 404 for its TTL.
+- **Accepted fixes:** creates fill the cache that redirects look in first; a consistent read before answering 404; or synchronous replication.
+- **The goldens.** Every golden that redirects failed it. Seven now fill their cache on create, and `dynamodb-direct` reads the table consistently, at twice the read cost.
+- **Mutants:** creates that stop filling the cache, DynamoDB reads left eventually consistent, and (in S4) every cache miss read consistently, which the primary alone cannot carry when the cache goes.
 
 ---
 

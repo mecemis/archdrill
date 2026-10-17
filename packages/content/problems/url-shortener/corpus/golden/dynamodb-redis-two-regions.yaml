@@ -157,12 +157,12 @@ attempt:
         match:
           type: logic
           logic: matchThreatList
-          next: { clean: c201, match: check }
+          next: { clean: prime, match: check }
         check:
           type: call
           target: safety
           action: external.check
-          next: { clean: c201, malicious: reject, error: publish }
+          next: { clean: prime, malicious: reject, error: publish }
         reject:
           type: call
           target: links
@@ -174,7 +174,14 @@ attempt:
           target: link-events
           action: queue.publish
           event: link-created
-          next: { ok: c201, error: c503 }
+          next: { ok: prime, error: c503 }
+        prime:
+          type: call
+          target: redis
+          action: cache.set
+          entity: Link
+          ttlSec: 3600
+          next: { ok: c201, error: c201 }
         c201: { type: respond, status: 201 }
         c400: { type: respond, status: 400 }
         c409: { type: respond, status: 409 }

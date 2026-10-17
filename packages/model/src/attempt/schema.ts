@@ -116,6 +116,13 @@ export const CallStepSchema = z.object({
   event: IdSchema.optional(),
   /** For store reads: concurrent reads of the same key in one instance share one call (single-flight). */
   coalesce: z.boolean().optional(),
+  /**
+   * For store reads: read the latest acknowledged write, from the primary
+   * where replicas serve reads (or at a majority, for quorum stores), or as
+   * a strongly consistent read where the store offers one. Without it, a
+   * read may come from a replica that has not applied a recent write.
+   */
+  consistent: z.boolean().optional(),
   /** For counts and totals in consumers: sum what arrives per key over this many seconds, then write once. */
   aggregateSec: z.number().int().min(1).max(MAX_AGGREGATE_SEC).optional(),
   /** For increments: spread each key's count over this many rows. */

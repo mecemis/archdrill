@@ -223,7 +223,7 @@ Timelines run separately from environments, and checks refer to them by id.
 **As built (M9).**
 - Timelines also take `{ kind: restart, at, target }`: the selected components restart and lose what they hold in memory.
 - Load events can ramp with `curve: exponential`.
-- Store reads take `coalesce: true` (single-flight).
+- Store reads take `coalesce: true` (single-flight). Since M23 they also take `consistent: true`: the read sees every acknowledged write, from the primary where replicas serve reads, at a majority for quorum stores, or as a strongly consistent read ([ADR 0017](../adr/0017-reading-your-own-writes.md)).
 - Catalog flavors give `startupSec`, the time a new instance takes to start taking traffic.
 
 `data[]` binds entities to stores, for example `{ entity: Link, key: code, constraints: [unique(code)] }`. A `store.read(Link)` against a store that does not hold `Link` is a validation error.

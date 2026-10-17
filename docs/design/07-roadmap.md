@@ -527,6 +527,25 @@ Where a design runs, and what it survives when part of a region, or a whole regi
 
 **Next.** M23, replication and consistency: active-active regions, and what concurrent writes in two regions do to unique codes.
 
+## M23: Replication and consistency
+
+What replicas give up for the capacity they add, and what two regions taking writes at once do to unique codes. In parts, like M22:
+
+**Part 1, reading your own writes (as built).** A read right after a write can miss it, and consistency has a price ([ADR 0017](../adr/0017-reading-your-own-writes.md)).
+- **Consistent reads.** `consistent: true` on a store read sees every acknowledged write:
+  - where replicas serve reads, only the primary serves it, so it weighs `replicas` ordinary reads;
+  - a quorum store reads a majority;
+  - DynamoDB takes a full read unit instead of half of one.
+- **Which stores lag.** DynamoDB's default reads, and replicas, unless replication is synchronous. Semi-synchronous replication waits for a replica to receive a write, not to apply it.
+- **The check.** `read-your-writes` asks that every way a read answers "not found" from a store that can lag be covered by a cache the write fills, a consistent read, or synchronous replication. It says how long a negative cache keeps the wrong 404.
+- **The corpus.**
+  - S2 asks that a link redirect the moment it is created. Every golden that redirects failed it.
+  - Seven now fill their cache on create, and `dynamodb-direct` reads consistently.
+  - Three mutants: 140, every one caught. One makes every cache miss consistent, and S4 shows the primary cannot take the misses when the cache goes.
+- **Shown.** A "Consistent read" setting on store reads in the flow editor.
+
+**Next.** Active-active regions: both regions take traffic and writes, and what last-writer-wins replication does to codes created in both at once.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

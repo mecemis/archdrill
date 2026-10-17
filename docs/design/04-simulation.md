@@ -260,6 +260,7 @@ Lease waste on crash is not modelled yet.
 - **Cache warm-up.** A `restart` event empties caches, and a cache that comes back from a crash starts empty too. A cache that started empty `w` seconds ago can only hold what was asked for since, so its TTL is capped at `w` in Che's approximation (time-dependent Che).
   - Without coalescing, requests for a cold key keep missing while its first read loads, so the window starts one store latency later. Under a stampede that latency grows, and with it the herd.
   - Reads marked `coalesce` (single-flight) share that one read.
+- **Consistent reads** (M23) take their share of capacity: where replicas serve reads, only the primary can serve a consistent one, so it weighs `replicas` ordinary reads; a quorum store reads a majority; DynamoDB takes a full read unit instead of half of one ([ADR 0017](../adr/0017-reading-your-own-writes.md)).
 - **Autoscaling.** An autoscaler wants `utilisation × instances / target` instances, averaged over the last 30 s.
   - New instances take traffic after the flavor's `startupSec` (60 s for services).
   - Surplus instances go only after a 300 s cooldown since the last scale-out.

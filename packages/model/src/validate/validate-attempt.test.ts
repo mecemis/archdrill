@@ -305,6 +305,14 @@ describe("validateAttempt", () => {
     expect(codes(alone)).toContain("step-outbox-without-transaction");
   });
 
+  it("accepts a consistent read only on a store read", () => {
+    const cache = mutate("updateStep", { operation: "redirect", stepId: "get", consistent: true });
+    const store = mutate("updateStep", { operation: "redirect", stepId: "read", consistent: true });
+
+    expect(codes(cache)).toContain("step-unexpected-param");
+    expect(codes(store)).not.toContain("step-unexpected-param");
+  });
+
   it("accepts a TTL on a write only where the store expires entries", () => {
     const read = mutate("updateStep", { operation: "redirect", stepId: "read", ttlSec: 60 });
     const insert = applyCommand(asyncAttempt(), "updateStep", {

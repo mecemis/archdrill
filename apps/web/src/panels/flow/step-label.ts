@@ -23,6 +23,7 @@ export function stepDetails(step: Step | StepInput): string[] {
   if (step.batchSize !== undefined) details.push(`batch ${step.batchSize.toLocaleString("en-US")}`);
   if (step.counterShards !== undefined) details.push(`${step.counterShards} counter shards`);
   if (step.coalesce) details.push("coalesced");
+  if (step.consistent) details.push("consistent");
   if (step.fireAndForget) details.push("fire-and-forget");
   else if (step.outbox) details.push("outbox");
   if (step.idempotencyKey) details.push("idempotency key");
