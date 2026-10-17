@@ -25,6 +25,8 @@ export function useShortcuts(): void {
       }
       if (event.key === "Escape") {
         const ui = useUi.getState();
+        // A step menu open on the canvas closes first; the next Escape stops adding.
+        if (ui.canvasTarget) return ui.setCanvasTarget(null);
         ui.armSlot(null);
         ui.clearPin();
       }

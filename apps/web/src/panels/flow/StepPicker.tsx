@@ -1,85 +1,21 @@
-import {
-  ACTIONS,
-  type ActionId,
-  type Attempt,
-  actionTakesEntity,
-  actionTakesParam,
-  type CatalogIndex,
-  callableFrom,
-  connectionToCall,
-  getLogic,
-  type LogicId,
-  offeredLogic,
-  type Step,
-  type StepInput,
-} from "@archdrill/model";
+import { getLogic, type LogicId, offeredLogic, type Step, type StepInput } from "@archdrill/model";
 import { CornerDownRight, GitFork, Reply, Search, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { activePack } from "../../state/content";
 import { useUi } from "../../state/ui-store";
 import { KindChip } from "../../ui/icons";
 import { FOCUS_RING, IconButton, Select } from "../../ui/primitives";
+import { slotFor } from "./cursor";
 import { successStatus } from "./defaults";
 import type { EditContext } from "./flow-edits";
 import { commitStep, operationEntity, type PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 import { componentLabel } from "./step-label";
+import { callOptions, type Option } from "./step-options";
 import { suggestNext } from "./suggestions";
-
-interface Option {
-  readonly key: string;
-  readonly label: string;
-  readonly step: StepInput;
-}
 
 /** Statuses offered after the success ones, in the order people reach for them. */
 const COMMON_STATUSES = [400, 404, 409, 429, 503] as const;
-
-/** What the handler can call on one component, and whether it is connected to it yet. */
-interface TargetOptions {
-  readonly connected: boolean;
-  readonly options: Option[];
-}
-
-function callOptions(
-  attempt: Attempt,
-  handler: string,
-  entity: string,
-  catalog: CatalogIndex,
-): Map<string, TargetOptions> {
-  const byTarget = new Map<string, TargetOptions>();
-  for (const id of callableFrom(handler, attempt, catalog)) {
-    const target = attempt.architecture.components.find((c) => c.id === id);
-    if (!target) continue;
-    const options: Option[] = [];
-    for (const action of Object.keys(ACTIONS) as ActionId[]) {
-      const def = ACTIONS[action];
-      if (!catalog.capabilities(target.kind, target.flavor).has(def.capability)) continue;
-      const events = actionTakesParam(action, "event")
-        ? activePack.problem.events.map((e) => e.id)
-        : [undefined];
-      for (const event of events) {
-        const step: StepInput = {
-          type: "call",
-          target: target.id,
-          action,
-          ...(actionTakesEntity(action) ? { entity } : {}),
-          ...(event !== undefined ? { event } : {}),
-          ...(action === "cache.set" ? { ttlSec: 3600 } : {}),
-          ...(action === "cache.setNegative" ? { ttlSec: 60 } : {}),
-        };
-        options.push({
-          key: `call:${target.id}:${action}:${event ?? ""}`,
-          label: stepSentence(step, attempt),
-          step,
-        });
-      }
-    }
-    const connected = connectionToCall(handler, target.id, attempt, catalog).kind !== "add";
-    if (options.length > 0) byTarget.set(target.id, { connected, options });
-  }
-  return byTarget;
-}
 
 /** Whether a suggested step does what an existing step does. */
 function sameStep(input: StepInput, step: Step | undefined): boolean {
@@ -127,16 +63,23 @@ export function StepPicker({
   }, []);
 
   // While choosing, the components the service can call light up on the canvas.
-  const atStep = mode.at.kind === "root" ? null : mode.at.stepId;
-  const atOutcome = mode.at.kind === "root" ? "" : (mode.at.outcomes[0] ?? "");
+  const modeKey = JSON.stringify(mode);
   useEffect(() => {
-    useUi.getState().armSlot({
-      operation: flow.operation,
-      attach:
-        atStep === null ? { to: "root" } : { to: "outcome", stepId: atStep, outcome: atOutcome },
-    });
-    return () => useUi.getState().armSlot(null);
-  }, [atStep, atOutcome, flow.operation]);
+    const armed = JSON.parse(modeKey) as PickerMode;
+    useUi.getState().armSlot(slotFor(flow.operation, armed, "panel"));
+    return () => {
+      // Adding carried on on the canvas: its slot is the canvas's to keep.
+      if (useUi.getState().slot?.source === "panel") useUi.getState().armSlot(null);
+    };
+  }, [modeKey, flow.operation]);
+  // A step added on the canvas moves the slot there; this list has done its job.
+  const slotSource = useUi((s) => s.slot?.source);
+  const previousSource = useRef(slotSource);
+  useEffect(() => {
+    const was = previousSource.current;
+    previousSource.current = slotSource;
+    if (was === "panel" && slotSource === "canvas") onClose?.();
+  }, [slotSource, onClose]);
 
   // Clicking a component on the canvas while choosing narrows the list to it.
   useEffect(() => {

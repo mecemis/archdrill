@@ -7,6 +7,7 @@ import {
 } from "@xyflow/react";
 import { memo } from "react";
 import { useLayout } from "../state/layout";
+import { useUi } from "../state/ui-store";
 import { compact } from "../ui/format";
 import type { ConnectionEdgeData } from "./projection";
 
@@ -115,13 +116,21 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
                 {compact(rate)}/s
               </span>
             )}
-            {data.steps.map((n) => (
-              <span
-                key={n}
-                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold text-on-accent shadow-card"
+            {data.steps.map(({ number, stepId }) => (
+              <button
+                key={stepId}
+                type="button"
+                aria-label={`Show step ${number} in the flow`}
+                title={`Step ${number}: show it in the flow`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const ui = useUi.getState();
+                  ui.focusStep(ui.operation, stepId);
+                }}
+                className="pointer-events-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-semibold text-on-accent shadow-card hover:brightness-110"
               >
-                {n}
-              </span>
+                {number}
+              </button>
             ))}
           </div>
         </EdgeLabelRenderer>

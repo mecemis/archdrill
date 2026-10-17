@@ -17,7 +17,7 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { stepNumbers } from "../../canvas/projection";
 import type { AnyCommand } from "../../state/attempt-store";
 import { activePack, catalogIndex } from "../../state/content";
@@ -294,6 +294,11 @@ function StepIcon({ step }: { readonly step: SequenceItem["step"] }) {
   );
 }
 
+/** How long a step clicked on the canvas stays lit in the list. */
+const FLASH_MS = 1500;
+/** The last focus request shown, so a card that mounts again later does not show it again. */
+let shownFocusAt = 0;
+
 function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: Position }) {
   const { ctx, apply, picker } = useFlowView();
   const [editing, setEditing] = useState(false);
@@ -307,6 +312,21 @@ function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: 
       decisions: new Set(),
     });
   const insertKey = `before:${stepId}`;
+  // Its number clicked on the canvas: bring it into view and flash it.
+  const focused = useUi((s) => s.focusedStep);
+  const card = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState(false);
+  // Each request is a new moment, so focusing the same step twice flashes it twice.
+  const focusedAt =
+    focused?.stepId === stepId && focused.operation === ctx.flow.operation ? focused.at : null;
+  useEffect(() => {
+    if (focusedAt === null || focusedAt <= shownFocusAt) return;
+    shownFocusAt = focusedAt;
+    card.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlash(true);
+    // Not cleared on cleanup: a second run of this effect returns early and must not leave it lit.
+    setTimeout(() => setFlash(false), FLASH_MS);
+  }, [focusedAt]);
   return (
     <div className="flex flex-col gap-1.5">
       {picker.open === insertKey && (
@@ -319,7 +339,9 @@ function StepCard({ item, into }: { readonly item: SequenceItem; readonly into: 
       )}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: hovering only mirrors the step on the canvas, where it is numbered too */}
       <div
-        className="group flex flex-col gap-1.5 rounded-xl border border-line bg-surface px-2.5 py-2 shadow-card hover:border-line-strong"
+        ref={card}
+        className={`group flex flex-col gap-1.5 rounded-xl border bg-surface px-2.5 py-2 shadow-card transition-[border-color,box-shadow] hover:border-line-strong ${flash ? "border-accent ring-2 ring-accent/40" : "border-line"}`}
+        data-focused={flash || undefined}
         onMouseEnter={highlight}
         onMouseLeave={() => useUi.getState().setHover(null)}
         data-testid={`step-${stepId}`}

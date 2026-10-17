@@ -32,14 +32,22 @@ export function stepDetails(step: Step | StepInput): string[] {
   return details;
 }
 
-export function stepTitle(step: Step, attempt: Attempt, background = false): string {
+export function stepTitle(
+  step: Step,
+  attempt: Attempt,
+  background = false,
+  /** Its settings too ("TTL 3600s"…); left out where room is short. */
+  withDetails = true,
+): string {
   switch (step.type) {
     case "call": {
       const about = step.event === undefined ? (step.entity ?? "") : eventLabel(step.event);
       const action = `${ACTIONS[step.action].label} ${about}`.trim();
-      const details = stepDetails(step)
-        .map((d) => ` (${d})`)
-        .join("");
+      const details = withDetails
+        ? stepDetails(step)
+            .map((d) => ` (${d})`)
+            .join("")
+        : "";
       return `${componentLabel(attempt, step.target)} · ${action}${details}`;
     }
     case "logic":
