@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Attempt, DEFAULT_POLICY } from "../attempt/schema";
+import { type Attempt, AttemptSchema, DEFAULT_POLICY } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
 import { asyncAttempt } from "../testing/async";
 import {
@@ -237,8 +237,8 @@ describe("validateAttempt", () => {
         ...base.architecture,
         connections: [
           ...base.architecture.connections,
-          { id: "dup", from: "lb", to: "api", mode: "sync", policy: DEFAULT_POLICY },
-          { id: "loop", from: "api", to: "api", mode: "sync", policy: DEFAULT_POLICY },
+          { id: "dup", from: "lb", to: "api", policy: DEFAULT_POLICY },
+          { id: "loop", from: "api", to: "api", policy: DEFAULT_POLICY },
         ],
       },
     };
@@ -284,6 +284,17 @@ describe("validateAttempt", () => {
       severity: "warning",
       message: "ALB spans zones on its own; its zone count is ignored.",
     });
+  });
+
+  it("loads designs saved with asynchronous connections, and calls over them", () => {
+    const saved = JSON.parse(JSON.stringify(asyncAttempt()));
+    for (const connection of saved.architecture.connections) {
+      if (connection.to === "queue") connection.mode = "async";
+    }
+    const loaded = AttemptSchema.parse(saved);
+
+    expect(loaded.architecture.connections.some((c) => "mode" in c)).toBe(false);
+    expect(validateAttempt(loaded, ctx).filter((i) => i.severity === "error")).toEqual([]);
   });
 
   it("puts a connection proxy only in front of a store that has one", () => {

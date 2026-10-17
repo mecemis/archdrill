@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Attempt } from "../attempt/schema";
+import { type Attempt, AttemptSchema } from "../attempt/schema";
 import { applyCommand } from "../commands/index";
 import { asyncAttempt } from "../testing/async";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
@@ -25,13 +25,11 @@ describe("findIngressRoute", () => {
     expect(route(attempt, "api")).toBeNull();
   });
 
-  it("ignores asynchronous connections", () => {
-    const attempt = applyCommand(cacheAsideAttempt(), "setConnectionMode", {
-      id: "lb--api",
-      mode: "async",
-    }).attempt;
+  it("routes over a connection saved as asynchronous: connections have no mode", () => {
+    const saved = JSON.parse(JSON.stringify(cacheAsideAttempt()));
+    for (const connection of saved.architecture.connections) connection.mode = "async";
 
-    expect(route(attempt, "api")).toBeNull();
+    expect(route(AttemptSchema.parse(saved), "api")).not.toBeNull();
   });
 
   it("does not route through components that cannot forward traffic", () => {

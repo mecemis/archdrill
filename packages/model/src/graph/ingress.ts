@@ -12,7 +12,7 @@ export interface IngressRoute {
 }
 
 /**
- * Shortest synchronous route from any client to the handler. Intermediate hops
+ * Shortest route from any client to the handler. Intermediate hops
  * must be able to carry traffic (load balancers, gateways, CDNs). Ties break
  * deterministically by component id.
  */
@@ -32,7 +32,6 @@ export function findIngressRoute(
   const outgoing = new Map<string, { to: string; connection: string }[]>();
   const sorted = [...architecture.connections].sort((a, b) => a.to.localeCompare(b.to));
   for (const conn of sorted) {
-    if (conn.mode !== "sync") continue;
     const list = outgoing.get(conn.from) ?? [];
     list.push({ to: conn.to, connection: conn.id });
     outgoing.set(conn.from, list);
@@ -117,8 +116,7 @@ export function findOperationRoute(
     .sort((a, b) => a.id.localeCompare(b.id))
     .find(
       (c) =>
-        c.mode === "sync" &&
-        ((c.from === handlerId && queues.has(c.to)) || (c.to === handlerId && queues.has(c.from))),
+        (c.from === handlerId && queues.has(c.to)) || (c.to === handlerId && queues.has(c.from)),
     );
   if (!connection) return null;
   const queue = connection.from === handlerId ? connection.to : connection.from;

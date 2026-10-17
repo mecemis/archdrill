@@ -59,7 +59,7 @@ function TrafficDots({ path, data }: { readonly path: string; readonly data: Con
         FASTEST_TRIP_SEC,
         SLOWEST_TRIP_SEC - TRIP_SEC_PER_DECADE * Math.log10(Math.max(1, rate)),
       ),
-    ) * (data.mode === "async" ? ASYNC_SLOWDOWN : 1);
+    ) * (data.messaging ? ASYNC_SLOWDOWN : 1);
   const color = dotColor(data);
   return (
     <g className="traffic-dots">
@@ -97,7 +97,7 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
         style={{
           stroke: STROKES[stroke],
           strokeWidth: selected ? 3 : active ? 2.25 : 1.5,
-          strokeDasharray: data?.mode === "async" ? "6 4" : undefined,
+          strokeDasharray: data?.messaging ? "6 4" : undefined,
           opacity: data?.emphasis === "dimmed" ? 0.3 : 1,
         }}
       />

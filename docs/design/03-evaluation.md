@@ -281,7 +281,7 @@ Findings are ordered by gate, then severity, then estimated impact (from the met
 8. Remove a cache TTL.
 9. Remove the retry bound (`max: ∞`).
 10. Remove retry jitter.
-11. Change an async connection to sync.
+11. Make a publish on the request path wait for the queue (drop fire-and-forget).
 12. Swap the durable store binding to a volatile one.
 13. Move the response before the durable write.
 14. Swap the order of the cache delete and the store update in an invalidation flow.

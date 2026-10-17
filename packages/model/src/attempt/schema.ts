@@ -104,11 +104,15 @@ export type ConnectionPolicy = z.infer<typeof ConnectionPolicySchema>;
 /** No timeout, no retries, no circuit breaker, no bulkhead. */
 export const DEFAULT_POLICY: ConnectionPolicy = ConnectionPolicySchema.parse({});
 
+/**
+ * A link a component can call over. Whether a call waits for its answer is
+ * the step's to say (fire-and-forget, outbox), not the connection's; designs
+ * saved with a connection `mode` load with it dropped.
+ */
 export const ConnectionSchema = z.object({
   id: IdSchema,
   from: IdSchema,
   to: IdSchema,
-  mode: z.enum(["sync", "async"]).default("sync"),
   policy: ConnectionPolicySchema.prefault({}),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;

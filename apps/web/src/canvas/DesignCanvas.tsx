@@ -13,7 +13,7 @@ import {
 import { Activity } from "lucide-react";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GuideCard } from "../panels/onboarding/GuideCard";
-import { catalogIndex } from "../state/content";
+import { activePack, catalogIndex } from "../state/content";
 import { useEvaluation } from "../state/evaluation";
 import { useLayout } from "../state/layout";
 import { useOnboarding } from "../state/onboarding";
@@ -122,6 +122,7 @@ function CanvasInner() {
       highlight,
       selection,
       slotArmed,
+      operations: activePack.problem.operations,
       metrics,
       findings,
     }),

@@ -42,20 +42,6 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
       <p className="text-sm text-fg">
         {label(connection.from)} → {label(connection.to)}
       </p>
-      <Field label="Mode">
-        <Select
-          value={connection.mode}
-          onChange={(e) =>
-            dispatch("setConnectionMode", {
-              id: connection.id,
-              mode: e.target.value as "sync" | "async",
-            })
-          }
-        >
-          <option value="sync">Synchronous (request/response)</option>
-          <option value="async">Asynchronous (fire and forget)</option>
-        </Select>
-      </Field>
       {callsFlowSteps ? (
         <PolicyEditor connection={connection} />
       ) : (

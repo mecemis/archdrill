@@ -1,6 +1,11 @@
 import { analyzeAttempt } from "@archdrill/engine";
 import { applyCommand } from "@archdrill/model";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/model/testing";
+import {
+  asyncAttempt,
+  cacheAsideAttempt,
+  testCatalogIndex,
+  testProblem,
+} from "@archdrill/model/testing";
 import { describe, expect, it } from "vitest";
 import { findingsByComponent } from "./node-findings";
 import { healthOf, type ProjectionInput, projectEdges, projectNodes } from "./projection";
@@ -59,12 +64,37 @@ describe("projection", () => {
     expect(nodes.find((n) => n.id === "redis")?.data.emphasis).toBe("dimmed");
   });
 
-  it("offers the handler's synchronous dependencies as call targets while a slot is armed", () => {
-    const callable = projectNodes(inputFor(undefined, { slotArmed: true }))
+  it("offers every component the handler can call while a slot is armed, connected or not", () => {
+    const withQueue = applyCommand(cacheAsideAttempt(), "addComponent", {
+      id: "queue",
+      kind: "queue",
+      flavor: "managed-queue",
+      label: "Link events",
+      position: { x: 0, y: 0 },
+    }).attempt;
+
+    const callable = projectNodes(inputFor(withQueue, { slotArmed: true }))
       .filter((n) => n.data.callable)
       .map((n) => n.id);
 
-    expect(callable).toEqual(["redis", "db"]);
+    // The client only sends requests, and the load balancer offers nothing to call.
+    expect(callable).toEqual(["redis", "db", "queue"]);
+  });
+
+  it("draws dashed the connections nothing waits on: published without waiting, or delivered", () => {
+    const published = applyCommand(asyncAttempt(), "updateStep", {
+      operation: "create-link",
+      stepId: "publish",
+      fireAndForget: true,
+    }).attempt;
+    const dashed = (attempt: typeof published) =>
+      projectEdges(inputFor(attempt, { operations: testProblem.operations }))
+        .filter((e) => e.data?.messaging)
+        .map((e) => e.id)
+        .sort();
+
+    expect(dashed(asyncAttempt())).toEqual(["worker--queue"]);
+    expect(dashed(published)).toEqual(["api--queue", "worker--queue"]);
   });
 
   it("carries simulated utilisation to nodes and rates to connections", () => {

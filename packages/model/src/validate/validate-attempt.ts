@@ -466,14 +466,6 @@ function validateCallStep(
         loc,
       ),
     );
-  } else if (connection.mode !== "sync") {
-    issues.push(
-      error(
-        "step-async-connection",
-        `Step ${stepId} needs a synchronous connection to "${target.label}".`,
-        loc,
-      ),
-    );
   }
   const action = ACTIONS[step.action];
   if (!ctx.catalog.capabilities(target.kind, target.flavor).has(action.capability)) {

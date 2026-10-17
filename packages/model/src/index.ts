@@ -8,6 +8,7 @@ export * from "./catalog/logic";
 export * from "./catalog/outcomes";
 export * from "./catalog/schema";
 export * from "./commands/index";
+export * from "./graph/calls";
 export * from "./graph/ingress";
 export * from "./problem/estimates";
 export * from "./problem/schema";
