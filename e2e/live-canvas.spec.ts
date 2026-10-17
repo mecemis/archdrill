@@ -163,3 +163,36 @@ test("keeps calls in their zone, and shows what crossing zones costs", async ({ 
     page.getByText("zone-aware routing would save", { exact: false }).first(),
   ).toBeVisible();
 });
+
+test("publishes to a queue the service is not connected to, connecting it", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("redirect");
+  await expect(page.locator('.react-flow__edge[data-id="redirect-api--link-events"]')).toHaveCount(
+    0,
+  );
+
+  await page.getByRole("button", { name: "Insert a step here" }).first().click();
+  await expect(page.getByTestId("step-picker")).toBeVisible();
+  // Clicking the queue on the canvas narrows the picker to its steps, connected or not.
+  const queue = page.locator('.react-flow__node[data-id="link-events"]');
+  await expect(queue.locator(".border-dashed")).toHaveCount(1);
+  await queue.click();
+  const unconnected = page.getByTestId("unconnected-steps");
+  await expect(unconnected).toHaveAttribute("open", "");
+  await unconnected
+    .getByRole("button", { name: /^Publish/ })
+    .first()
+    .click();
+
+  await expect(page.getByText("Redirect API is now connected to Link events.")).toBeVisible();
+  await expect(page.locator('.react-flow__edge[data-id="redirect-api--link-events"]')).toHaveCount(
+    1,
+  );
+  await expect(
+    page
+      .getByTestId(/^step-(?!picker)/)
+      .filter({ hasText: /Publish/ })
+      .first(),
+  ).toBeVisible();
+});

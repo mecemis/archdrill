@@ -1,4 +1,5 @@
-import type { StepInput } from "@archdrill/model";
+import { connectionToCall, type StepInput } from "@archdrill/model";
+import type { AnyCommand } from "../../state/attempt-store";
 import { activePack } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
 import { useToasts } from "../../state/toasts";
@@ -21,21 +22,45 @@ export function operationEntity(operation: string): string {
 }
 
 /**
- * Adds a chosen step as one undoable change, and says so when calling a
- * store bound the entity to it. Returns whether the step was added.
+ * The commands that add a chosen step, as one change: when the service is not
+ * connected to the component it calls, the connection comes first.
  */
-export function commitStep(ctx: EditContext, mode: PickerMode, step: StepInput): boolean {
+export function chosenStepCommands(
+  ctx: EditContext,
+  mode: PickerMode,
+  step: StepInput,
+): { readonly commands: AnyCommand[]; readonly connects: boolean } {
   const commands =
     mode.kind === "append"
       ? appendStep(ctx, mode.at, step)
       : insertBefore(ctx, mode.at, mode.before, step);
+  if (commands.length === 0 || step.type !== "call") return { commands, connects: false };
+  const link = connectionToCall(ctx.flow.handler, step.target, ctx.attempt, ctx.catalog);
+  if (link.kind === "connected") return { commands, connects: false };
+  const connect: AnyCommand =
+    link.kind === "reverse"
+      ? { name: "reverseConnection", args: { id: link.id } }
+      : { name: "addConnection", args: { from: ctx.flow.handler, to: step.target } };
+  return { commands: [connect, ...commands], connects: true };
+}
+
+/**
+ * Adds a chosen step as one undoable change, and says so when it connected
+ * the service to a component or bound the entity to a store. Returns whether
+ * the step was added.
+ */
+export function commitStep(ctx: EditContext, mode: PickerMode, step: StepInput): boolean {
+  const { commands, connects } = chosenStepCommands(ctx, mode, step);
   if (commands.length === 0) return false;
   const binding = missingBinding(ctx.attempt, step, ctx.problem, ctx.catalog);
   const added = useAttemptStore.getState().dispatchAll(commands);
-  if (added && binding && step.type === "call") {
-    useToasts
-      .getState()
-      .notify(`${componentLabel(ctx.attempt, binding.componentId)} now stores ${step.entity}.`);
-  }
+  if (!added || step.type !== "call") return added;
+  const notes = [
+    connects
+      ? `${componentLabel(ctx.attempt, ctx.flow.handler)} is now connected to ${componentLabel(ctx.attempt, step.target)}.`
+      : "",
+    binding ? `${componentLabel(ctx.attempt, binding.componentId)} now stores ${step.entity}.` : "",
+  ].filter(Boolean);
+  if (notes.length > 0) useToasts.getState().notify(notes.join(" "));
   return added;
 }

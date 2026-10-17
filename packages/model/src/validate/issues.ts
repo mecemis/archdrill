@@ -28,7 +28,6 @@ export const ISSUE_CODES = [
   "flow-empty",
   "step-unknown-target",
   "step-no-connection",
-  "step-async-connection",
   "step-action-not-supported",
   "step-entity-required",
   "step-unknown-entity",

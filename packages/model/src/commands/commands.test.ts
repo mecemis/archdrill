@@ -88,7 +88,7 @@ describe("commands", () => {
     const { attempt } = applyCommand(cacheAsideAttempt(), "reverseConnection", { id: "lb--api" });
 
     expect(attempt.architecture.connections).toContainEqual(
-      expect.objectContaining({ id: "api--lb", from: "api", to: "lb", mode: "sync" }),
+      expect.objectContaining({ id: "api--lb", from: "api", to: "lb" }),
     );
   });
 

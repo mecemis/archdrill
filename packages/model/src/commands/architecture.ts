@@ -129,7 +129,6 @@ export const addConnection = defineCommand(
     id: IdSchema.optional(),
     from: IdSchema,
     to: IdSchema,
-    mode: z.enum(["sync", "async"]).optional(),
   }),
   (draft, args) => {
     requireComponentIndex(draft, args.from);
@@ -144,7 +143,6 @@ export const addConnection = defineCommand(
       id,
       from: args.from,
       to: args.to,
-      mode: args.mode ?? "sync",
       policy: { ...DEFAULT_POLICY },
     });
     return id;
@@ -169,14 +167,6 @@ export const reverseConnection = defineCommand(z.object({ id: IdSchema }), (draf
   connection.to = from;
   connection.id = newId;
 });
-
-export const setConnectionMode = defineCommand(
-  z.object({ id: IdSchema, mode: z.enum(["sync", "async"]) }),
-  (draft, { id, mode }) => {
-    const connection = draft.architecture.connections[requireConnectionIndex(draft, id)];
-    if (connection) connection.mode = mode;
-  },
-);
 
 export const setConnectionPolicy = defineCommand(
   z.object({

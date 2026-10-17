@@ -161,11 +161,6 @@
                     "type": "string",
                     "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
                   },
-                  "mode": {
-                    "default": "sync",
-                    "type": "string",
-                    "enum": ["sync", "async"]
-                  },
                   "policy": {
                     "default": {},
                     "type": "object",

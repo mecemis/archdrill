@@ -151,7 +151,7 @@ export function suggestNext(input: SuggestionInput): Suggestion[] {
 
   const calls: Suggestion[] = [];
   for (const connection of attempt.architecture.connections) {
-    if (connection.from !== flow.handler || connection.mode !== "sync") continue;
+    if (connection.from !== flow.handler) continue;
     const target = attempt.architecture.components.find((c) => c.id === connection.to);
     if (!target) continue;
     const caps = catalog.capabilities(target.kind, target.flavor);

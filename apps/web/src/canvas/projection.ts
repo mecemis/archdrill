@@ -2,9 +2,12 @@ import type { OperationAnalysis } from "@archdrill/engine";
 import {
   type Attempt,
   type CatalogIndex,
+  callableFrom,
   type Flow,
+  findOperationRoute,
   type Issue,
   liveStepIds,
+  type Operation,
   placedInZones,
   runsInRegion,
 } from "@archdrill/model";
@@ -61,7 +64,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
 }
 
 export interface ConnectionEdgeData extends Record<string, unknown> {
-  readonly mode: "sync" | "async";
+  /** Nothing waits on it: messages published without waiting, or delivered by a queue. */
+  readonly messaging: boolean;
   /** Numbers of the active flow's steps that use this connection. */
   readonly steps: readonly number[];
   readonly ingress: boolean;
@@ -81,6 +85,8 @@ export interface ProjectionInput {
   readonly highlight: Highlight | null;
   readonly selection: Selection;
   readonly slotArmed: boolean;
+  /** The problem's operations, to tell which flows consume messages. */
+  readonly operations?: readonly Operation[];
   readonly metrics?: CanvasLoad | undefined;
   /** Open findings per component, for badges. */
   readonly findings?: ReadonlyMap<string, NodeFindings> | undefined;
@@ -116,6 +122,37 @@ export function stepNumbers(flow: Flow | undefined, attempt: Attempt): Map<strin
   return new Map(numbered.map((id, index) => [id, index + 1]));
 }
 
+/**
+ * Connections nothing waits on: every step over them publishes without
+ * waiting (fire-and-forget or through an outbox), or a queue delivers a
+ * consumer's messages over them. They are drawn dashed.
+ */
+export function messagingConnections(
+  attempt: Attempt,
+  catalog: CatalogIndex,
+  operations: readonly Operation[] = [],
+): Set<string> {
+  const waits = new Set<string>();
+  const messages = new Set<string>();
+  for (const flow of attempt.flows) {
+    for (const id of liveStepIds(flow, attempt)) {
+      const step = flow.steps[id];
+      if (step?.type !== "call") continue;
+      const connection = attempt.architecture.connections.find(
+        (c) => c.from === flow.handler && c.to === step.target,
+      );
+      if (!connection) continue;
+      (step.fireAndForget || step.outbox ? messages : waits).add(connection.id);
+    }
+    const operation = operations.find((o) => o.id === flow.operation);
+    if (operation?.trigger.type === "event") {
+      const route = findOperationRoute(operation, attempt, catalog, flow.handler);
+      for (const id of route?.connections ?? []) messages.add(id);
+    }
+  }
+  return new Set([...messages].filter((id) => !waits.has(id)));
+}
+
 export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] {
   const { attempt, catalog, operation, highlight, selection } = input;
   const flow = operation?.flow;
@@ -125,11 +162,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
     ),
   );
   const callable = new Set(
-    input.slotArmed && flow
-      ? attempt.architecture.connections
-          .filter((c) => c.from === flow.handler && c.mode === "sync")
-          .map((c) => c.to)
-      : [],
+    input.slotArmed && flow ? callableFrom(flow.handler, attempt, catalog) : [],
   );
   return attempt.architecture.components.map((component) => {
     const kind = catalog.kind(component.kind);
@@ -223,6 +256,7 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
       i.severity === "error" && i.location.type === "connection" ? [i.location.connectionId] : [],
     ),
   );
+  const messaging = messagingConnections(attempt, input.catalog, input.operations);
   return attempt.architecture.connections.map((connection) => ({
     id: connection.id,
     type: "connection",
@@ -230,7 +264,7 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
     target: connection.to,
     selected: selection?.type === "connection" && selection.id === connection.id,
     data: {
-      mode: connection.mode,
+      messaging: messaging.has(connection.id),
       steps: usage.get(connection.id) ?? [],
       ingress: ingress.has(connection.id),
       emphasis: emphasisOf(highlight, highlight?.connections.has(connection.id) ?? false),

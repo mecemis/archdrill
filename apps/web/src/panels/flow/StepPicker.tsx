@@ -5,6 +5,8 @@ import {
   actionTakesEntity,
   actionTakesParam,
   type CatalogIndex,
+  callableFrom,
+  connectionToCall,
   getLogic,
   type LogicId,
   offeredLogic,
@@ -33,16 +35,21 @@ interface Option {
 /** Statuses offered after the success ones, in the order people reach for them. */
 const COMMON_STATUSES = [400, 404, 409, 429, 503] as const;
 
+/** What the handler can call on one component, and whether it is connected to it yet. */
+interface TargetOptions {
+  readonly connected: boolean;
+  readonly options: Option[];
+}
+
 function callOptions(
   attempt: Attempt,
   handler: string,
   entity: string,
   catalog: CatalogIndex,
-): Map<string, Option[]> {
-  const byTarget = new Map<string, Option[]>();
-  for (const connection of attempt.architecture.connections) {
-    if (connection.from !== handler || connection.mode !== "sync") continue;
-    const target = attempt.architecture.components.find((c) => c.id === connection.to);
+): Map<string, TargetOptions> {
+  const byTarget = new Map<string, TargetOptions>();
+  for (const id of callableFrom(handler, attempt, catalog)) {
+    const target = attempt.architecture.components.find((c) => c.id === id);
     if (!target) continue;
     const options: Option[] = [];
     for (const action of Object.keys(ACTIONS) as ActionId[]) {
@@ -68,7 +75,8 @@ function callOptions(
         });
       }
     }
-    if (options.length > 0) byTarget.set(target.id, options);
+    const connected = connectionToCall(handler, target.id, attempt, catalog).kind !== "add";
+    if (options.length > 0) byTarget.set(target.id, { connected, options });
   }
   return byTarget;
 }
@@ -106,6 +114,11 @@ export function StepPicker({
   const canvasTarget = useUi((s) => s.canvasTarget);
   const [query, setQuery] = useState("");
   const [entity, setEntity] = useState(() => operationEntity(ctx.flow.operation));
+  // Opened by a search or a click on the canvas, or by hand; it stays open once opened.
+  const [showUnconnected, setShowUnconnected] = useState(false);
+  useEffect(() => {
+    if (query.trim() !== "") setShowUnconnected(true);
+  }, [query]);
   const search = useRef<HTMLInputElement>(null);
   const { attempt, flow, background, operation } = ctx;
 
@@ -198,6 +211,24 @@ export function StepPicker({
   };
 
   const filtered = (options: readonly Option[]) => options.filter((o) => matches(o.label, terms));
+  const targetSection = (target: string, options: readonly Option[]) => {
+    const kind = attempt.architecture.components.find((c) => c.id === target)?.kind ?? "";
+    return {
+      key: target,
+      heading: (
+        <>
+          <KindChip kind={kind} size="xs" /> {componentLabel(attempt, target)}
+        </>
+      ),
+      options: filtered(options),
+    };
+  };
+  const connected = [...calls].filter(([, t]) => t.connected);
+  // Components the service is not connected to yet: choosing a step connects it.
+  const unconnected = [...calls]
+    .filter(([, t]) => !t.connected)
+    .map(([target, t]) => targetSection(target, t.options))
+    .filter((section) => section.options.length > 0);
   const sections: { key: string; heading: ReactNode; options: Option[] }[] = [
     ...(terms.length === 0 && suggested.length > 0
       ? [
@@ -212,18 +243,7 @@ export function StepPicker({
           },
         ]
       : []),
-    ...[...calls.entries()].map(([target, options]) => {
-      const kind = attempt.architecture.components.find((c) => c.id === target)?.kind ?? "";
-      return {
-        key: target,
-        heading: (
-          <>
-            <KindChip kind={kind} size="xs" /> {componentLabel(attempt, target)}
-          </>
-        ),
-        options: filtered(options),
-      };
-    }),
+    ...connected.map(([target, t]) => targetSection(target, t.options)),
     {
       key: "decide",
       heading: (
@@ -294,8 +314,8 @@ export function StepPicker({
       {calls.size === 0 && terms.length === 0 && (
         <p className="flex gap-1.5 rounded-lg bg-warn-soft px-2.5 py-2 text-xs text-warn-fg">
           <CornerDownRight className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {componentLabel(attempt, flow.handler)} is not connected to anything it could call.
-          Connect it to a store or cache on the canvas, then come back.
+          There is nothing for {componentLabel(attempt, flow.handler)} to call yet. Add a store, a
+          cache or a queue from the palette.
         </p>
       )}
       <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
@@ -316,7 +336,37 @@ export function StepPicker({
             ))}
           </div>
         ))}
-        {sections.length === 0 && (
+        {unconnected.length > 0 && (
+          <details
+            className="flex flex-col gap-2"
+            open={showUnconnected}
+            onToggle={(e) => setShowUnconnected(e.currentTarget.open)}
+            data-testid="unconnected-steps"
+          >
+            <summary className="cursor-pointer px-1 text-[11px] font-semibold text-fg-subtle">
+              Not connected yet: choosing a step connects {componentLabel(attempt, flow.handler)} to
+              it
+            </summary>
+            {unconnected.map((section) => (
+              <div key={section.key} className="mt-1 flex flex-col gap-0.5">
+                <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-fg-subtle">
+                  {section.heading}
+                </p>
+                {section.options.map((option) => (
+                  <button
+                    key={`${section.key}:${option.key}`}
+                    type="button"
+                    onClick={() => choose(option)}
+                    className={`rounded-lg px-2.5 py-1.5 text-left text-[13px] text-fg-muted hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </details>
+        )}
+        {sections.length === 0 && unconnected.length === 0 && (
           <p className="px-1 text-xs text-fg-subtle">Nothing matches "{query}".</p>
         )}
       </div>

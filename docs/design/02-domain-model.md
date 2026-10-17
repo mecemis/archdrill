@@ -180,7 +180,7 @@ Attempt
 ├── problemId, schemaVersion, createdAt, updatedAt
 ├── architecture
 │   ├── components[]   { id, kind, flavor, label, size, config, zones[], data[] }
-│   └── connections[]  { id, from, to, mode: sync|async, protocol, policy }
+│   └── connections[]  { id, from, to, policy }
 ├── flows[]            one per operation (shared by all scenarios)
 ├── decisions{}        decisionPointId → option (+ optional note)
 ├── estimates{}        estimateId → the candidate's answer, in base units (M11)
@@ -286,7 +286,7 @@ A decision point may declare a **default** that is assumed until the candidate d
 ## 4. Invariants (enforced by schema and validators)
 
 1. IDs are unique within their collection. References (connections, flow steps, data bindings) resolve.
-2. A `call` step's actor → target pair has a connection whose `mode` matches the action (async actions use async connections).
+2. A `call` step's actor → target pair has a connection. Whether the call waits for its answer is the step's to say (`fireAndForget`, `outbox`), not the connection's.
 3. An action is offered by at least one capability of the target.
 4. Every outcome of every step is handled, or is listed as an explicit unhandled warning.
 5. Flows are acyclic. Retries are expressed as connection policy, not as cycles.
