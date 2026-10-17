@@ -7,9 +7,15 @@ import {
   type CatalogIndex,
   callableFrom,
   connectionToCall,
+  getLogic,
+  type LogicId,
+  offeredLogic,
   type StepInput,
 } from "@archdrill/model";
 import { activePack } from "../../state/content";
+import { successStatus } from "./defaults";
+import type { EditContext } from "./flow-edits";
+import type { PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 
 /** A step one choice adds, said as a sentence. */
@@ -67,4 +73,41 @@ export function callOptions(
     if (options.length > 0) byTarget.set(target.id, { connected, options });
   }
   return byTarget;
+}
+
+/** Statuses offered after the success ones, in the order people reach for them. */
+const COMMON_STATUSES = [400, 404, 409, 429, 503] as const;
+
+/** The problem's decisions, those a request of this operation can meet first. */
+export function decisionOptions(ctx: EditContext, facts: ReadonlySet<string>): Option[] {
+  const relevant = (id: LogicId) => {
+    const fact = getLogic(id).decidedBy?.fact;
+    return fact === undefined || facts.has(fact) ? 0 : 1;
+  };
+  return offeredLogic(ctx.problem.logic)
+    .slice()
+    .sort((a: LogicId, b: LogicId) => relevant(a) - relevant(b))
+    .map((logic) => ({
+      key: `logic:${logic}`,
+      label: stepSentence({ type: "logic", logic }, ctx.attempt),
+      step: { type: "logic", logic },
+    }));
+}
+
+/**
+ * The answers a request can end with there: none in front of a step or as
+ * the first step, since a request does something before it answers.
+ */
+export function responseOptions(ctx: EditContext, mode: PickerMode): Option[] {
+  if (mode.kind === "insert" || mode.at.kind === "root") return [];
+  const { background, operation, problem, attempt } = ctx;
+  const success = background ? [200] : [successStatus(operation, problem, attempt)];
+  const statuses = background
+    ? [200, 503]
+    : [...new Set([...success, ...operation.successStatuses, ...COMMON_STATUSES])];
+  return statuses.map((status) => ({
+    key: `respond:${status}`,
+    label: stepSentence({ type: "respond", status }, attempt, background),
+    step: { type: "respond", status },
+  }));
 }

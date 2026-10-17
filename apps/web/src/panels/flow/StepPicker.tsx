@@ -1,4 +1,4 @@
-import { getLogic, type LogicId, offeredLogic, type Step, type StepInput } from "@archdrill/model";
+import type { Step, StepInput } from "@archdrill/model";
 import { CornerDownRight, GitFork, Reply, Search, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { activePack } from "../../state/content";
@@ -6,16 +6,12 @@ import { useUi } from "../../state/ui-store";
 import { KindChip } from "../../ui/icons";
 import { FOCUS_RING, IconButton, Select } from "../../ui/primitives";
 import { slotFor } from "./cursor";
-import { successStatus } from "./defaults";
 import type { EditContext } from "./flow-edits";
 import { commitStep, operationEntity, type PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 import { componentLabel } from "./step-label";
-import { callOptions, type Option } from "./step-options";
+import { callOptions, decisionOptions, type Option, responseOptions } from "./step-options";
 import { suggestNext } from "./suggestions";
-
-/** Statuses offered after the success ones, in the order people reach for them. */
-const COMMON_STATUSES = [400, 404, 409, 429, 503] as const;
 
 /** Whether a suggested step does what an existing step does. */
 function sameStep(input: StepInput, step: Step | undefined): boolean {
@@ -118,33 +114,8 @@ export function StepPicker({
     .filter((s) => mode.kind !== "insert" || !sameStep(s.step, flow.steps[mode.before]))
     .slice(0, 4)
     .map((s) => ({ key: s.key, label: stepSentence(s.step, attempt, background), step: s.step }));
-  const decisions: Option[] = offeredLogic(ctx.problem.logic)
-    .slice()
-    .sort((a: LogicId, b: LogicId) => {
-      const relevant = (id: LogicId) => {
-        const fact = getLogic(id).decidedBy?.fact;
-        return fact === undefined || facts.has(fact) ? 0 : 1;
-      };
-      return relevant(a) - relevant(b);
-    })
-    .map((logic) => ({
-      key: `logic:${logic}`,
-      label: stepSentence({ type: "logic", logic }, attempt),
-      step: { type: "logic", logic },
-    }));
-  const success = background ? [200] : [successStatus(operation, ctx.problem, attempt)];
-  const statuses = background
-    ? [200, 503]
-    : [...new Set([...success, ...operation.successStatuses, ...COMMON_STATUSES])];
-  // A request must do something before it answers, and an inserted step carries on.
-  const responses: Option[] =
-    mode.kind === "insert" || mode.at.kind === "root"
-      ? []
-      : statuses.map((status) => ({
-          key: `respond:${status}`,
-          label: stepSentence({ type: "respond", status }, attempt, background),
-          step: { type: "respond", status },
-        }));
+  const decisions = decisionOptions(ctx, facts);
+  const responses = responseOptions(ctx, mode);
 
   const choose = (option: Option) => {
     // A failed change keeps the picker, and the canvas lit, for another try.
