@@ -123,6 +123,12 @@ export const CallStepSchema = z.object({
    * read may come from a replica that has not applied a recent write.
    */
   consistent: z.boolean().optional(),
+  /**
+   * For store writes, when both regions take traffic: send the write to the
+   * primary region's copy, even from the other region, so that a conditional
+   * write is checked in one place. Half the writes cross regions for it.
+   */
+  homeRegion: z.boolean().optional(),
   /** For counts and totals in consumers: sum what arrives per key over this many seconds, then write once. */
   aggregateSec: z.number().int().min(1).max(MAX_AGGREGATE_SEC).optional(),
   /** For increments: spread each key's count over this many rows. */

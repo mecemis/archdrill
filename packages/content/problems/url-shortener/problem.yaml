@@ -142,6 +142,12 @@ decisionPoints:
       - { id: semi-sync, label: Semi-synchronous }
       - { id: sync, label: Synchronous }
     requirements: [NFR-4, NFR-1]
+  - id: region-mode
+    question: Does the second region take traffic too?
+    options:
+      - { id: active-passive, label: "Active-passive: it waits for the primary to fail" }
+      - { id: active-active, label: "Active-active: both regions serve their nearby users" }
+    requirements: [NFR-7, NFR-3]
   - id: expired-status
     question: What does an expired link return?
     options:

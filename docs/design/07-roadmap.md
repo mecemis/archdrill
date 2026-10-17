@@ -544,7 +544,19 @@ What replicas give up for the capacity they add, and what two regions taking wri
   - Three mutants: 140, every one caught. One makes every cache miss consistent, and S4 shows the primary cannot take the misses when the cache goes.
 - **Shown.** A "Consistent read" setting on store reads in the flow editor.
 
-**Next.** Active-active regions: both regions take traffic and writes, and what last-writer-wins replication does to codes created in both at once.
+**Part 2, both regions taking traffic (as built).** Active-active, and what writing in both regions does to unique codes ([ADR 0018](../adr/0018-both-regions-taking-traffic.md)).
+- **The decision.** A workload's `regionMode` names a decision: `active-passive` or `active-active`.
+- **Serving.** Components with a standby copy run both copies: fleets have twice the instances and range, and stores serve reads in both while keeping one primary per shard.
+- **Crossing.** Half the requests come from the other region. They pay 68 ms for each call to a primary-region-only component, each write or consistent read to a primary, and each write sent to the home region. Latency is computed per region, so the tail stays right.
+- **A lost region.** Only its clients fail until DNS moves them; the other region's fleets keep running and its caches stay warm.
+- **The check.** `unique-across-regions`: a conditional create checked in each region against a store that takes writes in both (a DynamoDB global table, last writer wins) lets two people claim the same alias. Send creates to the home region (`homeRegion`), or use a store with one primary.
+- **The corpus.**
+  - S9 gains it as a gate.
+  - A new golden runs the DynamoDB design active-active: about the same cost as a warm standby, creates at 108 ms p99, and half the requests lost while DNS moves clients instead of all of them.
+  - One mutant: 141, every one caught.
+- **Shown.** "Write in the home region" on store writes, and the decision in Decisions.
+
+**Next.** M24, resource saturation.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

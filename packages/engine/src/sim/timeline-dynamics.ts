@@ -1,4 +1,4 @@
-import type { ComponentSelector, Timeline, TimelineEvent } from "@archdrill/model";
+import type { Attempt, ComponentSelector, Timeline, TimelineEvent } from "@archdrill/model";
 import { selectComponents, zoneLoss } from "./faults";
 import type { LoopState } from "./propagate";
 import { hasStandby, REGION_DNS_FAILOVER_SEC, standbyStartsCold } from "./regions";
@@ -48,7 +48,8 @@ const label = (ctx: SimulationContext, id: string) =>
  * go once the cooldown after the last scale-out has passed.
  */
 export function autoscalers(ctx: SimulationContext) {
-  const components = ctx.attempt.architecture.components.filter((c) => c.autoscale);
+  // The design's bounds: both regions' while both take traffic, one region's after.
+  let components = ctx.attempt.architecture.components.filter((c) => c.autoscale);
   const startup = (id: string) => {
     const c = components.find((x) => x.id === id);
     return (c && ctx.catalog.flavor(c.kind, c.flavor)?.startupSec) ?? DEFAULT_STARTUP_SEC;
@@ -58,15 +59,24 @@ export function autoscalers(ctx: SimulationContext) {
   const lastScaleOut = new Map<string, number>();
 
   return {
+    /** Scales within this design's bounds from now on. */
+    serve(attempt: Attempt) {
+      components = attempt.architecture.components.filter((c) => c.autoscale);
+    },
     /**
      * The standby region takes over: its copies of autoscaled fleets run
-     * their minimum, and what was launched or measured in the lost region
-     * no longer counts.
+     * their minimum (or, where both regions took traffic, the half that ran
+     * there), and what was launched or measured in the lost region no
+     * longer counts.
      */
-    takeOver(ids: readonly string[], loop: LoopState) {
+    takeOver(ids: readonly string[], loop: LoopState, halve = false) {
       for (const component of components) {
         if (!ids.includes(component.id)) continue;
-        loop.replicas.set(component.id, component.replicas);
+        const running = loop.replicas.get(component.id) ?? component.replicas;
+        loop.replicas.set(
+          component.id,
+          halve ? Math.max(component.replicas, running / 2) : component.replicas,
+        );
         pending.delete(component.id);
         history.delete(component.id);
       }
@@ -207,7 +217,7 @@ type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
  * since. Without coalescing, requests for a key that arrive while its first
  * miss is still loading miss too, so the window starts one miss later.
  */
-export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
+export function cacheRestarts(timeline: Timeline, ctx: SimulationContext, active = false) {
   const caches = (selector: ComponentSelector) =>
     selectComponents(selector, ctx.attempt, ctx.catalog).filter((c) =>
       ctx.catalog.capabilities(c.kind, c.flavor).has("volatile-kv"),
@@ -235,9 +245,9 @@ export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
       if (ids.length > 0) emptied.push({ at: until, ids, label: "Back after the outage" });
     }
   }
-  // A standby cache nothing kept filled takes the region's traffic empty.
+  // A standby cache nothing kept filled takes the region's traffic empty; one that served its own does not.
   for (const event of timeline.events) {
-    if (event.kind !== "fault" || event.fault.kind !== "region-down") continue;
+    if (active || event.kind !== "fault" || event.fault.kind !== "region-down") continue;
     const at = event.at + REGION_DNS_FAILOVER_SEC;
     const ids = ctx.attempt.architecture.components
       .filter((c) => standbyStartsCold(c, ctx.attempt, ctx.catalog))
@@ -283,7 +293,7 @@ export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
  * moment it is lost, they run what the standby region runs, and they wait
  * for traffic until DNS sends clients there.
  */
-export function regionTakeovers(timeline: Timeline, ctx: SimulationContext) {
+export function regionTakeovers(timeline: Timeline, ctx: SimulationContext, active = false) {
   const takeovers = timeline.events
     .filter((e): e is FaultEvent => e.kind === "fault" && e.fault.kind === "region-down")
     .map((event) => ({
@@ -307,8 +317,9 @@ export function regionTakeovers(timeline: Timeline, ctx: SimulationContext) {
       }
       return ids;
     },
-    /** Standby copies that have taken over but get no traffic yet at `t`. */
+    /** Standby copies that have taken over but get no traffic yet at `t`; none where both took traffic. */
     waiting(t: number): Set<string> {
+      if (active) return new Set();
       return new Set(takeovers.filter((w) => w.at <= t && t < w.redirected).flatMap((w) => w.ids));
     },
   };

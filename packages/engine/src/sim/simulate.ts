@@ -1,4 +1,5 @@
 import type { Environment, Workload } from "@archdrill/model";
+import type { CallPathStep } from "../paths/types";
 import type { ComponentProfile } from "./capacity";
 import { resolveFaults } from "./faults";
 import {
@@ -10,7 +11,7 @@ import {
   solve,
   warmCaches,
 } from "./model";
-import { standbyCosts } from "./regions";
+import { activeActive, crossRegionShare, standbyCosts, withActiveStandby } from "./regions";
 import { replicaAckMs, type SimulationContext, storedGb, wholeInstances } from "./setup";
 import {
   type Propagation,
@@ -119,8 +120,15 @@ function instancesBeforeZoneLoss(
 export function simulateEnvironment(
   workload: Workload,
   environment: Environment,
-  ctx: SimulationContext,
+  design: SimulationContext,
 ): EnvironmentMetrics {
+  // While both regions take traffic, the standby copies serve too; once one is lost, they are all there is.
+  const active =
+    activeActive(workload, design.attempt) &&
+    !environment.faults.some((f) => f.kind === "region-down");
+  const ctx = active
+    ? { ...design, attempt: withActiveStandby(design.attempt, design.catalog) }
+    : design;
   const before = instancesBeforeZoneLoss(workload, environment, ctx);
   // A lost zone takes its share of the instances that actually ran.
   const lost = before && resolveFaults(environment.faults, ctx.attempt, ctx.catalog, before);
@@ -150,7 +158,7 @@ export function simulateEnvironment(
     faults,
     { ...ctx.problem.client, held: fixtures.clientConnections },
     crossZoneCostByCaller(zoneTraffic, ctx.attempt),
-    standbyCosts(ctx.attempt, ctx.catalog, stored, final),
+    standbyCosts(design.attempt, ctx.catalog, stored, final, active),
   );
   const connections = fixtures.connections;
   return {
@@ -163,6 +171,9 @@ export function simulateEnvironment(
       {
         components,
         hops: routeHops(routes),
+        ...(active && {
+          crossRegion: (step: CallPathStep) => crossRegionShare(step, ctx.attempt, ctx.catalog),
+        }),
         callFor: model.calls.get,
         replicaAck: replicaAckMs(workload, ctx),
         timeoutOf: (step) => connections.find((c) => c.id === step.connectionId)?.policy.timeoutMs,

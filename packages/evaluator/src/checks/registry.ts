@@ -5,6 +5,7 @@ import {
   getLogic,
   LOGIC_IDS,
   type Problem,
+  REGION_MODES,
   REPLICATION_MODES,
   type Scenario,
 } from "@archdrill/model";
@@ -15,7 +16,7 @@ import {
   noSyncWriteOnReadPath,
   publishesWithoutWaiting,
 } from "./analytics";
-import { invalidationOnWrite, readYourWrites } from "./consistency";
+import { invalidationOnWrite, readYourWrites, uniqueAcrossRegions } from "./consistency";
 import { populateAfterMiss } from "./dataflow";
 import { decisionExcludes } from "./decisions";
 import { noAcknowledgedDataLoss } from "./durability";
@@ -70,6 +71,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     noAcknowledgedDataLoss,
     invalidationOnWrite,
     readYourWrites,
+    uniqueAcrossRegions,
     decisionExcludes,
     overprovisioned,
     autoscalingConfigured,
@@ -147,6 +149,15 @@ export function validateScenarioConfig(
       issues.push({
         checkId: instance.id,
         message: `decision "${String(decision)}" must be the workload's replication decision, so the simulated latency and the durability verdict agree`,
+      });
+    }
+    if (
+      instance.use === "unique-across-regions" &&
+      decision !== scenario.workload?.regionMode?.decision
+    ) {
+      issues.push({
+        checkId: instance.id,
+        message: `decision "${String(decision)}" must be the workload's region-mode decision, so the simulation and the uniqueness verdict agree on whether both regions take traffic`,
       });
     }
     const { operation: op, job } = parsed.data as { operation?: unknown; job?: unknown };
@@ -277,6 +288,14 @@ function validateWorkload(scenario: Scenario, problem: Problem): ScenarioConfigI
           `decision "${lengthDecision}" has options that are not code lengths: ${lengths.join(", ")}`,
         ),
       );
+  }
+  const regionMode = workload.regionMode?.decision;
+  if (regionMode) {
+    const point = problem.decisionPoints.find((d) => d.id === regionMode);
+    const modes: readonly string[] = REGION_MODES;
+    if (!point) issues.push(issue(`regionMode uses unknown decision "${regionMode}"`));
+    else if (point.options.some((o) => !modes.includes(o.id)))
+      issues.push(issue(`decision "${regionMode}" must offer only ${modes.join(", ")}`));
   }
   const replication = workload.replication?.decision;
   if (replication) {

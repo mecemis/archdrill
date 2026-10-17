@@ -19,6 +19,8 @@ export interface CallPathStep {
   readonly coalesce?: boolean;
   /** For store reads: the read sees every acknowledged write (primary, majority or strong read). */
   readonly consistent?: boolean;
+  /** For store writes: the write goes to the primary region's copy, from either region. */
+  readonly homeRegion?: boolean;
   /** For counts and totals in consumers: what arrives per key is summed over this window, then written once. */
   readonly aggregateSec?: number;
   /** For increments: each key's count is spread over this many rows. */

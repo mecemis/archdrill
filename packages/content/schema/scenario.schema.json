@@ -348,6 +348,16 @@
           },
           "required": ["decision"]
         },
+        "regionMode": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+            }
+          },
+          "required": ["decision"]
+        },
         "environments": {
           "minItems": 1,
           "type": "array",

@@ -25,6 +25,7 @@ import {
   outcomeProbability,
   ownBatches,
 } from "./outcomes";
+import { CROSS_REGION_RTT_MS } from "./regions";
 import type { CacheSpec, OperationModel } from "./setup";
 import { cacheKey, isHotStep } from "./setup";
 import type {
@@ -35,7 +36,10 @@ import type {
   OperationMetrics,
   PathMetrics,
 } from "./types";
-import { hopOver, type RouteHops } from "./zone-traffic";
+import { hopOver, networkHop, type RouteHops } from "./zone-traffic";
+
+/** A round trip between the two regions. */
+const CROSS_REGION_HOP = networkHop(CROSS_REGION_RTT_MS);
 
 /**
  * Extra wait for requests that an overloaded component does serve: its queue
@@ -354,6 +358,8 @@ export interface LatencyInputs {
   readonly components: ReadonlyMap<string, ComponentMetrics>;
   /** Round trips over each connection between zones or within one, for reads and writes. */
   readonly hops: ReadonlyMap<string, RouteHops>;
+  /** Share of a call's requests that cross regions, while both regions take traffic. */
+  readonly crossRegion?: (step: CallPathStep) => number;
   readonly callFor: (step: CallPathStep, hotKey: boolean) => CallModel;
   /** Components that run inside their caller, reached without a network hop. */
   readonly inProcess: ReadonlySet<string>;
@@ -414,9 +420,11 @@ function callLatency(step: CallPathStep, inputs: LatencyInputs, hotKey: boolean)
   const call = inputs.callFor(step, hotKey);
   if (step.outcome === "error") return call.failureLatency;
   const write = ACTIONS[step.action].effect !== "read";
-  const hop = inputs.inProcess.has(step.target)
+  const crossing = inputs.crossRegion?.(step) ?? 0;
+  const local = inputs.inProcess.has(step.target)
     ? NO_WAIT
     : hopOver(inputs.hops, step.connectionId, write);
+  const hop = crossing > 0 ? addMoments(local, mixMoments(CROSS_REGION_HOP, crossing)) : local;
   const timeout = inputs.timeoutOf(step);
   const component = inputs.components.get(step.target);
   // Requests for the hot key queue at the shard that holds it.
@@ -471,6 +479,26 @@ function pathLatency(
     }
   }
   return total;
+}
+
+/**
+ * A path's latency for each region's requests, weighted by their share. While
+ * both regions take traffic, half the requests come from the other region,
+ * and those cross on every call that can; otherwise every request is local.
+ */
+function regionalLatencies<T>(
+  path: Path,
+  latencyOf: (inputs: LatencyInputs) => T,
+  inputs: LatencyInputs,
+): (T & { readonly weight: number })[] {
+  const crossRegion = inputs.crossRegion;
+  const crosses =
+    crossRegion !== undefined && path.steps.some((s) => s.kind === "call" && crossRegion(s) > 0);
+  if (!crosses) return [{ weight: 1, ...latencyOf({ ...inputs, crossRegion: undefined }) }];
+  return [
+    { weight: 0.5, ...latencyOf({ ...inputs, crossRegion: undefined }) },
+    { weight: 0.5, ...latencyOf({ ...inputs, crossRegion: (s) => (crossRegion(s) > 0 ? 1 : 0) }) },
+  ];
 }
 
 const NO_COUNTS: Readonly<Record<string, number>> = {};
@@ -591,52 +619,72 @@ export function summarizeOperations(
       const probability = byClass.reduce((sum, c) => sum + c.p, 0);
       const hotProbability = byClass.reduce((sum, c) => sum + (c.hot ? c.p : 0), 0);
       // Fan-outs and fact-bound hot keys make each class wait in its own way.
-      const perClass = path.steps.some(
+      const byClassLatency = path.steps.some(
         (s) => s.kind === "call" && (s.each !== undefined || op.hotBy.has(s.stepId)),
-      )
-        ? classes.map((cls, i) => ({
-            weight: byClass[i]?.p ?? 0,
-            ...pathLatency(
-              path,
-              ingressLatency,
-              inputs,
-              batchers,
-              (id) => isHotStep(op, id, cls),
-              cls.counts,
-            ),
-          }))
-        : null;
-      const moments = perClass
-        ? mergedMoments(perClass)
-        : pathLatency(path, ingressLatency, inputs, batchers, NEVER_HOT);
+      );
+      // Requests from each region wait in their own way: those from the other region cross on every call that can.
       const status = path.terminal.kind === "respond" ? path.terminal.status : null;
       const succeeded = status !== null && op.operation.successStatuses.includes(status);
       if (status === null) unhandled += probability;
       else if (succeeded) success += probability;
       else errorStatus += probability;
+      const regional = regionalLatencies(
+        path,
+        (latencyInputs) => {
+          const perClass = byClassLatency
+            ? classes.map((cls, i) => ({
+                weight: byClass[i]?.p ?? 0,
+                ...pathLatency(
+                  path,
+                  ingressLatency,
+                  latencyInputs,
+                  batchers,
+                  (id) => isHotStep(op, id, cls),
+                  cls.counts,
+                ),
+              }))
+            : null;
+          const moments = perClass
+            ? mergedMoments(perClass)
+            : pathLatency(path, ingressLatency, latencyInputs, batchers, NEVER_HOT);
+          // Only successful requests count towards latency, so a failing path needs no hot-key figure.
+          const hot =
+            succeeded && !perClass && hotProbability > 0
+              ? pathLatency(
+                  path,
+                  ingressLatency,
+                  latencyInputs,
+                  batchers,
+                  (id) => !op.unkeyed.has(id),
+                )
+              : null;
+          return { perClass, moments, hot };
+        },
+        inputs,
+      );
+      // One region: the path's own figure, untouched; two: their mixture.
+      const [only] = regional;
+      const moments =
+        regional.length === 1 && only
+          ? only.moments
+          : mergedMoments(regional.map((r) => ({ weight: r.weight, ...r.moments })));
       observePath?.(op.operation.id, path.id, pass * probability, moments.mean);
       if (withPaths) {
         paths.push({
           pathId: path.id,
           probability,
-          latency: summarize([{ weight: 1, ...moments }]),
+          latency: summarize(regional.map((r) => ({ weight: r.weight, ...r.moments }))),
         });
       }
       // Latency is measured on successful requests: fast failures would otherwise pull the tail down.
-      if (succeeded && perClass) {
-        for (const c of perClass) mixture.push({ ...c, weight: pass * c.weight });
-      } else if (succeeded) {
-        mixture.push({ weight: pass * (probability - hotProbability), ...moments });
-        if (hotProbability > 0) {
-          const hot = pathLatency(
-            path,
-            ingressLatency,
-            inputs,
-            batchers,
-            (id) => !op.unkeyed.has(id),
-          );
-          mixture.push({ weight: pass * hotProbability, ...hot });
+      if (!succeeded) continue;
+      for (const r of regional) {
+        if (r.perClass) {
+          for (const c of r.perClass) mixture.push({ ...c, weight: pass * r.weight * c.weight });
+          continue;
         }
+        mixture.push({ weight: pass * r.weight * (probability - hotProbability), ...r.moments });
+        if (r.hot) mixture.push({ weight: pass * r.weight * hotProbability, ...r.hot });
       }
     }
     result.set(op.operation.id, {

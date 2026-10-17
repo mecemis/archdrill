@@ -400,3 +400,123 @@ describe("read-your-writes", () => {
     expect(runCheck("read-your-writes", params, attempt).status).toBe("pass");
   });
 });
+
+describe("unique-across-regions", () => {
+  const params = { operation: "create-link", entity: "Link", decision: "region-mode" };
+  const apply = (attempt: Attempt, name: CommandName, args: unknown) =>
+    applyCommand(attempt, name, args as never).attempt;
+  /** Creates in both regions, against a store in both, with both regions taking traffic. */
+  const bothRegions = (attempt: Attempt, mode = "active-active") =>
+    apply(
+      ["api", "db"].reduce((a, id) => apply(a, "updateComponent", { id, regions: 2 }), attempt),
+      "setDecision",
+      { decision: "region-mode", option: mode },
+    );
+  /** The links in DynamoDB, which takes writes in every region. */
+  const onDynamo = (attempt: Attempt): Attempt => ({
+    ...attempt,
+    architecture: {
+      ...attempt.architecture,
+      components: attempt.architecture.components.map((c) =>
+        c.id === "db"
+          ? {
+              ...c,
+              kind: "key-value-db",
+              flavor: "dynamodb",
+              label: "Links table",
+              size: "on-demand",
+              replicas: 1,
+            }
+          : c,
+      ),
+    },
+  });
+  const homeFor = (attempt: Attempt, stepIds: readonly string[]) =>
+    stepIds.reduce(
+      (a, stepId) => apply(a, "updateStep", { operation: "create-link", stepId, homeRegion: true }),
+      attempt,
+    );
+
+  it("does not apply while only one region takes creates", () => {
+    const outcome = runCheck(
+      "unique-across-regions",
+      params,
+      bothRegions(onDynamo(createLinkAttempt("kgs", 1000)), "active-passive"),
+    );
+
+    expect(outcome.status).toBe("n/a");
+  });
+
+  it("fails when a global table checks aliases in each region on its own", () => {
+    const outcome = runCheck(
+      "unique-across-regions",
+      params,
+      bothRegions(onDynamo(createLinkAttempt("kgs", 1000))),
+    );
+
+    expect(outcome.status).toBe("fail");
+    expect(outcome.message).toBe(
+      "Both regions take creates, and Links table checks a new Link against its own region's copy only, so two people who ask for the same alias in different regions within about a second of each other both get it. The store keeps the last write: one Link silently replaces the other.",
+    );
+  });
+
+  it("passes when every create writes in the home region", () => {
+    const home = ["insert", "insert-alias"].reduce(
+      (a, stepId) => apply(a, "updateStep", { operation: "create-link", stepId, homeRegion: true }),
+      bothRegions(onDynamo(createLinkAttempt("kgs", 1000))),
+    );
+
+    expect(runCheck("unique-across-regions", params, home).status).toBe("pass");
+  });
+
+  it("lets random codes be checked in each region, once aliases go home", () => {
+    const outcome = runCheck(
+      "unique-across-regions",
+      params,
+      homeFor(bothRegions(onDynamo(createLinkAttempt("random"))), ["insert-alias"]),
+    );
+
+    expect(outcome.status).toBe("pass");
+    expect(outcome.message).toMatch(
+      /random, and two regions drawing the same one within a second is negligible/,
+    );
+  });
+
+  it("fails when a key service in each region hands out the same codes", () => {
+    const kgsInBoth = apply(
+      homeFor(bothRegions(onDynamo(createLinkAttempt("kgs", 1000))), ["insert-alias"]),
+      "updateComponent",
+      { id: "kgs", regions: 2 },
+    );
+
+    expect(runCheck("unique-across-regions", params, kgsInBoth).message).toMatch(
+      /the key service in each region hands out codes from the same ranges/,
+    );
+  });
+
+  it("passes when the store runs in the primary region only", () => {
+    const oneRegionStore = apply(
+      bothRegions(onDynamo(createLinkAttempt("kgs", 1000))),
+      "updateComponent",
+      { id: "db", regions: 1 },
+    );
+
+    expect(runCheck("unique-across-regions", params, oneRegionStore).status).toBe("pass");
+  });
+
+  it("does not apply without a create flow", () => {
+    expect(runCheck("unique-across-regions", params, bothRegions(cacheAsideAttempt())).status).toBe(
+      "n/a",
+    );
+  });
+
+  it("passes when the store takes writes at one primary", () => {
+    const outcome = runCheck(
+      "unique-across-regions",
+      params,
+      bothRegions(createLinkAttempt("kgs", 1000)),
+    );
+
+    expect(outcome.status).toBe("pass");
+  });
+});

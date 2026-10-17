@@ -1,4 +1,10 @@
-import { type Path, type PathStep, staleReadReason } from "@archdrill/engine";
+import {
+  hasStandby,
+  type Path,
+  type PathStep,
+  singleWriter,
+  staleReadReason,
+} from "@archdrill/engine";
 import { ACTIONS, liveStepIds } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
@@ -335,3 +341,92 @@ function failedRead(operation: string, exposed: readonly Path[], entity: string,
   const evidence: Evidence[] = exposed.map((p) => ({ type: "path", operation, pathId: p.id }));
   return failed(`${why}. ${answer}${kept}.`, evidence);
 }
+
+const isConditionalCreate = (step: PathStep, entity: string) =>
+  step.kind === "call" &&
+  step.outcome === "ok" &&
+  step.entity === entity &&
+  step.action === "store.insertIfAbsent";
+
+/**
+ * When both regions take creates, a code is unique only if one place checks
+ * it. A store that takes writes in both regions (a DynamoDB global table in
+ * its default mode) checks a conditional insert against its own region's
+ * copy and keeps the last write: two creates of the same code within the
+ * replication lag both succeed, and one overwrites the other. A store with
+ * one primary, or a create sent to the home region, checks in one place.
+ */
+export const uniqueAcrossRegions = defineCheck({
+  id: "unique-across-regions",
+  description: "Codes stay unique when both regions take creates.",
+  params: z.strictObject({
+    operation: z.string().min(1),
+    entity: z.string().min(1),
+    /** Decision point that records whether both regions take traffic. */
+    decision: z.string().min(1),
+  }),
+  run(params, ctx) {
+    const op = ctx.analysis.operations.get(params.operation);
+    if (!op) return notApplicable("The operation needs a flow.");
+    if (ctx.attempt.decisions[params.decision] !== "active-active") {
+      return notApplicable("Only one region takes creates.");
+    }
+    const entity = params.entity;
+    const creates = op.paths.filter(
+      (p) => servesResource(p) && p.steps.some((s) => isConditionalCreate(s, entity)),
+    );
+    if (creates.length === 0) return notApplicable(`Nothing checks a ${entity} before storing it.`);
+    const component = (id: string) => ctx.attempt.architecture.components.find((c) => c.id === id);
+    const callerOf = (s: Extract<PathStep, { kind: "call" }>) =>
+      component(
+        ctx.attempt.architecture.connections.find((c) => c.id === s.connectionId)?.from ?? "",
+      );
+    const checkedLocally = (s: PathStep) => {
+      if (!isConditionalCreate(s, entity) || s.kind !== "call" || s.homeRegion) return false;
+      const store = component(s.target);
+      const caller = callerOf(s);
+      if (!store || !caller) return false;
+      return (
+        hasStandby(caller, ctx.catalog) &&
+        hasStandby(store, ctx.catalog) &&
+        !singleWriter(store, ctx.catalog)
+      );
+    };
+    // Where codes can clash: aliases people choose, or a key service in each region handing out the same ranges.
+    const isAlias = (s: PathStep) =>
+      s.kind === "logic" && s.logic === "hasCustomAlias" && s.outcome === "custom";
+    const allocatesInBoth = (s: PathStep) => {
+      if (s.kind !== "call" || (s.action !== "ids.allocate" && s.action !== "coord.leaseRange")) {
+        return false;
+      }
+      const allocator = component(s.target);
+      return allocator !== undefined && hasStandby(allocator, ctx.catalog);
+    };
+    const local = creates.filter((p) => p.steps.some(checkedLocally));
+    const exposed = local.filter((p) => p.steps.some(isAlias) || p.steps.some(allocatesInBoth));
+    if (exposed.length === 0) {
+      const why =
+        local.length > 0
+          ? `the codes it checks in each region on their own are random, and two regions drawing the same one within a second is negligible`
+          : "the store takes writes at one primary, or the create is sent to the home region";
+      return passed(
+        `Every ${op.operation.label.toLowerCase()} keeps its ${entity} unique: ${why}.`,
+      );
+    }
+    const step = exposed[0]?.steps.find(checkedLocally);
+    const store = step?.kind === "call" ? (component(step.target)?.label ?? step.target) : "";
+    const aliases = exposed.some((p) => p.steps.some(isAlias));
+    const clash = aliases
+      ? "two people who ask for the same alias in different regions within about a second of each other both get it"
+      : "the key service in each region hands out codes from the same ranges, and both regions store the same code";
+    const evidence: Evidence[] = exposed.map((p) => ({
+      type: "path",
+      operation: params.operation,
+      pathId: p.id,
+    }));
+    return failed(
+      `Both regions take creates, and ${store} checks a new ${entity} against its own region's copy only, so ${clash}. The store keeps the last write: one ${entity} silently replaces the other.`,
+      evidence,
+    );
+  },
+});

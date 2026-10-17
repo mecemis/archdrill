@@ -306,6 +306,9 @@
                         "consistent": {
                           "type": "boolean"
                         },
+                        "homeRegion": {
+                          "type": "boolean"
+                        },
                         "aggregateSec": {
                           "type": "integer",
                           "minimum": 1,

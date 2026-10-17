@@ -18,12 +18,16 @@ import { describe, expect, it } from "vitest";
 import { analyzeAttempt } from "../analyze";
 import { faultedComponents } from "./faults";
 import {
+  CROSS_REGION_RTT_MS,
   CROSS_REGION_USD_PER_GB,
+  crossRegionShare,
   HEALTH_CHECK_DETECTION_SEC,
   REGION_DNS_FAILOVER_SEC,
   regionLoss,
   standbyCosts,
   standbyStartsCold,
+  takesClients,
+  withActiveStandby,
 } from "./regions";
 import { simulateEnvironment } from "./simulate";
 import { simulateTimeline } from "./timeline";
@@ -320,5 +324,196 @@ describe("a lost region over time", () => {
     expect(at(result.times, instances, back)).toBe(3);
     expect(at(result.times, instances, 600)).toBeGreaterThan(3);
     expect(result.marks.filter((m) => m.kind === "scale-in")).toEqual([]);
+  });
+});
+
+describe("both regions taking traffic", () => {
+  const twoRegions = WorkloadSchema.parse({
+    ...workload,
+    regionMode: { decision: "region-mode" },
+  });
+  const decided = (attempt: Attempt, mode: string) =>
+    applyCommand(attempt, "setDecision", { decision: "region-mode", option: mode }).attempt;
+  const active = (attempt: Attempt) =>
+    decided(withStandby(attempt, everyRegional), "active-active");
+  const run = (attempt: Attempt, faults: unknown[] = []) =>
+    simulateEnvironment(
+      twoRegions,
+      EnvironmentSchema.parse({ id: "env", label: "Env", rates: { redirect: 6000 }, faults }),
+      context(attempt),
+    );
+
+  it("runs both regions' copies, doubling what a placed component has", () => {
+    const doubled = withActiveStandby(withStandby(cacheAsideAttempt(), ["api", "db"]), catalog);
+    const replicas = (id: string) =>
+      doubled.architecture.components.find((c) => c.id === id)?.replicas;
+
+    expect(replicas("api")).toBe(6);
+    expect(replicas("db")).toBe(4);
+    // Redis has no standby copy here, and the ALB is managed.
+    expect(replicas("redis")).toBe(2);
+  });
+
+  it("carries the load on both regions' instances, and bills them as its own", () => {
+    const passive = run(decided(withStandby(cacheAsideAttempt(), everyRegional), "active-passive"));
+    const both = run(active(cacheAsideAttempt()));
+    const api = (m: typeof both) => m.components.get("api");
+
+    expect(api(both)?.utilization).toBeCloseTo((api(passive)?.utilization ?? 0) / 2, 6);
+    expect(api(both)?.costBreakdown.standbyRegion).toBe(0);
+    expect(api(both)?.monthlyCost).toBeCloseTo(api(passive)?.monthlyCost ?? 0, 6);
+  });
+
+  it("is back to one region's copies once a region is lost", () => {
+    const lost = run(active(cacheAsideAttempt()), [{ kind: "region-down" }]);
+
+    expect(lost.components.get("api")?.instances).toBe(3);
+  });
+
+  it("sends half the calls across regions to what runs in the primary region only, or to a single writer's primary", () => {
+    const attempt = withStandby(createLinkAttempt("kgs", 1000), ["api", "redis", "db"]);
+    const analysis = analyzeAttempt(attempt, { catalog, problem: testProblem });
+    const step = (op: string, action: string) => {
+      const found = analysis.operations
+        .get(op)
+        ?.paths.flatMap((p) => p.steps)
+        .find((s) => s.kind === "call" && s.action === action);
+      if (found?.kind !== "call") throw new Error(`no ${action}`);
+      return found;
+    };
+
+    expect(crossRegionShare(step("redirect", "store.read"), attempt, catalog)).toBe(0);
+    expect(crossRegionShare(step("create-link", "store.insertIfAbsent"), attempt, catalog)).toBe(
+      0.5,
+    );
+    // KGS runs in the primary region only.
+    expect(crossRegionShare(step("create-link", "ids.allocate"), attempt, catalog)).toBe(0.5);
+    expect(
+      crossRegionShare({ ...step("redirect", "store.read"), consistent: true }, attempt, catalog),
+    ).toBe(0.5);
+    expect(crossRegionShare(step("redirect", "cache.get"), attempt, catalog)).toBe(0);
+  });
+
+  it("sends a write to the home region across, even to a store that takes writes in both", () => {
+    const base = withStandby(createLinkAttempt("kgs", 1000), ["api", "db"]);
+    const dynamo: Attempt = {
+      ...base,
+      architecture: {
+        ...base.architecture,
+        components: base.architecture.components.map((c) =>
+          c.id === "db"
+            ? { ...c, kind: "key-value-db", flavor: "dynamodb", size: "on-demand", replicas: 1 }
+            : c,
+        ),
+      },
+    };
+    const analysis = analyzeAttempt(dynamo, { catalog, problem: testProblem });
+    const insert = analysis.operations
+      .get("create-link")
+      ?.paths.flatMap((p) => p.steps)
+      .find((s) => s.kind === "call" && s.action === "store.insertIfAbsent");
+    if (insert?.kind !== "call") throw new Error("no insert");
+
+    expect(crossRegionShare(insert, dynamo, catalog)).toBe(0);
+    expect(crossRegionShare({ ...insert, homeRegion: true }, dynamo, catalog)).toBe(0.5);
+  });
+
+  it("does nothing with the home region while only one region takes traffic", () => {
+    const creates = WorkloadSchema.parse({
+      operations: { "create-link": { entity: "Link", classes: [{ id: "generated", share: 1 }] } },
+      keys: { Link: { existing: { distribution: "zipf", s: 1, population: 1e6 } } },
+      regionMode: { decision: "region-mode" },
+      environments: [{ id: "env", label: "Env", rates: { "create-link": 100 } }],
+    });
+    const passive = decided(
+      withStandby(createLinkAttempt("kgs", 1000), everyRegional),
+      "active-passive",
+    );
+    const home = applyCommand(passive, "updateStep", {
+      operation: "create-link",
+      stepId: "insert",
+      homeRegion: true,
+    }).attempt;
+    const [env] = creates.environments;
+    if (!env) throw new Error("no environment");
+    const p99 = (attempt: Attempt) =>
+      simulateEnvironment(creates, env, context(attempt)).operations.get("create-link")?.latency
+        .p99;
+
+    expect(p99(home)).toBe(p99(passive));
+  });
+
+  it("leaves the local half of requests fast and adds the round trip to the other half", () => {
+    const local = run(decided(withStandby(cacheAsideAttempt(), everyRegional), "active-passive"));
+    const consistentReads = applyCommand(active(cacheAsideAttempt()), "updateStep", {
+      operation: "redirect",
+      stepId: "read",
+      consistent: true,
+    }).attempt;
+    const crossing = run(consistentReads);
+    const p50 = (m: typeof local) => m.operations.get("redirect")?.latency.p50 ?? 0;
+    const p99 = (m: typeof local) => m.operations.get("redirect")?.latency.p99 ?? 0;
+
+    // Cache hits never cross; a consistent read on a miss from the other region does.
+    expect(p50(crossing)).toBeCloseTo(p50(local), 0);
+    expect(p99(crossing)).toBeGreaterThan(p99(local) + CROSS_REGION_RTT_MS / 2);
+  });
+
+  it("fails only the lost region's clients until DNS moves them, with the other region's cache warm", () => {
+    const timeline = TimelineSchema.parse({
+      id: "t",
+      label: "Region lost",
+      durationSec: 300,
+      stepSec: 10,
+      rates: { redirect: 6000 },
+      events: [{ kind: "fault", at: 30, fault: { kind: "region-down" } }],
+    });
+    const result = simulateTimeline(twoRegions, timeline, context(active(cacheAsideAttempt())));
+    const success = result.operations.get("redirect")?.successRate;
+    const back = 30 + REGION_DNS_FAILOVER_SEC;
+
+    expect(at(result.times, success, back - 10)).toBeCloseTo(0.5, 2);
+    expect(at(result.times, success, back + 30)).toBeGreaterThan(0.99);
+    expect(result.marks.filter((m) => m.kind === "restart")).toEqual([]);
+    // The surviving region's store copy is promoted before it takes writes.
+    const db = result.components.get("db")?.faults;
+    expect(db?.[result.times.indexOf(40)]).toEqual([
+      "standby copy being promoted; writes fail, reads continue",
+    ]);
+  });
+
+  it("fails a request once, at the first way into the region", () => {
+    // Clients also call the API directly, but the ALB in front of it is the way in for most.
+    const attempt = applyCommand(cacheAsideAttempt(), "addConnection", {
+      from: "client",
+      to: "api",
+    }).attempt;
+    const component = (id: string) => {
+      const c = attempt.architecture.components.find((x) => x.id === id);
+      if (!c) throw new Error(id);
+      return c;
+    };
+
+    expect(takesClients(component("lb"), attempt, catalog)).toBe(true);
+    expect(takesClients(component("api"), attempt, catalog)).toBe(false);
+  });
+
+  it("keeps the half of an autoscaled fleet that ran in the other region", () => {
+    const scaled = applyCommand(cacheAsideAttempt(), "setAutoscale", {
+      id: "api",
+      autoscale: { max: 30, targetUtilization: 0.2 },
+    }).attempt;
+    const timeline = TimelineSchema.parse({
+      id: "t",
+      label: "Region lost",
+      durationSec: 120,
+      stepSec: 10,
+      rates: { redirect: 6000 },
+      events: [{ kind: "fault", at: 30, fault: { kind: "region-down" } }],
+    });
+    const result = simulateTimeline(twoRegions, timeline, context(active(scaled)));
+    const instances = result.components.get("api")?.instances;
+
+    expect(at(result.times, instances, 30)).toBeCloseTo(at(result.times, instances, 20) / 2, 0);
   });
 });
