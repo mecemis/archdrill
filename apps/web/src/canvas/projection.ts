@@ -68,8 +68,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
 export interface ConnectionEdgeData extends Record<string, unknown> {
   /** Nothing waits on it: messages published without waiting, or delivered by a queue. */
   readonly messaging: boolean;
-  /** Numbers of the active flow's steps that use this connection. */
-  readonly steps: readonly number[];
+  /** The active flow's steps that use this connection, with their numbers. */
+  readonly steps: readonly { readonly number: number; readonly stepId: string }[];
   readonly ingress: boolean;
   readonly emphasis: Emphasis;
   readonly hasError: boolean;
@@ -244,14 +244,16 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
   const { attempt, operation, highlight, selection } = input;
   const flow = operation?.flow;
   const numbers = stepNumbers(flow, attempt);
-  const usage = new Map<string, number[]>();
+  const usage = new Map<string, { number: number; stepId: string }[]>();
   for (const [stepId, number] of numbers) {
     const step = flow?.steps[stepId];
     if (step?.type !== "call" || !flow) continue;
     const connection = attempt.architecture.connections.find(
       (c) => c.from === flow.handler && c.to === step.target,
     );
-    if (connection) usage.set(connection.id, [...(usage.get(connection.id) ?? []), number]);
+    if (connection) {
+      usage.set(connection.id, [...(usage.get(connection.id) ?? []), { number, stepId }]);
+    }
   }
   const ingress = new Set(operation?.ingress?.connections ?? []);
   const erroneous = new Set(

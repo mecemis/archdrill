@@ -30,7 +30,7 @@ function inputFor(
 describe("projection", () => {
   it("numbers the active flow's steps on the connections they use", () => {
     const edges = projectEdges(inputFor());
-    const steps = Object.fromEntries(edges.map((e) => [e.id, e.data?.steps]));
+    const steps = Object.fromEntries(edges.map((e) => [e.id, e.data?.steps.map((s) => s.number)]));
 
     expect(steps).toEqual({
       "client--lb": [],
@@ -38,6 +38,8 @@ describe("projection", () => {
       "api--redis": [1, 5],
       "api--db": [3],
     });
+    // Each number points at its step, so clicking it can show the step.
+    expect(edges.find((e) => e.id === "api--db")?.data?.steps[0]?.stepId).toBe("read");
   });
 
   it("marks the ingress route and the handler", () => {

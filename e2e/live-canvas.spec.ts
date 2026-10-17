@@ -223,3 +223,43 @@ test("fits every instance's pools into the database, or puts a proxy in front", 
     page.locator('.react-flow__node[data-id="links-db"]').getByText("proxy"),
   ).toBeVisible();
 });
+
+test("adds steps on the canvas, carrying on behind each one", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("redirect");
+
+  await page.getByRole("button", { name: "Add steps on the canvas" }).click();
+  const bar = page.getByTestId("cursor-bar");
+  await expect(bar).toContainText("Redirect: adding before responding");
+
+  const queue = page.locator('.react-flow__node[data-id="link-events"]');
+  await expect(queue.locator(".border-dashed")).toHaveCount(1);
+  await queue.click();
+  const menu = page.getByTestId("step-menu");
+  await expect(menu).toBeVisible();
+  // Escape closes the menu first, and keeps adding.
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(bar).toBeVisible();
+  await queue.click();
+  await expect(menu).toContainText("Not connected yet");
+  await menu
+    .getByRole("button", { name: /^Publish/ })
+    .first()
+    .click();
+
+  await expect(page.getByText("Redirect API is now connected to Link events.")).toBeVisible();
+  await expect(menu).toHaveCount(0);
+  // The cursor moved behind the new step, still armed for the next click.
+  await expect(bar).toContainText("Link events · publish");
+  await bar.getByRole("button", { name: "Done" }).click();
+  await expect(bar).toHaveCount(0);
+
+  // The new step's number on the canvas brings it into view in the list.
+  await page
+    .getByRole("button", { name: /^Show step \d+ in the flow$/ })
+    .last()
+    .click();
+  await expect(page.locator("[data-focused]")).toContainText("Publish");
+});

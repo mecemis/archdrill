@@ -23,6 +23,7 @@ import { useCanvasLoad } from "../state/timeline-view";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
 import { IconButton } from "../ui/primitives";
+import { AddStepsButton, CursorBar, StepMenu } from "./CanvasSteps";
 import { ComponentNode } from "./ComponentNode";
 import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
 import { findingsByComponent } from "./node-findings";
@@ -195,6 +196,15 @@ function CanvasInner() {
       onNodeDragStop={onNodeDragStop}
       onConnect={onConnect}
       onNodeClick={onNodeClick}
+      onKeyDown={(event) => {
+        // Enter on a focused component opens its steps, as a click does.
+        if (event.key !== "Enter" || !(event.target instanceof HTMLElement)) return;
+        const id = event.target.closest(".react-flow__node")?.getAttribute("data-id");
+        const node = id ? nodes.find((n) => n.id === id) : undefined;
+        if (!node) return;
+        event.preventDefault();
+        onNodeClick(event, node);
+      }}
       onEdgeClick={(_e, edge: Edge) => useUi.getState().select({ type: "connection", id: edge.id })}
       onPaneClick={() => {
         useUi.getState().select(null);
@@ -215,8 +225,9 @@ function CanvasInner() {
       <EdgeMarkers />
       <Background gap={22} size={1.4} />
       <Controls showInteractive={false} position="bottom-left" />
-      {metrics && (
-        <Panel position="top-right">
+      <Panel position="top-right" className="flex gap-1.5">
+        <AddStepsButton />
+        {metrics && (
           <IconButton
             active={animateTraffic}
             aria-pressed={animateTraffic}
@@ -229,8 +240,10 @@ function CanvasInner() {
           >
             <Activity className="h-4 w-4" />
           </IconButton>
-        </Panel>
-      )}
+        )}
+      </Panel>
+      <StepMenu />
+      <CursorBar />
       {guideOpen && (
         <Panel position="bottom-right" className="!mb-6">
           <GuideCard />

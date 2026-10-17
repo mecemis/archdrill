@@ -10,11 +10,33 @@ export type Attach =
   | { readonly to: "root" }
   | { readonly to: "outcome"; readonly stepId: string; readonly outcome: string };
 
+/** Where in a flow a step goes: first, or behind outcomes of a step. */
+export type CursorPosition =
+  | { readonly kind: "root" }
+  | { readonly kind: "after"; readonly stepId: string; readonly outcomes: readonly string[] };
+
+/** What a new step does there: go at the position, or in front of another step. */
+export type CursorMode =
+  | { readonly kind: "append"; readonly at: CursorPosition }
+  | { readonly kind: "insert"; readonly at: CursorPosition; readonly before: string };
+
 /** Where the next recorded step goes. `before` inserts in front of an existing step. */
 export interface Slot {
   readonly operation: string;
   readonly attach: Attach;
   readonly before?: string;
+  /** The whole position, for adding from the canvas; derived from `attach` when absent. */
+  readonly mode?: CursorMode;
+  /** Who armed it: a picker in the Flow panel, or adding on the canvas. */
+  readonly source?: "panel" | "canvas";
+}
+
+/** A step to bring into view in the Flow panel, e.g. after clicking its number on the canvas. */
+export interface FocusedStep {
+  readonly operation: string;
+  readonly stepId: string;
+  /** Changes on every request, so the same step can be focused twice. */
+  readonly at: number;
 }
 
 /** Canvas and panel elements to emphasise; everything else is dimmed while active. */
@@ -39,6 +61,7 @@ interface UiState {
   readonly slot: Slot | null;
   /** Component clicked on the canvas while a slot was armed. */
   readonly canvasTarget: string | null;
+  readonly focusedStep: FocusedStep | null;
   readonly hover: Highlight | null;
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
@@ -59,6 +82,8 @@ interface UiState {
   select: (selection: Selection) => void;
   armSlot: (slot: Slot | null) => void;
   setCanvasTarget: (componentId: string | null) => void;
+  /** Shows a step in the Flow panel: opens the panel on Flow and scrolls to it. */
+  focusStep: (operation: string, stepId: string) => void;
   setHover: (highlight: Highlight | null) => void;
   togglePin: (key: string, highlight: Highlight) => void;
   clearPin: () => void;
@@ -81,6 +106,7 @@ export const useUi = create<UiState>((set, get) => ({
   selection: null,
   slot: null,
   canvasTarget: null,
+  focusedStep: null,
   hover: null,
   pinned: null,
   resultsTab: "findings",
@@ -107,6 +133,13 @@ export const useUi = create<UiState>((set, get) => ({
   select: (selection) => set({ selection }),
   armSlot: (slot) => set({ slot, canvasTarget: null }),
   setCanvasTarget: (canvasTarget) => set({ canvasTarget }),
+  focusStep: (operation, stepId) =>
+    set({
+      operation,
+      rightTab: "flow",
+      rightOpen: true,
+      focusedStep: { operation, stepId, at: Date.now() },
+    }),
   setHover: (hover) => set({ hover }),
   togglePin: (key, highlight) =>
     set({ pinned: get().pinned?.key === key ? null : { key, highlight } }),
