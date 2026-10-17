@@ -6,6 +6,7 @@ import type {
   TimelineEvent,
   Workload,
 } from "@archdrill/model";
+import type { CallPathStep } from "../paths/types";
 import type { ComponentFault } from "./faults";
 import { resolveFaultHits, resolveFaults, selectComponents } from "./faults";
 import {
@@ -21,7 +22,7 @@ import {
   warmCaches,
 } from "./model";
 import { emptyLoopState } from "./propagate";
-import { standbyCosts } from "./regions";
+import { activeActive, crossRegionShare, standbyCosts, withActiveStandby } from "./regions";
 import {
   buildCacheSpecs,
   buildProfiles,
@@ -207,14 +208,28 @@ export function simulateTimeline(
   timeline: Timeline,
   ctx: SimulationContext,
 ): TimelineMetrics {
-  const windows = faultWindows(timeline, ctx);
+  // While both regions take traffic, the standby copies serve too; after a region is lost, one region's do.
+  const bothServe = activeActive(workload, ctx.attempt);
+  const doubled = bothServe
+    ? { ...ctx, attempt: withActiveStandby(ctx.attempt, ctx.catalog) }
+    : ctx;
+  // A timeline loses the region at most once, for good (the schema rejects more, or an end).
+  const lostAt = timeline.events.find(
+    (e) => e.kind === "fault" && e.fault.kind === "region-down",
+  )?.at;
+  const twoRegionsAt = (t: number) => bothServe && (lostAt === undefined || t < lostAt);
+  const designAt = (t: number) => (twoRegionsAt(t) ? doubled : ctx);
+  const windows = faultWindows(timeline, ctx, bothServe);
   const segments = new Map<string, Segment>();
-  const segmentFor = (active: readonly FaultWindow[]): Segment => {
-    const key = active.map((w) => windows.indexOf(w)).join(",");
+  const segmentFor = (active: readonly FaultWindow[], design: SimulationContext): Segment => {
+    const key = `${design === doubled ? "2" : "1"}:${active.map((w) => windows.indexOf(w)).join(",")}`;
     const known = segments.get(key);
     if (known) return known;
     const faults = resolveFaultHits(active, ctx.catalog);
-    const segment = { faults, caches: buildCacheSpecs(workload, buildProfiles(ctx, faults), ctx) };
+    const segment = {
+      faults,
+      caches: buildCacheSpecs(workload, buildProfiles(design, faults), design),
+    };
     segments.set(key, segment);
     return segment;
   };
@@ -227,12 +242,12 @@ export function simulateTimeline(
     string,
     { routes: Map<string, ZoneRoute>; hops: Map<string, RouteHops> }
   >();
-  const routesFor = (replicas: ReadonlyMap<string, number>) => {
+  const routesFor = (replicas: ReadonlyMap<string, number>, design: SimulationContext) => {
     const running = new Map([...replicas].map(([id, r]) => [id, wholeInstances(r)]));
-    const key = [...running].map(([id, n]) => `${id}:${n}`).join(",");
+    const key = `${design === doubled ? "2" : "1"}:${[...running].map(([id, n]) => `${id}:${n}`).join(",")}`;
     const known = routesByCount.get(key);
     if (known) return known;
-    const routes = zoneRoutes(ctx.attempt, ctx.catalog, running);
+    const routes = zoneRoutes(design.attempt, ctx.catalog, running);
     const entry = { routes, hops: routeHops(routes) };
     routesByCount.set(key, entry);
     return entry;
@@ -241,13 +256,13 @@ export function simulateTimeline(
   const times = stepTimes(timeline);
   // One state for the whole run: each step starts where the previous one ended.
   const loop = emptyLoopState();
-  for (const c of ctx.attempt.architecture.components) {
+  for (const c of designAt(0).attempt.architecture.components) {
     if (c.autoscale) loop.replicas.set(c.id, c.replicas);
   }
-  const scaler = autoscalers(ctx);
+  const scaler = autoscalers(designAt(0));
   const breakerState = breakers(ctx);
-  const restarts = cacheRestarts(timeline, ctx);
-  const takeovers = regionTakeovers(timeline, ctx);
+  const restarts = cacheRestarts(timeline, ctx, bothServe);
+  const takeovers = regionTakeovers(timeline, ctx, bothServe);
   const backlog = backlogs();
   // Latency of the stores behind caches, which sets how long a cold key's first miss takes.
   let missLatencyMs: (entity: string) => number = () => 0;
@@ -291,14 +306,16 @@ export function simulateTimeline(
   for (const event of timeline.events) {
     if (event.kind !== "fault" || event.fault.kind !== "region-down") continue;
     const regional = windows.filter((w) => w.event === event);
-    const redirected = regional.find((w) => w.regionPhase === "redirecting");
+    const redirected = regional.find(
+      (w) => w.regionPhase === "redirecting" || w.regionPhase === "half-redirecting",
+    );
     if (redirected?.until !== undefined && redirected.until <= timeline.durationSec) {
       marks.push({
         at: redirected.until,
         kind: "failed-over",
         label: "Clients reach the standby region",
         componentIds: regional
-          .filter((w) => w.regionPhase === "redirecting")
+          .filter((w) => w.regionPhase === "redirecting" || w.regionPhase === "half-redirecting")
           .map((w) => w.component.id),
       });
     }
@@ -330,11 +347,13 @@ export function simulateTimeline(
 
   times.forEach((t, step) => {
     marks.push(...restarts.advance(t));
-    scaler.takeOver(takeovers.due(t), loop);
+    const design = designAt(t);
+    scaler.serve(design.attempt);
+    scaler.takeOver(takeovers.due(t), loop, bothServe);
     if (step > 0) marks.push(...scaler.launchReady(t, loop));
     breakerState.hold(t, loop);
     const active = windows.filter((w) => activeAt(w, t));
-    const segment = segmentFor(active);
+    const segment = segmentFor(active, design);
     const rates = ratesAt(timeline, t);
     const environment: Environment = {
       id: timeline.id,
@@ -347,7 +366,7 @@ export function simulateTimeline(
     const base = buildFixtures(
       workload,
       environment,
-      ctx,
+      design,
       segment.faults,
       segment.caches,
       occupancy,
@@ -382,7 +401,7 @@ export function simulateTimeline(
     const summary =
       previous && settledAlready && previous.inputs === inputs
         ? previous.summary
-        : summarizeStep(model, fixtures);
+        : summarizeStep(model, fixtures, design);
     previous = { inputs, summary };
     record(t, step, summary, drains);
 
@@ -404,11 +423,13 @@ export function simulateTimeline(
     return (entity: string) => byEntity.get(entity) ?? 0;
   }
 
-  function summarizeStep(model: Model, fixtures: Fixtures): StepSummary {
+  function summarizeStep(model: Model, fixtures: Fixtures, design: SimulationContext): StepSummary {
+    // Both regions serve this step: standby copies are billed as the component's own, and calls may cross.
+    const serving = bothServe && design === doubled;
     const paths = new Map<string, PathShare[]>();
     const profiles = profilesOf(model, fixtures, true);
     const flow = propagateModel(model, fixtures);
-    const { routes, hops } = routesFor(model.loop.replicas);
+    const { routes, hops } = routesFor(model.loop.replicas, design);
     const metrics = summarizeComponents(
       profiles,
       flow,
@@ -417,7 +438,7 @@ export function simulateTimeline(
       fixtures.faults,
       { ...ctx.problem.client, held: fixtures.clientConnections },
       crossZoneCostByCaller(summarizeZoneTraffic(flow.transfer, routes), ctx.attempt),
-      standbyCosts(ctx.attempt, ctx.catalog, stored, flow),
+      standbyCosts(ctx.attempt, ctx.catalog, stored, flow, serving),
     );
     const summary = summarizeOperations(
       fixtures.operations,
@@ -427,6 +448,10 @@ export function simulateTimeline(
       {
         components: metrics,
         hops,
+        ...(serving && {
+          crossRegion: (callStep: CallPathStep) =>
+            crossRegionShare(callStep, design.attempt, ctx.catalog),
+        }),
         callFor: model.calls.get,
         replicaAck,
         timeoutOf: (callStep) =>

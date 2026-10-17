@@ -214,6 +214,9 @@ function regionDown(
   if (phase === "redirecting") {
     return fail(1, hangs, [`${how} until DNS sends clients to the standby region`]);
   }
+  if (phase === "half-redirecting") {
+    return fail(0.5, hangs, ["the lost region's clients fail until DNS sends them here"]);
+  }
   if (phase === "promoting") {
     return {
       ...NO_FAULT,

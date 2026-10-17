@@ -1,4 +1,12 @@
-import { type Attempt, type CatalogIndex, type Component, runsInRegion } from "@archdrill/model";
+import {
+  ACTIONS,
+  type Attempt,
+  type CatalogIndex,
+  type Component,
+  runsInRegion,
+  type Workload,
+} from "@archdrill/model";
+import type { CallPathStep } from "../paths/types";
 import { HOURS_PER_MONTH, SECONDS_PER_MONTH } from "./capacity";
 import type { Load } from "./summary";
 
@@ -18,6 +26,8 @@ export const DNS_TTL_SEC = 60;
 export const REGION_DNS_FAILOVER_SEC = HEALTH_CHECK_DETECTION_SEC + DNS_TTL_SEC;
 /** USD per GB replicated to the standby region: us-east-1 to us-west-2, billed at the sender. */
 export const CROSS_REGION_USD_PER_GB = 0.02;
+/** Round trip between us-east-1 and us-west-2, as third-party measurements give it. */
+export const CROSS_REGION_RTT_MS = 68;
 
 const BYTES_PER_GB = 1e9;
 
@@ -72,7 +82,27 @@ export function standbyStartsCold(
  * standby region: clients still sent to the lost region, or a store's copy
  * still being promoted. Without a phase, the failover has settled.
  */
-export type RegionPhase = "redirecting" | "promoting";
+export type RegionPhase = "redirecting" | "half-redirecting" | "promoting";
+
+/**
+ * Whether the component is a way into the region: clients call it, and
+ * nothing else in the region does. A component that both clients and
+ * another way in call fails only once for a request, at the first.
+ */
+export function takesClients(
+  component: Component,
+  attempt: Attempt,
+  catalog: CatalogIndex,
+): boolean {
+  const callers = attempt.architecture.connections
+    .filter((c) => c.to === component.id)
+    .map((c) => attempt.architecture.components.find((x) => x.id === c.from))
+    .filter((c): c is Component => c !== undefined);
+  const fromClients = callers.some((c) =>
+    catalog.capabilities(c.kind, c.flavor).has("traffic-source"),
+  );
+  return fromClients && !callers.some((c) => inRegion(c, catalog));
+}
 
 /**
  * What losing the primary region does to a component once the failover has
@@ -108,6 +138,8 @@ export function standbyCosts(
     readonly batchedItems: ReadonlyMap<string, Load>;
     readonly transfer: ReadonlyMap<string, Load>;
   },
+  /** Both regions take traffic: a placed copy is billed with its instances already. */
+  active = false,
 ): Map<string, number> {
   const written = new Map<string, number>();
   for (const connection of attempt.architecture.connections) {
@@ -117,7 +149,7 @@ export function standbyCosts(
   const result = new Map<string, number>();
   for (const component of attempt.architecture.components) {
     if (!hasStandby(component, catalog)) continue;
-    const cost = standbyCost(component, catalog, {
+    const cost = standbyCost(component, catalog, active, {
       storedGb: stored.get(component.id) ?? 0,
       writes:
         (flow.loads.get(component.id)?.write ?? 0) +
@@ -132,24 +164,97 @@ export function standbyCosts(
 function standbyCost(
   component: Component,
   catalog: CatalogIndex,
+  active: boolean,
   use: { readonly storedGb: number; readonly writes: number; readonly writtenBytesPerSec: number },
 ): number {
   const kind = catalog.kind(component.kind);
   const flavor = catalog.flavor(component.kind, component.flavor);
   const size = flavor?.sizes[component.size ?? flavor.defaultSize ?? ""];
   if (!kind || !flavor || !size) return 0;
-  // The standby copy is placed like the primary one, at its minimum instances.
-  const replicas = kind.replicable && !flavor.managedRedundancy ? component.replicas : 1;
+  // The standby copy is placed like the primary one, at its minimum instances;
+  // while it takes traffic, its instances and their copies of the data are
+  // billed as the component's own.
+  const placed = kind.replicable && !flavor.managedRedundancy;
+  const billedAlready = active && placed;
+  const replicas = placed ? component.replicas : 1;
   const shards = kind.shardable ? component.shards : 1;
-  const instances = size.costPerHour * replicas * shards * HOURS_PER_MONTH;
-  const storage = use.storedGb * replicas * (flavor.storagePricePerGbMonth ?? 0);
+  const instances = billedAlready ? 0 : size.costPerHour * replicas * shards * HOURS_PER_MONTH;
+  const storage = billedAlready
+    ? 0
+    : use.storedGb * replicas * (flavor.storagePricePerGbMonth ?? 0);
   // A managed store applies every write in both regions, and bills each.
   const writes = kind.holdsData
     ? (use.writes * (flavor.requestCost?.writePerMillion ?? 0) * SECONDS_PER_MONTH) / 1e6
     : 0;
-  const replicated = kind.holdsData || flavor.crossRegionReplication === true;
+  // Stores replicate; a cache is kept filled across regions only for a standby that waits.
+  const replicated = kind.holdsData || (flavor.crossRegionReplication === true && !active);
   const transfer = replicated
     ? ((use.writtenBytesPerSec * SECONDS_PER_MONTH) / BYTES_PER_GB) * CROSS_REGION_USD_PER_GB
     : 0;
   return instances + storage + writes + transfer;
+}
+
+/** Whether the design has decided that both regions take traffic (active-active). */
+export function activeActive(workload: Workload, attempt: Attempt): boolean {
+  const decision = workload.regionMode?.decision;
+  return decision !== undefined && attempt.decisions[decision] === "active-active";
+}
+
+/**
+ * The design while both regions take traffic: a component with a standby
+ * copy runs both, so a fleet has twice the instances (and twice the
+ * autoscaling range) and a store twice the replicas serving reads. A store
+ * with a primary keeps one primary per shard, so its writes do not double.
+ */
+export function withActiveStandby(attempt: Attempt, catalog: CatalogIndex): Attempt {
+  return {
+    ...attempt,
+    architecture: {
+      ...attempt.architecture,
+      components: attempt.architecture.components.map((c) => {
+        const kind = catalog.kind(c.kind);
+        const managed = catalog.flavor(c.kind, c.flavor)?.managedRedundancy ?? false;
+        if (!hasStandby(c, catalog) || !kind?.replicable || managed) return c;
+        return {
+          ...c,
+          replicas: c.replicas * 2,
+          ...(c.autoscale && { autoscale: { ...c.autoscale, max: c.autoscale.max * 2 } }),
+        };
+      }),
+    },
+  };
+}
+
+/**
+ * A store that takes writes in one region only, at its primary: its writes
+ * from the other region cross. Caches are left out: while both regions take
+ * traffic, each region's cache is filled by its own.
+ */
+export function singleWriter(component: Component, catalog: CatalogIndex): boolean {
+  const kind = catalog.kind(component.kind);
+  const flavor = catalog.flavor(component.kind, component.flavor);
+  // The catalog's managed stores (DynamoDB) take writes in every region; a
+  // managed store with one writer (an Aurora global database) would need a flag.
+  if (!kind || !flavor || flavor.managedRedundancy) return false;
+  return kind.holdsData && kind.writeScaling === "primaries" && !kind.quorum;
+}
+
+/**
+ * Share of a call's requests that cross regions while both take traffic:
+ * half of every call a two-region caller makes to a component in the
+ * primary region only, or to a single writer's primary (writes, consistent
+ * reads, and calls sent to the home region).
+ */
+export function crossRegionShare(
+  step: CallPathStep,
+  attempt: Attempt,
+  catalog: CatalogIndex,
+): number {
+  const connection = attempt.architecture.connections.find((c) => c.id === step.connectionId);
+  const caller = attempt.architecture.components.find((c) => c.id === connection?.from);
+  const target = attempt.architecture.components.find((c) => c.id === step.target);
+  if (!caller || !target || !hasStandby(caller, catalog) || !inRegion(target, catalog)) return 0;
+  if (!hasStandby(target, catalog) || step.homeRegion) return 0.5;
+  const write = ACTIONS[step.action].effect !== "read";
+  return singleWriter(target, catalog) && (write || step.consistent) ? 0.5 : 0;
 }

@@ -10,6 +10,7 @@ export type TunableValues = Partial<
     | "batchSize"
     | "coalesce"
     | "consistent"
+    | "homeRegion"
     | "aggregateSec"
     | "counterShards"
     | "fireAndForget"
@@ -53,6 +54,7 @@ export function applicableParams(
     ...(takes("ttlSec") && values.ttlSec !== undefined ? { ttlSec: values.ttlSec } : {}),
     ...(takes("coalesce") && values.coalesce ? { coalesce: true } : {}),
     ...(takes("consistent") && values.consistent ? { consistent: true } : {}),
+    ...(takes("homeRegion") && values.homeRegion ? { homeRegion: true } : {}),
     ...(takes("fireAndForget") && values.fireAndForget ? { fireAndForget: true } : {}),
     ...(takes("bufferSize") && values.fireAndForget && values.bufferSize !== undefined
       ? { bufferSize: values.bufferSize }
@@ -139,6 +141,13 @@ export function StepParams({
           label="Coalesce concurrent reads of a key (single-flight)"
           checked={values.coalesce === true}
           onChange={(coalesce) => set({ coalesce })}
+        />
+      )}
+      {takes("homeRegion") && (
+        <Check
+          label="Write in the home region (when both regions take traffic, checks conditions in one place)"
+          checked={values.homeRegion === true}
+          onChange={(homeRegion) => set({ homeRegion })}
         />
       )}
       {takes("consistent") && (
@@ -249,6 +258,7 @@ const TUNABLE: readonly (keyof TunableValues)[] = [
   "batchSize",
   "coalesce",
   "consistent",
+  "homeRegion",
   "aggregateSec",
   "counterShards",
   "fireAndForget",

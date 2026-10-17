@@ -497,6 +497,15 @@ function validateCallStep(
       ),
     );
   }
+  if (step.homeRegion !== undefined && !actionTakesParam(step.action, "homeRegion")) {
+    issues.push(
+      error(
+        "step-unexpected-param",
+        `Step ${stepId} (${step.action}) cannot be sent to the home region; only store writes can.`,
+        loc,
+      ),
+    );
+  }
   if (step.batchSize !== undefined && !actionTakesParam(step.action, "batchSize")) {
     issues.push(
       error(

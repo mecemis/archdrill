@@ -1,6 +1,12 @@
 import type { Component, Timeline, TimelineEvent } from "@archdrill/model";
 import { type FaultHit, failoverSecOf, failsOverWithZone, faultedComponents } from "./faults";
-import { hasStandby, REGION_DNS_FAILOVER_SEC, standbyWritesAt } from "./regions";
+import {
+  hasStandby,
+  REGION_DNS_FAILOVER_SEC,
+  singleWriter,
+  standbyWritesAt,
+  takesClients,
+} from "./regions";
 import type { SimulationContext } from "./setup";
 
 export type FaultEvent = Extract<TimelineEvent, { kind: "fault" }>;
@@ -24,12 +30,21 @@ export interface FaultWindow extends FaultHit {
  * standby region, where stores take writes once promoted. Other faults last
  * as the event says, or to the end.
  */
-export function faultWindows(timeline: Timeline, ctx: SimulationContext): FaultWindow[] {
+export function faultWindows(
+  timeline: Timeline,
+  ctx: SimulationContext,
+  /** Both regions take traffic until one is lost. */
+  active = false,
+): FaultWindow[] {
   return timeline.events
     .filter((e): e is FaultEvent => e.kind === "fault")
     .flatMap((event) =>
       faultedComponents(event.fault, ctx.attempt, ctx.catalog).flatMap((component) => {
-        if (event.fault.kind === "region-down") return regionWindows(event, component, ctx);
+        if (event.fault.kind === "region-down") {
+          return active
+            ? activeRegionWindows(event, component, ctx)
+            : regionWindows(event, component, ctx);
+        }
         // A lost zone only fails over the stores whose primary it held.
         const failsOver =
           event.fault.kind !== "zone-down" || failsOverWithZone(component, ctx.catalog);
@@ -84,6 +99,34 @@ function regionWindows(
     { ...hit, from: writable, until: undefined },
   ];
   return phases.filter((w) => w.until === undefined || w.until > w.from);
+}
+
+/**
+ * A lost region while both took traffic: the other region already serves
+ * its own clients. Until DNS moves the lost region's clients, half of the
+ * requests to the way in fail; a store with one primary takes no writes
+ * from either region until its copy is promoted.
+ */
+function activeRegionWindows(
+  event: FaultEvent,
+  component: Component,
+  ctx: SimulationContext,
+): FaultWindow[] {
+  const hit = { event, fault: event.fault, component, failoverEnds: false };
+  if (!hasStandby(component, ctx.catalog)) {
+    return [{ ...hit, from: event.at, until: undefined }];
+  }
+  const phases: FaultWindow[] = [];
+  if (takesClients(component, ctx.attempt, ctx.catalog)) {
+    const until = event.at + REGION_DNS_FAILOVER_SEC;
+    phases.push({ ...hit, regionPhase: "half-redirecting", from: event.at, until });
+  }
+  if (singleWriter(component, ctx.catalog)) {
+    const until = event.at + standbyWritesAt(component, ctx.catalog);
+    phases.push({ ...hit, regionPhase: "promoting", from: event.at, until });
+  }
+  const settled = Math.max(event.at, ...phases.map((w) => w.until ?? event.at));
+  return [...phases, { ...hit, from: settled, until: undefined }];
 }
 
 export function activeAt(window: FaultWindow, t: number): boolean {

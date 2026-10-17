@@ -9,6 +9,7 @@ import publishAfterCommit from "../problems/payments/corpus/golden/publish-after
 import redisSlidingCounter from "../problems/rate-limiter/corpus/golden/redis-sliding-counter.yaml";
 import redisTokenBucket from "../problems/rate-limiter/corpus/golden/redis-token-bucket.yaml";
 import dynamodbDirect from "../problems/url-shortener/corpus/golden/dynamodb-direct.yaml";
+import dynamodbActiveActive from "../problems/url-shortener/corpus/golden/dynamodb-redis-active-active.yaml";
 import dynamodbRedis from "../problems/url-shortener/corpus/golden/dynamodb-redis-cache-aside.yaml";
 import dynamodbTwoRegions from "../problems/url-shortener/corpus/golden/dynamodb-redis-two-regions.yaml";
 import mysqlMemcached from "../problems/url-shortener/corpus/golden/mysql-memcached-cache-aside.yaml";
@@ -47,6 +48,7 @@ export const goldenDesigns: Readonly<Record<string, readonly Golden[]>> = {
     postgresFixedFleet,
     postgresTwoRegions,
     dynamodbTwoRegions,
+    dynamodbActiveActive,
   ].map((g) => GoldenSchema.parse(g)),
   "rate-limiter": [redisSlidingCounter, redisTokenBucket].map((g) => GoldenSchema.parse(g)),
   "news-feed": [hybridFanOut, pushPostgres].map((g) => GoldenSchema.parse(g)),

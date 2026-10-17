@@ -35,6 +35,7 @@ workload:
   keyspace:
     Link: { alphabet: 62, lengthDecision: code-length }
   replication: { decision: replication-mode }
+  regionMode: { decision: region-mode }
   environments:
     - id: avg
       label: Average
@@ -228,6 +229,28 @@ checks:
     fix: >-
       Start the promotion as soon as health checks declare the region lost,
       or use a store that takes writes in both regions.
+
+  - id: codes-unique-across-regions
+    use: unique-across-regions
+    title: Codes stay unique when both regions take creates
+    dimension: durability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-3, NFR-4]
+    params: { operation: create-link, entity: Link, decision: region-mode }
+    why: >-
+      With both regions taking traffic, a DynamoDB global table takes writes
+      in each region and replicates them about a second later. Its
+      conditional insert only checks its own region's copy, so two people
+      who claim the same alias in different regions both get 201, and the
+      table keeps the last write: one of them now redirects to the other's
+      URL. Only an active-active design can do this.
+    fix: >-
+      Check codes in one place: send creates to the home region (Write in
+      the home region on the insert), at the price of a cross-region round
+      trip for the other region's creates, or keep the links in a store
+      with one primary.
 
   - id: within-budget
     use: cost-within-budget

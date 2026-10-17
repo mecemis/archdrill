@@ -305,6 +305,12 @@ describe("validateAttempt", () => {
     expect(codes(alone)).toContain("step-outbox-without-transaction");
   });
 
+  it("sends only store writes to the home region", () => {
+    const cache = mutate("updateStep", { operation: "redirect", stepId: "get", homeRegion: true });
+
+    expect(codes(cache)).toContain("step-unexpected-param");
+  });
+
   it("accepts a consistent read only on a store read", () => {
     const cache = mutate("updateStep", { operation: "redirect", stepId: "get", consistent: true });
     const store = mutate("updateStep", { operation: "redirect", stepId: "read", consistent: true });

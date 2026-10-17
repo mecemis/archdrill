@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { stepMenu } from "./flow";
 import { importGolden } from "./golden";
 
 test("resizes panels from the keyboard and the mouse, and remembers the sizes", async ({
@@ -122,6 +123,26 @@ test("keeps a standby in a second region, and shows what losing the primary take
   await expect(
     page.getByText("Losing the primary region takes down", { exact: false }).first(),
   ).toBeVisible();
+});
+
+test("keeps codes unique when both regions take creates", async ({ page }) => {
+  await importGolden(page, "dynamodb-redis-active-active");
+  await page.getByRole("button", { name: /S9 / }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("create-link");
+
+  await stepMenu(page, "home region");
+  await page.getByRole("button", { name: /^Settings/ }).click();
+  const settings = page.getByTestId("step-settings");
+  await settings.getByLabel(/Write in the home region/).uncheck();
+  await settings.getByRole("button", { name: "Apply" }).click();
+
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+  await expect(page.getByText("Codes stay unique when both regions take creates")).toBeVisible();
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
 });
 
 test("keeps calls in their zone, and shows what crossing zones costs", async ({ page }) => {

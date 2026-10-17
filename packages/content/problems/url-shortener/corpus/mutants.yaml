@@ -661,6 +661,23 @@ mutants:
       scenario: s4-cache-outage
       fails: [no-cascade]
 
+  # Both regions taking creates (S9).
+  - id: active-active-local-creates
+    base: dynamodb-redis-active-active
+    description: >-
+      Both regions take creates, and each writes to its own replica of the
+      global table. The conditional insert checks only that replica, so two
+      people can claim the same alias in different regions at once, and the
+      table keeps the last write.
+    apply:
+      - updateStep: { operation: create-link, stepId: insert-alias, homeRegion: null }
+      - updateStep: { operation: create-link, stepId: insert, homeRegion: null }
+      - updateStep: { operation: create-link, stepId: insert-retry, homeRegion: null }
+    expect:
+      scenario: s9-region-loss
+      fails: [codes-unique-across-regions]
+      band: not-passing
+
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside

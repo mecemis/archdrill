@@ -73,6 +73,7 @@ export function enumeratePaths(
               event: step.event,
               ...(step.coalesce === undefined ? {} : { coalesce: step.coalesce }),
               ...(step.consistent === undefined ? {} : { consistent: step.consistent }),
+              ...(step.homeRegion === undefined ? {} : { homeRegion: step.homeRegion }),
               ...(step.aggregateSec === undefined ? {} : { aggregateSec: step.aggregateSec }),
               ...(step.counterShards === undefined ? {} : { counterShards: step.counterShards }),
               ...(step.fireAndForget === undefined ? {} : { fireAndForget: step.fireAndForget }),

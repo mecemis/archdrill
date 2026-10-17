@@ -54,6 +54,7 @@ Users submit long URLs and receive short codes. Visitors who open a short link a
 | `replication-mode` | async · semi-sync · sync | NFR-4 (RPO) vs NFR-1 (latency) |
 | `expired-status` | 404 · 410 | consistency with flow |
 | `code-reuse` | never · after-grace-period | S7: stale caches and bookmarks |
+| `region-mode` | active-passive · active-active | S9: recovery, cost, and unique codes across regions |
 
 ---
 
@@ -473,6 +474,16 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   The second copy of the links makes each cost about twice its single-region design, so neither passes S3's budget.
 - **Mutants (4):** the database, NGINX or Redis without a standby copy, and a single-region DynamoDB table.
 
+**As built (M23): both regions taking traffic** ([ADR 0018](../adr/0018-both-regions-taking-traffic.md)).
+- **The decision.** `region-mode` lets both regions serve their nearby users (active-active).
+- **The gate.** `codes-unique-across-regions`: a DynamoDB global table checks a conditional insert against its own region's copy and keeps the last write, so two people who claim the same alias in different regions within a second both get it. Creates must be checked in one place: written in the home region, or kept in a store with one primary.
+- **The golden.** `dynamodb-redis-active-active` sends creates to the home region:
+  - it costs $59,829 on an average day, against $60,499 for the warm standby;
+  - half the creates cross for 68 ms (p99 108 ms);
+  - when the region goes, half the requests fail until DNS moves its clients, instead of all of them;
+  - it still misses the `hot-standby` staff signal: when DNS moves the lost region's clients, the surviving half of each fleet has to scale up for the whole peak.
+- **Mutant (1):** creates that write in each region.
+
 ---
 
 ## Golden corpus (must pass)
@@ -505,6 +516,7 @@ Each golden design declares the scenario bands it is expected to achieve. CI enf
 | `postgres-sized-for-cache-loss` | random 8-character codes, one retry | Redis → Postgres sized for the full read peak (expected not to pass S3) |
 | `postgres-redis-two-regions` | as `postgres-redis-cache-aside` | the same, with a warm standby of every component in a second region (S9; expected not to pass S3) |
 | `dynamodb-redis-two-regions` | as `dynamodb-redis-cache-aside` | the same, with a DynamoDB global table and a warm standby of the rest (S9; expected not to pass S3) |
+| `dynamodb-redis-active-active` | as `dynamodb-redis-cache-aside`, written in the home region | the same, with both regions taking traffic (S9; expected not to pass S3) |
 
 ## Mutant expectations (excerpt)
 

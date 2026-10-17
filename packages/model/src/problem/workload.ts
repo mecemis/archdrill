@@ -376,6 +376,11 @@ export const WorkloadSchema = z.object({
    * `async`, `semi-sync` or `sync`. Waiting for replicas adds latency to writes.
    */
   replication: z.object({ decision: IdSchema }).optional(),
+  /**
+   * The decision that sets whether the standby region also takes traffic:
+   * `active-passive` (it waits) or `active-active` (both regions serve).
+   */
+  regionMode: z.object({ decision: IdSchema }).optional(),
   environments: z.array(EnvironmentSchema).min(1),
   /** How the design behaves over time; each runs separately from the environments. */
   timelines: z.array(TimelineSchema).default([]),
@@ -383,5 +388,8 @@ export const WorkloadSchema = z.object({
 
 /** Options a replication decision may offer. */
 export const REPLICATION_MODES = ["async", "semi-sync", "sync"] as const;
+/** Options a region-mode decision may offer. */
+export const REGION_MODES = ["active-passive", "active-active"] as const;
+export type RegionMode = (typeof REGION_MODES)[number];
 export type ReplicationMode = (typeof REPLICATION_MODES)[number];
 export type Workload = z.infer<typeof WorkloadSchema>;

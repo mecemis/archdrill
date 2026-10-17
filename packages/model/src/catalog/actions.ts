@@ -24,6 +24,7 @@ export type OptionalActionParam =
   | "batchSize"
   | "coalesce"
   | "consistent"
+  | "homeRegion"
   | "aggregateSec"
   | "counterShards"
   | "fireAndForget"
@@ -107,7 +108,7 @@ export const ACTIONS = {
     effect: "write",
     outcomes: ["ok", "error"],
     params: [],
-    optionalParams: ["aggregateSec", "batchSize", "each", "exactlyOnce", "ttlSec"],
+    optionalParams: ["aggregateSec", "batchSize", "each", "exactlyOnce", "homeRegion", "ttlSec"],
     description:
       "Writes the entity by key, overwriting whatever is there (like DynamoDB PutItem or an upsert). Two concurrent writers with the same key silently overwrite each other. With an aggregation window (in consumers), the handler sums what arrives for a key over the window and writes the window's total under the key and the window, once: writing it again writes the same total. With a batch size (in consumers), that many rows go in one call. With a TTL, a store that supports it deletes the entity when it expires.",
   },
@@ -117,7 +118,7 @@ export const ACTIONS = {
     effect: "conditional-write",
     outcomes: ["ok", "conflict", "error"],
     params: [],
-    optionalParams: ["ttlSec"],
+    optionalParams: ["homeRegion", "ttlSec"],
     description: "Atomic insert that fails with a conflict when the key already exists.",
     unsafeToRetry:
       "A timed-out insert may still have written the row. The retry then finds the key taken and reports a conflict for the caller's own write.",
@@ -127,7 +128,7 @@ export const ACTIONS = {
     capability: "durable-store",
     effect: "write",
     outcomes: ["ok", "notFound", "error"],
-    optionalParams: ["each"],
+    optionalParams: ["each", "homeRegion"],
     params: [],
     description: "Update an existing entity by key.",
   },

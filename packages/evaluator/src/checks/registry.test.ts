@@ -57,6 +57,35 @@ describe("validateScenarioConfig durability", () => {
   });
 });
 
+describe("validateScenarioConfig regions", () => {
+  it("requires the uniqueness check to read the workload's region-mode decision", () => {
+    const base = scenarioWithKeyspace("code-length", { Link: 1e9 });
+    const scenario = ScenarioSchema.parse({
+      ...base,
+      workload: { ...base.workload, regionMode: { decision: "replication-mode" } },
+      checks: [
+        ...base.checks,
+        {
+          id: "unique",
+          use: "unique-across-regions",
+          title: "Unique",
+          dimension: "correctness",
+          params: { operation: "create-link", entity: "Link", decision: "redirect-status" },
+          why: "w",
+          fix: "f",
+        },
+      ],
+    });
+    const issues = validateScenarioConfig(scenario, testProblem);
+
+    expect(issues.map((i) => i.checkId)).toContain("unique");
+    // The decision the workload names offers replication modes, not region modes.
+    expect(issues.map((i) => i.message)).toContainEqual(
+      expect.stringMatching(/must offer only active-passive, active-active/),
+    );
+  });
+});
+
 describe("validateScenarioConfig class shares", () => {
   it("rejects environment shares for unknown classes or that do not add up", () => {
     const base = scenarioWithKeyspace("code-length", { Link: 1e9 });
