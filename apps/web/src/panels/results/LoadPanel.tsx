@@ -5,13 +5,15 @@ import { activePack } from "../../state/content";
 import { useScenarioLoad } from "../../state/evaluation";
 import { useAttemptStore } from "../../state/store";
 import { EMPTY_HIGHLIGHT, useUi } from "../../state/ui-store";
+import { useWhatIf } from "../../state/what-if";
+import { factorLabel } from "../../state/what-if-compute";
 import { compact, milliseconds, percent, usd, utilizationTone } from "../../ui/format";
 import { Tabs } from "../../ui/primitives";
 import { componentLabel } from "../flow/step-label";
 
 /** Simulated load, latency, cache behaviour and cost for the selected environment. */
 export function LoadPanel() {
-  const { environments, environmentId, metrics } = useScenarioLoad();
+  const { environments, environmentId, metrics, whatIf } = useScenarioLoad();
   const setEnvironment = useUi((s) => s.setEnvironment);
   if (environments.length === 0) {
     return <p className="p-3 text-sm text-fg-subtle">This scenario does not simulate load.</p>;
@@ -24,6 +26,22 @@ export function LoadPanel() {
         onChange={(id) => setEnvironment(id)}
         options={environments.map((e) => ({ id: e.id, label: e.label }))}
       />
+      {whatIf && (
+        <p
+          className="flex items-center gap-2 self-start rounded-lg border border-warn-line bg-warn-soft px-2.5 py-1 text-xs text-warn-fg"
+          data-testid="load-what-if"
+        >
+          What if: {factorLabel(whatIf.factor)} the traffic
+          {whatIf.updating ? " (simulating…)" : ""}. These numbers are not scored.
+          <button
+            type="button"
+            className="font-medium underline"
+            onClick={() => useWhatIf.getState().setFactor(1)}
+          >
+            Back to {factorLabel(1)}
+          </button>
+        </p>
+      )}
       {metrics ? (
         <LoadDetails metrics={metrics} />
       ) : (

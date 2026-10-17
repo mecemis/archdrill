@@ -584,6 +584,12 @@ What fills up before the CPU does. In parts, like M22 and M23:
 - the buffer cache's hit ratio from its memory and the keys' popularity, as for caches;
 - reads that miss it go to the volume, whose IOPS (gp3's 3,000 baseline, provisioned up to 16,000, or io2) are the next limit.
 
+## What-if traffic (as built)
+
+Like breakscale's load slider, but over the scenario's own environments.
+- **Multiplying the traffic.** "Traffic ×N" multiplies the shown environment's request rates and connections, and simulates them in a worker, so dragging stays smooth. The canvas and Load show the result; the score does not move.
+- **The breaking point.** "Find the breaking point" steps the multiple up by 1.5 until the design breaks, then halves the distance to within 1%. It names what gives first. For example, the Postgres design's redirects break at ×3 of S2's peak, where the bulkhead to the database starts shedding; the DynamoDB design's break at ×4.2, where NGINX runs out.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

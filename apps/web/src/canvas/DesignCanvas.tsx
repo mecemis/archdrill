@@ -29,6 +29,7 @@ import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
 import { findingsByComponent } from "./node-findings";
 import { addComponentFromPalette, PALETTE_MIME, parsePaletteData } from "./palette-drop";
 import { type ComponentNodeData, projectEdges, projectNodes } from "./projection";
+import { TrafficControl, WhatIfBanner } from "./TrafficControl";
 
 /**
  * Deletes what the user removed on the canvas as one undoable step. Edges that
@@ -226,6 +227,7 @@ function CanvasInner() {
       <Background gap={22} size={1.4} />
       <Controls showInteractive={false} position="bottom-left" />
       <Panel position="top-right" className="flex gap-1.5">
+        <TrafficControl />
         <AddStepsButton />
         {metrics && (
           <IconButton
@@ -257,6 +259,7 @@ function CanvasInner() {
           </p>
         </Panel>
       )}
+      {!moment && <WhatIfBanner />}
       {moment && (
         <Panel position="top-center">
           <p
