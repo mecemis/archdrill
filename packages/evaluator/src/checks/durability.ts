@@ -1,11 +1,16 @@
-import { selectComponents } from "@archdrill/engine";
+import { hasStandby, inRegion, selectComponents } from "@archdrill/engine";
 import { ACTIONS, type Component } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
 import { isSuccessPath } from "../predicates";
 import { type CheckContext, defineCheck, failed, notApplicable, passed } from "./types";
 
-/** Typical lag of asynchronous replicas under load: writes acknowledged in this window are lost on failover. */
+/**
+ * Typical lag of asynchronous replicas under load: writes acknowledged in
+ * this window are lost on failover. Replication to a standby region is
+ * asynchronous too, and DynamoDB global tables replicate "typically within a
+ * second or less", so a lost region loses as much.
+ */
 export const ASYNC_REPLICATION_LAG_SEC = 1;
 
 const SAFE_MODES = new Set(["semi-sync", "sync"]);
@@ -46,10 +51,15 @@ export const noAcknowledgedDataLoss = defineCheck({
     environment: z.string().min(1),
     /** Decision point that records how stores replicate writes. */
     decision: z.string().min(1),
+    /** Seconds of acknowledged writes the scenario accepts losing with a region (its RPO). */
+    maxLossSec: z.number().nonnegative().default(0),
   }),
   run(params, ctx) {
     const env = ctx.metrics.get(params.environment);
     if (!env) return notApplicable("This scenario does not simulate that environment.");
+    if (env.environment.faults.some((f) => f.kind === "region-down")) {
+      return regionLossVerdict(params, ctx);
+    }
     const failing = new Set(
       env.environment.faults
         .filter((f) => f.kind === "failover")
@@ -90,3 +100,44 @@ export const noAcknowledgedDataLoss = defineCheck({
     );
   },
 });
+
+/**
+ * Losing the primary region loses what only it held: a store without a
+ * standby copy takes every write with it until the region comes back, and
+ * one with a copy loses the writes not yet replicated to it.
+ */
+function regionLossVerdict(
+  params: { readonly operation: string; readonly environment: string; readonly maxLossSec: number },
+  ctx: CheckContext,
+) {
+  const env = ctx.metrics.get(params.environment);
+  const written = storesWritten(ctx, params.operation);
+  const stores = ctx.attempt.architecture.components.filter(
+    (c) => written.has(c.id) && inRegion(c, ctx.catalog),
+  );
+  if (!env || stores.length === 0) {
+    return notApplicable("Nothing this operation writes is lost with the region.");
+  }
+  const evidenceOf = (list: readonly Component[]): Evidence[] =>
+    list.map((s) => ({ type: "component", componentId: s.id }));
+  const stranded = stores.filter((s) => !hasStandby(s, ctx.catalog));
+  if (stranded.length > 0) {
+    return failed(
+      `${stranded.map((s) => s.label).join(", ")} ran only in the lost region: every write it held is out of reach until the region comes back, and lost if it does not.`,
+      evidenceOf(stranded),
+    );
+  }
+  const rate = env.environment.rates[params.operation] ?? 0;
+  const lost = Math.round(rate * ASYNC_REPLICATION_LAG_SEC).toLocaleString("en-US");
+  const labels = stores.map((s) => s.label).join(", ");
+  const window = `the last ${ASYNC_REPLICATION_LAG_SEC} s before the region was lost (about ${lost} at ${env.environment.label})`;
+  if (ASYNC_REPLICATION_LAG_SEC <= params.maxLossSec) {
+    return passed(
+      `${labels} replicate${stores.length === 1 ? "s" : ""} to the standby region asynchronously: writes acknowledged in ${window} can be lost, within the ${params.maxLossSec} s accepted.`,
+    );
+  }
+  return failed(
+    `${labels} replicate${stores.length === 1 ? "s" : ""} to the standby region asynchronously: writes acknowledged in ${window} are lost.`,
+    evidenceOf(stores),
+  );
+}

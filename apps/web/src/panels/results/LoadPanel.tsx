@@ -264,6 +264,14 @@ function ComponentRow({
             {usd(metrics.costBreakdown.crossZone)} between zones
           </span>
         )}
+        {metrics.costBreakdown.standbyRegion >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title="Its copy in the standby region: instances, stored data, replicated writes and the data replicated to it"
+          >
+            {usd(metrics.costBreakdown.standbyRegion)} standby region
+          </span>
+        )}
       </td>
     </tr>
   );
@@ -390,8 +398,9 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
       capacityUnits: sum.capacityUnits + c.costBreakdown.capacityUnits,
       storage: sum.storage + c.costBreakdown.storage,
       crossZone: sum.crossZone + c.costBreakdown.crossZone,
+      standbyRegion: sum.standbyRegion + c.costBreakdown.standbyRegion,
     }),
-    { instances: 0, requests: 0, capacityUnits: 0, storage: 0, crossZone: 0 },
+    { instances: 0, requests: 0, capacityUnits: 0, storage: 0, crossZone: 0, standbyRegion: 0 },
   );
   return (
     <section className="text-sm">
@@ -402,6 +411,7 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
         {totals.capacityUnits >= 1 && <> · capacity units {usd(totals.capacityUnits)}</>} · storage{" "}
         {usd(totals.storage)}
         {totals.crossZone >= 1 && <> · between zones {usd(totals.crossZone)}</>}
+        {totals.standbyRegion >= 1 && <> · standby region {usd(totals.standbyRegion)}</>}
       </p>
       <p className="mt-1 text-xs text-fg-subtle">
         Ballpark list prices for comparing designs, not a quote. Storage counts every replica's

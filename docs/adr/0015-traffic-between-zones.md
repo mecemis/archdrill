@@ -61,4 +61,4 @@ Since ADR 0013 a design places its instances in zones, but every hop still took 
 - **Zone-aware routing never overloads a zone.** Real `PreferClose` keeps traffic local even when a zone's endpoints are too few for it; the engine spills over evenly, as Envoy does.
 - **Payloads are bare.** Keys, headers and TLS framing are not counted, and compression (a Kafka producer's batches, for one) is not modelled.
 - **Regional services keep the region's round trip.** Where DynamoDB's or SQS's endpoints answer a caller from is not modelled; their calls take 0.5 ms, as every hop did before.
-- **Other transfer is not priced.** NAT gateway processing, data out to the internet, a managed API gateway's private integrations, and traffic between regions.
+- **Other transfer is not priced.** NAT gateway processing, data out to the internet, a managed API gateway's private integrations, and traffic between regions. ([ADR 0016](0016-a-standby-region.md) prices what is replicated to a standby region.)

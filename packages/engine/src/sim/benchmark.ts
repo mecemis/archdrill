@@ -49,6 +49,7 @@ export function benchmarkedProfile(
       replicas,
       shards: 1,
       zones: 1,
+      regions: 1,
       data: [],
     },
     catalog,

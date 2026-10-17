@@ -239,6 +239,8 @@ export function summarizeComponents(
   client: ClientConnections,
   /** Per component: what its calls across zones cost a month. */
   crossZoneCost: ReadonlyMap<string, number> = new Map(),
+  /** Per component: what its standby region's copy costs a month. */
+  standbyCost: ReadonlyMap<string, number> = new Map(),
 ): Map<string, ComponentMetrics> {
   const metrics = new Map<string, ComponentMetrics>();
   const allFromClients = [...flow.fromClients.values()].reduce((sum, rate) => sum + rate, 0);
@@ -270,6 +272,7 @@ export function summarizeComponents(
       : null;
     const unitCost = units?.monthlyCost ?? 0;
     const crossZone = crossZoneCost.get(id) ?? 0;
+    const standbyRegion = standbyCost.get(id) ?? 0;
     metrics.set(id, {
       componentId: id,
       readLoad: load.read,
@@ -289,13 +292,14 @@ export function summarizeComponents(
       hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
       storageGb,
       capacityUnits: units,
-      monthlyCost: instanceCost + requestCost + unitCost + storageCost + crossZone,
+      monthlyCost: instanceCost + requestCost + unitCost + storageCost + crossZone + standbyRegion,
       costBreakdown: {
         instances: instanceCost,
         requests: requestCost,
         capacityUnits: unitCost,
         storage: storageCost,
         crossZone,
+        standbyRegion,
       },
     });
   }

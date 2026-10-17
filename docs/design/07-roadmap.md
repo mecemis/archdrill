@@ -511,8 +511,21 @@ Where a design runs, and what it survives when part of a region, or a whole regi
   - Two mutants: 133, every one caught.
 - **Shown.** A Zones section on connections, and costs between zones on components and totals.
 
-**Next.**
-- Regions: designs in two regions, a lost region, and what cross-region replication loses on the way (RPO).
+**Part 4, a standby region (as built).** A design can keep a standby copy of its components in a second region, and survive losing the primary one ([ADR 0016](../adr/0016-a-standby-region.md)).
+- **Placement.** `regions: 2` on a component: the standby copy is placed like the primary one, runs its minimum instances, and takes no traffic until the primary region is lost (active-passive).
+- **A lost region.** Everything without a standby copy goes. Over time:
+  - every request fails until DNS sends clients to the standby region, 150 s on (Route 53's three checks 30 s apart, then a 60 s TTL);
+  - RDS standbys take writes once promoted, three minutes after the region is declared lost; DynamoDB global tables need no promotion;
+  - standby fleets scale up from their minimum, and caches nothing kept filled start empty.
+- **What it costs.** The standby copies' instances, a second copy of the stored data, writes a pay-per-request store applies twice, and $0.02 a GB for what stores and Global Datastore caches replicate.
+- **The checks.** `no-single-point-of-failure` with `scope: region`, and `no-acknowledged-data-loss` for a lost region, with `maxLossSec` as the accepted RPO.
+- **The corpus.**
+  - A new URL shortener scenario, S9, loses the primary region at peak. Redirects must be back within four minutes, creates within five, and at most the last second of links may be lost, for up to $80,000 a month.
+  - Two new goldens keep a warm standby of the Postgres and DynamoDB designs: $75,367 and $60,464 a month, so neither passes S3's budget.
+  - Four mutants: 137, every one caught.
+- **Shown.** A Regions control in the inspector, a "standby region" tag on nodes, and the standby region's cost on components and totals.
+
+**Next.** M23, replication and consistency: active-active regions, and what concurrent writes in two regions do to unique codes.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

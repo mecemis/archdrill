@@ -19,7 +19,7 @@ ArchDrill simulates a design analytically: it solves for the steady state of eac
 - **Steady state, step by step.** Every environment is a steady state; timelines show how it moves, one step (usually a second) at a time. Effects faster than a step blend into it, and individual requests are not replayed, so timelines show average behaviour.
 - **Ballpark numbers.** Capacities, latencies and prices in the catalog are order-of-magnitude figures for comparing designs, not capacity plans or quotes.
 - **Independent requests.** Requests of the same class behave alike and independently, apart from the correlations the model names: a hot key lands on one shard, a fault affects every call to the same key, and a failing message fails on every delivery.
-- **One region.** Zones set round trips, transfer charges and what a lost zone takes; multiple regions and network partitions are not modelled yet.
+- **One active region.** Zones set round trips, transfer charges and what a lost zone takes. A second region holds standby copies that take traffic only once the primary region is lost; active-active regions and network partitions are not modelled yet.
 - **Simple batches.** A batched call costs one round trip plus a small share per extra item, and items wait for their batch for at most five seconds.
 
 ## When the numbers are approximate

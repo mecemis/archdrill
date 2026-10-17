@@ -110,6 +110,66 @@ describe("no-acknowledged-data-loss", () => {
     expect(outcome.message).toMatch(/^Postgres has no replica: if its primary's disk is lost/);
   });
 
+  describe("when the primary region is lost", () => {
+    const regionLost = WorkloadSchema.parse({
+      ...workload,
+      environments: [
+        {
+          id: "region-loss",
+          label: "Region lost",
+          rates: { "create-link": 3000 },
+          faults: [{ kind: "region-down" }],
+        },
+      ],
+    });
+    const regionParams = { ...params, environment: "region-loss" };
+    const withStandby = (attempt = decided("semi-sync")) =>
+      ["lb", "api", "kgs", "db"].reduce(
+        (a, id) =>
+          a.architecture.components.some((c) => c.id === id)
+            ? applyCommand(a, "updateComponent", { id, regions: 2 }).attempt
+            : a,
+        attempt,
+      );
+
+    it("loses everything a store held when it ran only there", () => {
+      const outcome = runCheckWithLoad(
+        "no-acknowledged-data-loss",
+        regionParams,
+        decided("semi-sync"),
+        regionLost,
+      );
+
+      expect(outcome.status).toBe("fail");
+      expect(outcome.message).toMatch(/^Postgres ran only in the lost region: every write it held/);
+    });
+
+    it("loses the writes not yet replicated to the standby region, even with semi-sync", () => {
+      const outcome = runCheckWithLoad(
+        "no-acknowledged-data-loss",
+        regionParams,
+        withStandby(),
+        regionLost,
+      );
+
+      expect(outcome.status).toBe("fail");
+      expect(outcome.message).toBe(
+        "Postgres replicates to the standby region asynchronously: writes acknowledged in the last 1 s before the region was lost (about 3,000 at Region lost) are lost.",
+      );
+    });
+
+    it("passes when the scenario accepts losing that second", () => {
+      const outcome = runCheckWithLoad(
+        "no-acknowledged-data-loss",
+        { ...regionParams, maxLossSec: 1 },
+        withStandby(),
+        regionLost,
+      );
+
+      expect(outcome.status).toBe("pass");
+    });
+  });
+
   it("passes when writes wait for a replica", () => {
     const outcome = runCheckWithLoad(
       "no-acknowledged-data-loss",

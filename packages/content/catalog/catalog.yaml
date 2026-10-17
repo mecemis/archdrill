@@ -283,6 +283,7 @@ kinds:
         description: In-memory data store with rich data types and optional replication.
         capabilities: [atomic-increment]
         crossZoneBilling: other-end
+        crossRegionReplication: true
         sizes:
           s:
             label: 13 GB
@@ -351,6 +352,9 @@ kinds:
           crossZoneBilling:
             published: aws-elasticache-pricing
             note: No charge for traffic in or out of the ElastiCache node; the instance at the other end pays $0.01 a GB.
+          crossRegionReplication:
+            published: aws-elasticache-global-datastore
+            note: A global datastore replicates the primary cluster to a cluster in another region, asynchronously, and a secondary cluster can be promoted when the primary region fails.
           capacityPerSec:
             model: "AWS measured 395,819 small commands a second (80% GET, 20% SET) on a 4-vCPU node running Redis 7, whose I/O threads take the network work off the command thread; the replay (calibration \"elasticache-redis-7\") reproduces it at 400,000. With 2,000 and 5,200 clients Redis measured 349,000, as so many connections cost it some throughput; the engine holds 392,000, 12% above. GETs and SETs cost the same: redis-benchmark measures them within 1% of each other."
             basis:
@@ -412,6 +416,7 @@ kinds:
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
         failoverSec: 35
+        regionFailoverSec: 180
         crossZoneBilling: other-end
         sizes:
           s:
@@ -471,6 +476,10 @@ kinds:
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
+          regionFailoverSec:
+            model: 'Promoting an RDS read replica in the standby region "takes a few minutes to complete and rebooting is part of the process"; taken as three minutes, counted from when the region is declared lost.'
+            basis:
+              - aws-dr-options
           failoverSec:
             published: rds-multi-az-cluster-failover
             note: Replicas that serve reads and take over by themselves are a Multi-AZ DB cluster's readers. A Multi-AZ DB instance, whose one standby serves no reads, fails over in 60 to 120 seconds.
@@ -487,6 +496,7 @@ kinds:
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
         failoverSec: 35
+        regionFailoverSec: 180
         crossZoneBilling: other-end
         sizes:
           m:
@@ -514,6 +524,10 @@ kinds:
           storagePricePerGbMonth:
             published: rds-gp3-storage
             note: RDS gp3, Single-AZ, per stored copy.
+          regionFailoverSec:
+            model: 'Promoting an RDS read replica in the standby region "takes a few minutes to complete and rebooting is part of the process"; taken as three minutes, counted from when the region is declared lost.'
+            basis:
+              - aws-dr-options
           failoverSec:
             published: rds-multi-az-cluster-failover
             note: Replicas that serve reads and take over by themselves are a Multi-AZ DB cluster's readers.
@@ -1074,6 +1088,18 @@ sources:
     publisher: DoiT (AWS on-demand rates)
     kind: price
     retrieved: 2026-10-14
+  - id: aws-dr-options
+    title: "Disaster Recovery of Workloads on AWS: disaster recovery options in the cloud"
+    url: https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-16
+  - id: aws-elasticache-global-datastore
+    title: Replication across AWS Regions using global datastores
+    url: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Redis-Global-Datastore.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-16
   - id: rds-multi-az-cluster-failover
     title: Failing over a Multi-AZ DB cluster for Amazon RDS ("failover times are typically under 35 seconds")
     url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts-failover.html

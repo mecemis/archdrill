@@ -54,6 +54,7 @@ const RETURNS_VALUE: Readonly<Record<string, string>> = {
 const SENDS_ITEM: ReadonlySet<string> = new Set([
   "cache.set",
   "store.insert",
+  "store.insertIfAbsent",
   "store.update",
   "queue.publish",
   "connection.push",

@@ -1,0 +1,278 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s9-region-loss
+problemId: url-shortener
+title: Lose a region
+order: 9
+story: |
+  "On 20 October 2025 a DNS fault inside DynamoDB took much of us-east-1
+  down for most of a day, and every service that ran only there went with
+  it. Leadership wants short links to survive losing our whole region: keep
+  a standby in a second one. Redirects must be back within four minutes,
+  creates within five, and we can lose at most the last second of new links.
+  Finance has approved up to $80,000 a month for it."
+focusOperations: [redirect, create-link]
+workload:
+  operations:
+    redirect:
+      entity: Link
+      classes:
+        - { id: live, share: 0.985 }
+        - { id: expired, share: 0.005, expired: true }
+        - { id: unknown, share: 0.01, exists: false }
+    create-link:
+      entity: Link
+      classes:
+        - { id: generated, share: 0.975 }
+        - { id: custom-free, share: 0.019, customAlias: true }
+        - { id: custom-taken, share: 0.001, customAlias: true, aliasTaken: true }
+        - { id: invalid-url, share: 0.005, invalidInput: true }
+  keys:
+    Link:
+      existing: { distribution: zipf, s: 1.05, population: 2.0e10 }
+      absent: { distribution: zipf, s: 0.7, population: 1.0e9 }
+  dataset:
+    Link: 1.58e11
+  keyspace:
+    Link: { alphabet: 62, lengthDecision: code-length }
+  replication: { decision: replication-mode }
+  environments:
+    - id: avg
+      label: Average
+      description: An average day, both regions running and the standby waiting.
+      rates: { redirect: 100000, create-link: 1000 }
+    - id: region-loss
+      label: Peak, primary region lost
+      description: >-
+        The primary region is gone with everything in it. DNS has sent
+        clients to the standby region, its stores have been promoted, and its
+        fleets have scaled up to the peak: what is left is what the standby
+        region can do on its own.
+      rates: { redirect: 300000, create-link: 3000 }
+      faults:
+        - { kind: region-down }
+  timelines:
+    - id: region-loss-over-time
+      label: A lost region, second by second
+      description: >-
+        Peak traffic. At 30 s the primary region goes dark and stays down.
+        Route 53 declares it unhealthy after three failed checks 30 s apart,
+        and resolvers drop its address once the 60 s TTL runs out: clients
+        reach the standby region at 180 s. A standby database is promoted
+        from 120 s, and fleets scale up from the minimum they ran in standby.
+      durationSec: 420
+      stepSec: 5
+      rates: { redirect: 300000, create-link: 3000 }
+      events:
+        - kind: fault
+          at: 30
+          label: The primary region goes dark
+          fault: { kind: region-down }
+      predictions:
+        - id: redirects
+          question: How long after the region goes are redirects back for good?
+          measure: { kind: recovery-seconds, operation: redirect, threshold: 0.999, after: 30 }
+          options:
+            - { id: under-a-minute, label: Under a minute, below: 60 }
+            - { id: dns, label: About as long as DNS takes to fail over, below: 165 }
+            - { id: minutes, label: A few minutes, below: 300 }
+            - { id: longer, label: Longer }
+        - id: creates
+          question: And creates?
+          measure: { kind: recovery-seconds, operation: create-link, threshold: 0.999, after: 30 }
+          options:
+            - { id: with-dns, label: As soon as clients reach the standby region, below: 165 }
+            - { id: four-minutes, label: Within four minutes, below: 240 }
+            - { id: five-minutes, label: Within five minutes, below: 300 }
+            - { id: longer, label: Longer }
+dimensions:
+  availability: 0.40
+  durability: 0.25
+  cost: 0.20
+  latency: 0.15
+checks:
+  - id: redirects-region-redundant
+    use: no-single-point-of-failure
+    title: Redirects do not depend on one region
+    dimension: availability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-7]
+    params: { operation: redirect, scope: region }
+    why: >-
+      A region can fail as a whole: a fault in a shared service there (DNS,
+      identity, the control plane) takes every component in it at once,
+      however many zones each spans. Whatever runs only in the primary
+      region goes with it.
+    fix: >-
+      Give everything a redirect needs a standby copy in a second region
+      (Regions in the inspector): the load balancer, the service, the cache
+      or the store behind it.
+
+  - id: creates-region-redundant
+    use: no-single-point-of-failure
+    title: Creates do not depend on one region
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-7]
+    params: { operation: create-link, scope: region }
+    why: >-
+      Creating a link writes to the store and, with a key service, takes a
+      code from it. Each of those has to exist in the standby region too.
+    fix: >-
+      Give the store, the key service and whatever fronts creates a standby
+      copy in the second region.
+
+  - id: no-link-lost-with-region
+    use: no-acknowledged-data-loss
+    title: Losing the region loses at most the last second of links
+    dimension: durability
+    weight: 3
+    severity: critical
+    requirements: [NFR-4, NFR-7]
+    params: { operation: create-link, environment: region-loss, decision: replication-mode, maxLossSec: 1 }
+    why: >-
+      Replication to another region is asynchronous: waiting for a copy
+      thousands of kilometres away would add tens of milliseconds to every
+      create. A link acknowledged in the last moment before the region went
+      may not have reached the standby, which is the loss the business
+      accepted. A store that only the primary region held loses far more.
+    fix: >-
+      Give the store a standby copy in the second region: an RDS
+      cross-region read replica, or a DynamoDB global table.
+
+  - id: redirects-survive-region-loss
+    use: success-rate-above
+    title: The standby region carries the redirect peak (99.9%)
+    dimension: availability
+    weight: 3
+    severity: critical
+    requirements: [NFR-2, NFR-7]
+    params: { operation: redirect, environment: region-loss, min: 0.999 }
+    why: >-
+      Once clients have moved, the standby region serves the whole peak on
+      its own. A copy of a component left behind breaks whatever path used
+      it: a cache that stayed in the lost region sends every redirect to the
+      database.
+    fix: >-
+      Give every component on the redirect path a standby copy, with the
+      same room to scale as the primary one.
+
+  - id: creates-survive-region-loss
+    use: success-rate-above
+    title: The standby region takes creates (99.9%)
+    dimension: availability
+    weight: 2
+    requirements: [NFR-2, NFR-7]
+    params: { operation: create-link, environment: region-loss, min: 0.999 }
+    why: >-
+      After the failover, creates write to the promoted standby store.
+    fix: >-
+      Give the store and everything creates call a standby copy.
+
+  - id: region-loss-p99
+    use: latency-below
+    title: Redirect p99 stays under 50 ms from the standby region
+    dimension: latency
+    weight: 1
+    requirements: [NFR-1]
+    params: { operation: redirect, environment: region-loss, percentile: p99, ms: 50 }
+    why: >-
+      Users near the standby region notice nothing; those far from it pay
+      the distance, but the servers should not add queueing on top.
+    fix: >-
+      Keep headroom in the standby region's fleets, as in the primary one.
+
+  - id: redirects-back-after-region-loss
+    use: timeline-recovers
+    title: Redirects are back within four minutes of losing the region
+    dimension: availability
+    weight: 2
+    severity: critical
+    requirements: [NFR-7]
+    params:
+      timeline: region-loss-over-time
+      metric: success-rate
+      operation: redirect
+      threshold: 0.999
+      after: 30
+      withinSec: 240
+    why: >-
+      Clients reach the standby region two and a half minutes after the
+      outage, once health checks fail and DNS answers expire. A standby that
+      runs only its minimum then has to scale up under the full peak, which
+      takes another minute: new instances need a control plane in the
+      standby region, and time to start.
+    fix: >-
+      Let the standby fleets scale as far as the primary ones, or run more
+      of them in standby so that fewer have to start (a hot standby).
+
+  - id: creates-back-after-region-loss
+    use: timeline-recovers
+    title: Creates are back within five minutes of losing the region
+    dimension: availability
+    weight: 1
+    requirements: [NFR-7]
+    params:
+      timeline: region-loss-over-time
+      metric: success-rate
+      operation: create-link
+      threshold: 0.999
+      after: 30
+      withinSec: 300
+    why: >-
+      An RDS read replica in the standby region takes writes only once it
+      has been promoted, a few minutes from when the region is declared
+      lost. A DynamoDB global table takes writes in every region already.
+    fix: >-
+      Start the promotion as soon as health checks declare the region lost,
+      or use a store that takes writes in both regions.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: The two regions cost less than $80,000 a month
+    dimension: cost
+    weight: 2
+    severity: major
+    params: { environment: avg, monthlyUsd: 80000 }
+    why: >-
+      A standby region doubles what holds data: every copy of ~79 TB of
+      links, and the cache. Fleets cost only what runs in standby, and the
+      data replicated across regions is billed $0.02 a GB.
+    fix: >-
+      Keep fleets in standby at their autoscaling minimum, and let them grow
+      only when the region takes traffic.
+
+  - id: hot-standby
+    use: timeline-recovers
+    title: Redirects are back as soon as clients reach the standby region
+    dimension: availability
+    signal: staff
+    requirements: [NFR-7]
+    params:
+      timeline: region-loss-over-time
+      metric: success-rate
+      operation: redirect
+      threshold: 0.999
+      after: 180
+      withinSec: 15
+    why: >-
+      A standby that already runs the peak's instances needs no scaling when
+      traffic arrives, so the outage is only as long as DNS takes. It costs
+      those instances every day, and it does not depend on the control plane
+      of a region under stress (static stability).
+    fix: >-
+      Run the redirect fleet's peak instances in both regions, and say what
+      that costs against the minutes it saves.
+hints:
+  - "What runs only in your primary region? Set Regions in the inspector."
+  - "Clients take two and a half minutes to reach the standby region. What does it run when they arrive?"
+  - "A link acknowledged a second before the region went: is it in the standby region?"
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Who decides that the region is lost: a health check, or a person? What does a false alarm cost?
+  - Your standby database lost the last second of links. How would a user find out, and could you recover them once the region is back?
+  - Both regions take traffic in an active-active design. What happens when the same code is created in both at once?
+  - Redirect availability of 99.99% allows about four minutes a month. How much of it does one regional failover spend?

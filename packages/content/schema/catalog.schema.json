@@ -155,6 +155,13 @@
                   "type": "string",
                   "enum": ["each-end", "other-end", "free"]
                 },
+                "regionFailoverSec": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "crossRegionReplication": {
+                  "type": "boolean"
+                },
                 "sizes": {
                   "default": {},
                   "type": "object",
@@ -236,7 +243,9 @@
                             "perKeyCapacityPerSec",
                             "startupSec",
                             "failoverSec",
-                            "crossZoneBilling"
+                            "crossZoneBilling",
+                            "regionFailoverSec",
+                            "crossRegionReplication"
                           ]
                         },
                         "additionalProperties": {
@@ -395,7 +404,9 @@
                       "perKeyCapacityPerSec",
                       "startupSec",
                       "failoverSec",
-                      "crossZoneBilling"
+                      "crossZoneBilling",
+                      "regionFailoverSec",
+                      "crossRegionReplication"
                     ]
                   },
                   "additionalProperties": {

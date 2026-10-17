@@ -1,4 +1,4 @@
-import { type Path, zoneLoss } from "@archdrill/engine";
+import { type Path, regionLoss, zoneLoss } from "@archdrill/engine";
 import { type Component, LOGIC } from "@archdrill/model";
 import { z } from "zod";
 import type { Evidence } from "../evidence";
@@ -35,8 +35,11 @@ function isRedundant(component: Component, ctx: CheckContext): boolean {
   return ctx.catalog.flavor(component.kind, component.flavor)?.managedRedundancy === true;
 }
 
-/** What a single failure is: one component, or an availability zone with every instance in it. */
-const FailureScopeSchema = z.enum(["component", "zone"]).default("component");
+/**
+ * What a single failure is: one component, an availability zone with every
+ * instance in it, or the primary region with everything in it.
+ */
+const FailureScopeSchema = z.enum(["component", "zone", "region"]).default("component");
 
 function isTrafficSource(component: Component, ctx: CheckContext): boolean {
   return ctx.catalog.capabilities(component.kind, component.flavor).has("traffic-source");
@@ -61,7 +64,9 @@ export const noSinglePointOfFailure = defineCheck({
       const key = requestKind(path);
       byKind.set(key, [...(byKind.get(key) ?? []), path]);
     }
-    if (params.scope === "zone") return zoneVerdict([...byKind.values()], ingress, ctx);
+    if (params.scope !== "component") {
+      return jointVerdict(params.scope, [...byKind.values()], ingress, ctx);
+    }
     // A component is critical when some kind of request that succeeds today has
     // no successful path left without it.
     const critical = ctx.attempt.architecture.components.filter(
@@ -85,21 +90,33 @@ export const noSinglePointOfFailure = defineCheck({
   },
 });
 
+const LOST = {
+  zone: { what: "a zone", losing: "Losing an availability zone" },
+  region: { what: "the primary region", losing: "Losing the primary region" },
+} as const;
+
 /**
- * A lost zone takes every component that runs entirely in it at once, so
- * each kind of request needs a successful path that survives all of them
- * together. The finding names the lost components such requests use.
+ * A lost zone takes every component that runs entirely in it at once, and a
+ * lost region every component without a standby copy, so each kind of
+ * request needs a successful path that survives all of them together. The
+ * finding names the lost components such requests use.
  */
-function zoneVerdict(kinds: readonly Path[][], ingress: readonly string[], ctx: CheckContext) {
+function jointVerdict(
+  scope: keyof typeof LOST,
+  kinds: readonly Path[][],
+  ingress: readonly string[],
+  ctx: CheckContext,
+) {
+  const lossOf = scope === "zone" ? zoneLoss : regionLoss;
   const lost = ctx.attempt.architecture.components.flatMap((component) => {
-    const loss = zoneLoss(component, ctx.catalog);
+    const loss = lossOf(component, ctx.catalog);
     return loss.keepsServing ? [] : [{ component, label: loss.label }];
   });
   const survives = (path: Path) =>
     lost.every(({ component }) => survivesFailureOf(path, component.id, ingress));
   const stranded = kinds.filter((paths) => !paths.some(survives));
   if (stranded.length === 0) {
-    return passed("Every kind of request keeps a way to succeed when a zone is lost.");
+    return passed(`Every kind of request keeps a way to succeed when ${LOST[scope].what} is lost.`);
   }
   const used = new Set(stranded.flatMap((paths) => paths.flatMap((p) => p.components)));
   const culprits = lost.filter(
@@ -112,7 +129,7 @@ function zoneVerdict(kinds: readonly Path[][], ingress: readonly string[], ctx: 
   const reasons = culprits
     .map(({ component, label }) => `${component.label} (${label})`)
     .join("; ");
-  return failed(`Losing an availability zone takes down ${reasons}.`, evidence);
+  return failed(`${LOST[scope].losing} takes down ${reasons}.`, evidence);
 }
 
 /** Components that no flow uses add cost and complexity without benefit. */

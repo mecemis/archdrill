@@ -14,7 +14,13 @@ import {
 } from "../catalog/actions";
 import { canHandle } from "../catalog/capabilities";
 import { getLogic, type LogicId } from "../catalog/logic";
-import { type CatalogIndex, type Flavor, type Kind, placedInZones } from "../catalog/schema";
+import {
+  type CatalogIndex,
+  type Flavor,
+  type Kind,
+  placedInZones,
+  runsInRegion,
+} from "../catalog/schema";
 import { findOperationRoute } from "../graph/ingress";
 import type { Problem } from "../problem/schema";
 import type { Issue } from "./issues";
@@ -104,6 +110,12 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
     issues.push(error("replicas-not-supported", `${kind.label} does not take replicas.`, location));
   }
   issues.push(...validateZones(component, kind, flavor));
+  if (component.regions > 1 && !runsInRegion(kind, flavor)) {
+    const why = kind.inProcess
+      ? `${kind.label} lives in its service's instances, wherever they run`
+      : `${flavor.label} does not run in the design's region`;
+    issues.push(warning("regions-ignored", `${why}; its standby region is ignored.`, location));
+  }
   if (component.autoscale) {
     if (!kind.replicable || kind.holdsData || flavor.managedRedundancy) {
       issues.push(

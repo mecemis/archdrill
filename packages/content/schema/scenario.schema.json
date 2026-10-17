@@ -691,6 +691,22 @@
                       },
                       "required": ["kind"],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "region-down"
+                        },
+                        "mode": {
+                          "default": "crash",
+                          "type": "string",
+                          "enum": ["crash", "hang"]
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -1170,6 +1186,22 @@
                                 "kind": {
                                   "type": "string",
                                   "const": "zone-down"
+                                },
+                                "mode": {
+                                  "default": "crash",
+                                  "type": "string",
+                                  "enum": ["crash", "hang"]
+                                }
+                              },
+                              "required": ["kind"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "region-down"
                                 },
                                 "mode": {
                                   "default": "crash",

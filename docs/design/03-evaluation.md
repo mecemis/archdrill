@@ -153,7 +153,7 @@ Increments have their own effect (`increment`), which step matchers can name. St
 - `utilization-below(selector, max, environment)`: for example, no shard above 0.8 at peak.
 - `hit-ratio-above(cache, ratio)`.
 - `no-cascading-failure(from, to, environment)`: a fault affecting `from` must not push `to` past its error budget. For example, a cache outage must not take down link creation through a shared, overloaded database.
-- `no-acknowledged-data-loss(op, environment)`: on failover, writes acknowledged before replication are counted.
+- `no-acknowledged-data-loss(op, environment, maxLossSec)`: on failover, writes acknowledged before replication are counted. When the environment loses the primary region, a store without a standby copy loses everything, and one with a copy loses the last second of writes, which `maxLossSec` (the RPO) may accept.
 - `stable-under-retries(environment)`: the analytic fixed point converges, so there is no retry amplification spiral.
 - `cost-within-budget(budget)`.
 - `zone-local-calls(environment, minMonthlyUsd)`: no connection pays more than the threshold for crossings between zones that zone-aware routing would avoid.

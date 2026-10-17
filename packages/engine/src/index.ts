@@ -8,6 +8,7 @@ export * from "./sim/capacity";
 export * from "./sim/capacity-units";
 export * from "./sim/faults";
 export type { Moments, WeightedMoments } from "./sim/math/gamma";
+export * from "./sim/regions";
 export * from "./sim/simulate";
 export * from "./sim/timeline";
 export {

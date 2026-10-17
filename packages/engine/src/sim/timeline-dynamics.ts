@@ -1,6 +1,7 @@
 import type { ComponentSelector, Timeline, TimelineEvent } from "@archdrill/model";
 import { selectComponents, zoneLoss } from "./faults";
 import type { LoopState } from "./propagate";
+import { hasStandby, REGION_DNS_FAILOVER_SEC, standbyStartsCold } from "./regions";
 import { type CacheSpec, cacheKey, type SimulationContext } from "./setup";
 import type { ComponentMetrics, OperationMetrics } from "./types";
 
@@ -57,6 +58,19 @@ export function autoscalers(ctx: SimulationContext) {
   const lastScaleOut = new Map<string, number>();
 
   return {
+    /**
+     * The standby region takes over: its copies of autoscaled fleets run
+     * their minimum, and what was launched or measured in the lost region
+     * no longer counts.
+     */
+    takeOver(ids: readonly string[], loop: LoopState) {
+      for (const component of components) {
+        if (!ids.includes(component.id)) continue;
+        loop.replicas.set(component.id, component.replicas);
+        pending.delete(component.id);
+        history.delete(component.id);
+      }
+    },
     /** Brings instances whose start-up time has passed into service. */
     launchReady(t: number, loop: LoopState): DynamicMark[] {
       const marks: DynamicMark[] = [];
@@ -79,13 +93,21 @@ export function autoscalers(ctx: SimulationContext) {
       }
       return marks;
     },
-    /** Decides from this step's utilisation whether to start or stop instances. */
-    observe(t: number, metrics: ReadonlyMap<string, ComponentMetrics>, loop: LoopState) {
+    /**
+     * Decides from this step's utilisation whether to start or stop
+     * instances. Fleets in `waiting` take no traffic yet and decide nothing.
+     */
+    observe(
+      t: number,
+      metrics: ReadonlyMap<string, ComponentMetrics>,
+      loop: LoopState,
+      waiting: ReadonlySet<string> = new Set(),
+    ) {
       const marks: DynamicMark[] = [];
       for (const component of components) {
         const bounds = component.autoscale;
         const c = metrics.get(component.id);
-        if (!bounds || !c) continue;
+        if (!bounds || !c || waiting.has(component.id)) continue;
         const running = loop.replicas.get(component.id) ?? component.replicas;
         // Work in instance-equivalents, measured on the instances actually running.
         const wanted = Math.min(
@@ -213,6 +235,17 @@ export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
       if (ids.length > 0) emptied.push({ at: until, ids, label: "Back after the outage" });
     }
   }
+  // A standby cache nothing kept filled takes the region's traffic empty.
+  for (const event of timeline.events) {
+    if (event.kind !== "fault" || event.fault.kind !== "region-down") continue;
+    const at = event.at + REGION_DNS_FAILOVER_SEC;
+    const ids = ctx.attempt.architecture.components
+      .filter((c) => standbyStartsCold(c, ctx.attempt, ctx.catalog))
+      .map((c) => c.id);
+    if (ids.length > 0) {
+      emptied.push({ at, ids, label: "Standby caches take traffic empty" });
+    }
+  }
   emptied.sort((a, b) => a.at - b.at);
   const startedAt = new Map<string, number>();
   let applied = 0;
@@ -241,6 +274,42 @@ export function cacheRestarts(timeline: Timeline, ctx: SimulationContext) {
         windows.set(cacheKey(spec.componentId, spec.entity), Math.max(0, t - started - loading));
       }
       return windows;
+    },
+  };
+}
+
+/**
+ * Each lost region hands its components to their standby copies: from the
+ * moment it is lost, they run what the standby region runs, and they wait
+ * for traffic until DNS sends clients there.
+ */
+export function regionTakeovers(timeline: Timeline, ctx: SimulationContext) {
+  const takeovers = timeline.events
+    .filter((e): e is FaultEvent => e.kind === "fault" && e.fault.kind === "region-down")
+    .map((event) => ({
+      at: event.at,
+      redirected: event.at + REGION_DNS_FAILOVER_SEC,
+      ids: ctx.attempt.architecture.components
+        .filter((c) => hasStandby(c, ctx.catalog))
+        .map((c) => c.id),
+    }))
+    .sort((a, b) => a.at - b.at);
+  let applied = 0;
+  return {
+    /** Components whose standby copies take over at or before `t`, not yet applied. */
+    due(t: number): string[] {
+      const ids: string[] = [];
+      while (
+        applied < takeovers.length &&
+        (takeovers[applied]?.at ?? Number.POSITIVE_INFINITY) <= t
+      ) {
+        ids.push(...(takeovers[applied++]?.ids ?? []));
+      }
+      return ids;
+    },
+    /** Standby copies that have taken over but get no traffic yet at `t`. */
+    waiting(t: number): Set<string> {
+      return new Set(takeovers.filter((w) => w.at <= t && t < w.redirected).flatMap((w) => w.ids));
     },
   };
 }
