@@ -50,6 +50,7 @@ export function benchmarkedProfile(
       shards: 1,
       zones: 1,
       regions: 1,
+      proxy: false,
       data: [],
     },
     catalog,

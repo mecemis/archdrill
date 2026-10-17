@@ -6,11 +6,13 @@ import {
   buildFixtures,
   createModel,
   type Fixtures,
+  poolStates,
   profilesOf,
   propagateModel,
   solve,
   warmCaches,
 } from "./model";
+import { summarizePools, withProxyHops } from "./pools";
 import { activeActive, crossRegionShare, standbyCosts, withActiveStandby } from "./regions";
 import { replicaAckMs, type SimulationContext, storedGb, wholeInstances } from "./setup";
 import {
@@ -170,7 +172,7 @@ export function simulateEnvironment(
       model.ingress.pass,
       {
         components,
-        hops: routeHops(routes),
+        hops: withProxyHops(routeHops(routes), fixtures.pools),
         ...(active && {
           crossRegion: (step: CallPathStep) => crossRegionShare(step, ctx.attempt, ctx.catalog),
         }),
@@ -192,6 +194,12 @@ export function simulateEnvironment(
     connections: final.traffic,
     calls: summarizeCalls(final, model.calls.shedOf, model.loop.timedOut),
     zoneTraffic,
+    pools: summarizePools(
+      fixtures.pools,
+      poolStates(fixtures.pools, profiles, final, faults),
+      profiles,
+      faults,
+    ),
     monthlyCost: [...components.values()].reduce((sum, c) => sum + c.monthlyCost, 0),
     converged,
     iterations,

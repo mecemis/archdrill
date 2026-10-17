@@ -254,6 +254,9 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - `creates-through-restart`: creates stay at 99.9% throughout (critical);
   - a senior signal for single-flight reads.
   The fixed-fleet golden's bulkhead leaves room for a cold cache's misses; the `bulkhead-sized-for-a-warm-cache` mutant does not.
+- Connection pools (M24, [ADR 0019](../adr/0019-connection-pools.md)): `pools-without-the-cache` (major) asks that the database pools have room for every redirect with the cache down.
+  - With the cache gone, each of the fixed fleet's 33 instances has 9,091 calls a second × 2.5 ms = 22.7 statements in flight. Its default pools of 10 to each of the 4 copies are 57% busy.
+  - The `pools-sized-for-a-warm-cache` mutant keeps 4 to each copy: 142% busy, and 30% of the database calls wait until they give up.
 
 ---
 
@@ -295,6 +298,10 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 - Signals: a near cache, autoscaling services and rate-limited creation (senior).
 - Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, Redis carries the viral link's 300,000 lookups a second on its shard's two copies (73% at the spike), but the popular links the near cache held miss through to the database, whose bulkhead sheds 4% of redirects. A fleet fixed at the spike's size breaks the average-day budget.
 - Timeline (M9): `viral-surge`, redirects growing exponentially from 100,000 to a million a second over ten minutes, while new instances take a minute to start. Its check, `surge-served`, keeps redirects at 99% throughout. Scaling at 70% passes; the `autoscaling-target-too-high` mutant (80%) sheds requests for about eight minutes.
+- Connection limits (M24, [ADR 0019](../adr/0019-connection-pools.md)): `connections-at-spike` (critical) asks that every instance's database pools fit PostgreSQL's `max_connections` at the spike.
+  - The Postgres golden's 105 redirect instances, 3 link instances and 3 workers hold 1,110 of the 5,000 connections on each primary.
+  - The `big-pools-on-an-autoscaled-fleet` mutant gives each redirect instance 50 connections a copy: 5,310 connections, and the database refuses the rest.
+  - An RDS Proxy in front of the database fixes it, for $701 a month and 2 ms a call.
 
 ---
 

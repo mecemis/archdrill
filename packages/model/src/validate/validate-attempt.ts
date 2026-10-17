@@ -39,6 +39,7 @@ export function validateAttempt(attempt: Attempt, ctx: ValidationContext): Issue
     ...validateComponents(attempt, ctx),
     ...validateInProcess(attempt, ctx),
     ...validateConnections(attempt),
+    ...validatePools(attempt, ctx),
     ...validateFlows(attempt, ctx),
     ...validateDecisions(attempt, ctx.problem),
   ];
@@ -116,6 +117,15 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
       : `${flavor.label} does not run in the design's region`;
     issues.push(warning("regions-ignored", `${why}; its standby region is ignored.`, location));
   }
+  if (component.proxy && !flavor.connectionProxy) {
+    issues.push(
+      warning(
+        "proxy-ignored",
+        `${flavor.label} has no connection proxy to put in front of it; it is ignored.`,
+        location,
+      ),
+    );
+  }
   if (component.autoscale) {
     if (!kind.replicable || kind.holdsData || flavor.managedRedundancy) {
       issues.push(
@@ -167,6 +177,23 @@ function validateInProcess(attempt: Attempt, ctx: ValidationContext): Issue[] {
         "in-process-shared",
         `${component.label} runs inside one service; ${callers.length} components connect to it.`,
         { type: "component", componentId: component.id },
+      ),
+    ];
+  });
+}
+
+/** A pool only limits calls to a store that runs one statement per connection. */
+function validatePools(attempt: Attempt, ctx: ValidationContext): Issue[] {
+  return attempt.architecture.connections.flatMap((connection) => {
+    if (connection.policy.poolSize === undefined) return [];
+    const target = attempt.architecture.components.find((c) => c.id === connection.to);
+    const kind = target && ctx.catalog.kind(target.kind);
+    if (!target || !kind || kind.pooledConnections) return [];
+    return [
+      warning(
+        "pool-ignored",
+        `${target.label} serves many calls over each connection; the pool size is ignored.`,
+        { type: "connection", connectionId: connection.id },
       ),
     ];
   });

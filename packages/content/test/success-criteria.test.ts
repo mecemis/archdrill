@@ -94,33 +94,39 @@ describe("success criteria", () => {
     expect(bands).toEqual(input.scenarios.map((s) => `${s.id}: not-passing`));
   });
 
-  // Evaluates every golden design and mutant in every scenario.
-  it("gives every finding evidence to point at and a fix", { timeout: 120_000 }, () => {
-    const missing: string[] = [];
-    const designs = [
-      ...corpus.golden.map((g) => ({ id: g.id, attempt: g.attempt })),
-      ...corpus.mutants.flatMap((m) => {
-        const base = corpus.golden.find((g) => g.id === m.base);
-        if (!base) return [];
-        const attempt = m.apply.reduce(
-          (a, step) => applyCommand(a, step.name as CommandName, step.args as never).attempt,
-          base.attempt,
-        );
-        return [{ id: m.id, attempt }];
-      }),
-    ];
-    for (const design of designs) {
-      for (const result of evaluateAttempt(design.attempt, input).scenarios) {
-        if (result.status !== "evaluated") continue;
-        for (const check of result.checks) {
-          if (check.status !== "fail" && check.status !== "partial") continue;
-          if (check.evidence.length === 0 || check.instance.fix.trim() === "") {
-            missing.push(`${design.id} ${result.scenarioId}/${check.instance.id}`);
+  // Every golden design and mutant in every scenario: one test per scenario, so
+  // no single test runs into the timeout as the corpus grows.
+  const designs = [
+    ...corpus.golden.map((g) => ({ id: g.id, attempt: g.attempt })),
+    ...corpus.mutants.flatMap((m) => {
+      const base = corpus.golden.find((g) => g.id === m.base);
+      if (!base) return [];
+      const attempt = m.apply.reduce(
+        (a, step) => applyCommand(a, step.name as CommandName, step.args as never).attempt,
+        base.attempt,
+      );
+      return [{ id: m.id, attempt }];
+    }),
+  ];
+  for (const scenario of pack.scenarios) {
+    it(`gives every finding evidence to point at and a fix in ${scenario.id}`, {
+      timeout: 120_000,
+    }, () => {
+      const missing: string[] = [];
+      for (const design of designs) {
+        for (const result of evaluateAttempt(design.attempt, { ...input, scenarios: [scenario] })
+          .scenarios) {
+          if (result.status !== "evaluated") continue;
+          for (const check of result.checks) {
+            if (check.status !== "fail" && check.status !== "partial") continue;
+            if (check.evidence.length === 0 || check.instance.fix.trim() === "") {
+              missing.push(`${design.id} ${result.scenarioId}/${check.instance.id}`);
+            }
           }
         }
       }
-    }
 
-    expect(missing).toEqual([]);
-  });
+      expect(missing).toEqual([]);
+    });
+  }
 });

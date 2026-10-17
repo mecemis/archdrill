@@ -26,6 +26,8 @@ export interface ComponentProfile {
   readonly connectionCapacity: number;
   /** Client connections it holds in this environment. */
   readonly heldConnections: number;
+  /** Its callers reach it through pools, one statement per connection. */
+  readonly pooledConnections: boolean;
   /** Mean service time per request, milliseconds. */
   readonly serviceTimeMs: number;
   /** Coefficient of variation of the service time. */
@@ -34,6 +36,8 @@ export interface ComponentProfile {
   readonly servers: number;
   readonly memoryGb: number;
   readonly costPerHour: number;
+  /** What the connection proxy in front of it costs an hour; 0 without one. */
+  readonly proxyCostPerHour: number;
   readonly requestCost: {
     readonly readPerMillion: number;
     readonly writePerMillion: number;
@@ -89,11 +93,17 @@ export function componentProfile(
     connectionCapacity:
       size.maxConnections === undefined ? Number.POSITIVE_INFINITY : size.maxConnections * replicas,
     heldConnections: 0,
+    pooledConnections: kind.pooledConnections,
     serviceTimeMs,
     cv: size.latencyMs.cv,
     servers,
     memoryGb: (size.memoryGb ?? 0) * shards,
     costPerHour: size.costPerHour * instances,
+    // Billed per vCPU of every instance behind it.
+    proxyCostPerHour:
+      component.proxy && flavor.connectionProxy && size.vcpus
+        ? flavor.connectionProxy.pricePerVcpuHour * size.vcpus * instances
+        : 0,
     requestCost: flavor.requestCost ?? null,
     capacityUnits: flavor.capacityUnits ?? null,
     storageCopies: replicas,

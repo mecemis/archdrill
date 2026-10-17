@@ -241,6 +241,14 @@ function ComponentRow({
               limited by its network
             </span>
           )}
+        {metrics.connections && (
+          <span
+            className={`block text-xs ${metrics.connections.open > metrics.connections.limit ? "font-semibold text-bad-fg" : "text-fg-subtle"}`}
+            title="Connections its callers' pools hold on its fullest instance, and how many one instance accepts"
+          >
+            {compact(metrics.connections.open)} / {compact(metrics.connections.limit)} connections
+          </span>
+        )}
       </td>
       <td>{milliseconds(metrics.latency.mean)}</td>
       <td>
@@ -262,6 +270,14 @@ function ComponentRow({
             title="What its calls send and receive across zones costs, both ends' share"
           >
             {usd(metrics.costBreakdown.crossZone)} between zones
+          </span>
+        )}
+        {metrics.costBreakdown.proxy >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title="The connection proxy in front of it, billed per vCPU of its instances"
+          >
+            {usd(metrics.costBreakdown.proxy)} proxy
           </span>
         )}
         {metrics.costBreakdown.standbyRegion >= 1 && (

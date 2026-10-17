@@ -410,6 +410,7 @@ kinds:
     holdsData: true
     shardable: true
     writeScaling: primaries
+    pooledConnections: true
     flavors:
       - id: postgres
         label: PostgreSQL
@@ -418,6 +419,7 @@ kinds:
         failoverSec: 35
         regionFailoverSec: 180
         crossZoneBilling: other-end
+        connectionProxy: { latencyMs: 2, pricePerVcpuHour: 0.015 }
         sizes:
           s:
             label: 2 vCPU
@@ -425,8 +427,17 @@ kinds:
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.178
             networkGbps: 0.781
+            maxConnections: 831
+            vcpus: 2
             standsFor: db.m6i.large (RDS PostgreSQL, 2 vCPU)
             provenance:
+              maxConnections:
+                model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 8 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
+                basis:
+                  - aws-rds-max-connections
+              vcpus:
+                published: rds-m6i-prices
+                note: db.m6i.large.
               costPerHour:
                 published: aws-rds-price-list
                 note: Single-AZ.
@@ -441,8 +452,17 @@ kinds:
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.712
             networkGbps: 3.125
+            maxConnections: 3326
+            vcpus: 8
             standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)
             provenance:
+              maxConnections:
+                model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 32 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
+                basis:
+                  - aws-rds-max-connections
+              vcpus:
+                published: rds-m6i-prices
+                note: db.m6i.2xlarge.
               costPerHour:
                 published: rds-m6i-prices
                 note: Single-AZ.
@@ -457,8 +477,17 @@ kinds:
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 1.424
             networkGbps: 6.25
+            maxConnections: 5000
+            vcpus: 16
             standsFor: db.m6i.4xlarge (RDS PostgreSQL, 16 vCPU)
             provenance:
+              maxConnections:
+                model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 64 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
+                basis:
+                  - aws-rds-max-connections
+              vcpus:
+                published: rds-m6i-prices
+                note: db.m6i.4xlarge.
               costPerHour:
                 published: rds-m6i-prices
                 note: Single-AZ.
@@ -470,6 +499,11 @@ kinds:
         defaultSize: m
         notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
         provenance:
+          connectionProxy:
+            model: 'RDS Proxy: $0.015 an hour per vCPU of the instances behind it, as the Price List API publishes it, and two milliseconds a call, within the "low single-digit milliseconds" AWS says it typically adds.'
+            basis:
+              - aws-rds-proxy-price
+              - aws-rds-proxy-latency
           crossZoneBilling:
             published: aws-rds-pricing
             note: The EC2 end pays $0.01 a GB in and out; data in and out of the RDS instance costs nothing more, and Multi-AZ replication between zones is free.
@@ -498,6 +532,7 @@ kinds:
         failoverSec: 35
         regionFailoverSec: 180
         crossZoneBilling: other-end
+        connectionProxy: { latencyMs: 2, pricePerVcpuHour: 0.015 }
         sizes:
           m:
             label: 8 vCPU
@@ -505,8 +540,17 @@ kinds:
             latencyMs: { base: 2, cv: 1 }
             costPerHour: 0.712
             networkGbps: 3.125
+            maxConnections: 2520
+            vcpus: 8
             standsFor: db.m6i.2xlarge (RDS MySQL, 8 vCPU)
             provenance:
+              maxConnections:
+                model: RDS's default max_connections for MySQL, {DBInstanceClassMemory/12582880}, with DBInstanceClassMemory at 92.3% of the class's 32 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
+                basis:
+                  - aws-rds-max-connections
+              vcpus:
+                published: rds-m6i-prices
+                note: db.m6i.2xlarge.
               networkGbps:
                 model: RDS runs on the EC2 instance of the same name, and AWS lists only its burst figure (up to 12.5 Gbps) for RDS; this is m6i.2xlarge's baseline in each direction.
                 basis:
@@ -518,6 +562,11 @@ kinds:
                   - rds-m6i-prices
         defaultSize: m
         provenance:
+          connectionProxy:
+            model: 'RDS Proxy: $0.015 an hour per vCPU of the instances behind it, as the Price List API publishes it, and two milliseconds a call, within the "low single-digit milliseconds" AWS says it typically adds.'
+            basis:
+              - aws-rds-proxy-price
+              - aws-rds-proxy-latency
           crossZoneBilling:
             published: aws-rds-pricing
             note: The EC2 end pays $0.01 a GB in and out; data in and out of the RDS instance costs nothing more, and Multi-AZ replication between zones is free.
@@ -1256,6 +1305,24 @@ sources:
     publisher: AWS
     kind: price
     retrieved: 2026-10-14
+  - id: aws-rds-max-connections
+    title: "Quotas and constraints for Amazon RDS: maximum number of database connections"
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html#RDS_Limits.MaxConnections
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-17
+  - id: aws-rds-proxy-price
+    title: "AWS Price List API: Amazon RDS, us-east-1 (RDS Proxy, published 2026-10-06)"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-17
+  - id: aws-rds-proxy-latency
+    title: "RDS Proxy best practices: common usage scenarios"
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-best-practices.usage-scenarios.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-17
   - id: rds-gp3-storage
     title: AWS RDS PostgreSQL pricing explained (gp3 storage)
     url: https://infratally.com/articles/aws-rds-pricing-explained-2026/

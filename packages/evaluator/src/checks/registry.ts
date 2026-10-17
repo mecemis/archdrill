@@ -32,6 +32,7 @@ import {
   utilizationBelow,
 } from "./metrics";
 import { allSuccessPathsContain, noPath, outcomeHandled, statusForCondition } from "./paths";
+import { connectionPools } from "./pools";
 import {
   circuitBreakerOnDependency,
   dependencyTimeoutBounded,
@@ -88,6 +89,7 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     noDualWrite,
     expiredDataRemoved,
     zoneLocalCalls,
+    connectionPools,
   ].map((check) => [check.id, check as CheckDef]),
 );
 

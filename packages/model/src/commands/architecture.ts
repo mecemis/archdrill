@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   type Attempt,
   DEFAULT_POLICY,
+  MAX_POOL_SIZE,
   MAX_REGIONS,
   MAX_REPLICAS,
   MAX_RETRIES,
@@ -39,6 +40,7 @@ export const addComponent = defineCommand(
       shards: 1,
       zones: 1,
       regions: 1,
+      proxy: false,
       data: [],
     });
     draft.layout[id] = { ...args.position };
@@ -72,6 +74,7 @@ export const updateComponent = defineCommand(
     shards: z.number().int().min(1).max(MAX_SHARDS).optional(),
     zones: z.number().int().min(1).max(MAX_ZONES).optional(),
     regions: z.number().int().min(1).max(MAX_REGIONS).optional(),
+    proxy: z.boolean().optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -84,6 +87,7 @@ export const updateComponent = defineCommand(
     if (args.shards !== undefined) component.shards = args.shards;
     if (args.zones !== undefined) component.zones = args.zones;
     if (args.regions !== undefined) component.regions = args.regions;
+    if (args.proxy !== undefined) component.proxy = args.proxy;
     // Instances cannot be spread over more zones than there are of them.
     component.zones = Math.max(1, Math.min(component.zones, component.replicas * component.shards));
   },
@@ -188,6 +192,7 @@ export const setConnectionPolicy = defineCommand(
     circuitBreaker: z.boolean().optional(),
     maxRps: z.number().positive().max(1e9).nullable().optional(),
     sameZone: z.boolean().optional(),
+    poolSize: z.number().int().min(1).max(MAX_POOL_SIZE).nullable().optional(),
   }),
   (draft, args) => {
     const policy = draft.architecture.connections[requireConnectionIndex(draft, args.id)]?.policy;
@@ -201,6 +206,8 @@ export const setConnectionPolicy = defineCommand(
     if (args.jitter !== undefined) policy.jitter = args.jitter;
     if (args.circuitBreaker !== undefined) policy.circuitBreaker = args.circuitBreaker;
     if (args.sameZone !== undefined) policy.sameZone = args.sameZone;
+    if (args.poolSize === null) delete policy.poolSize;
+    else if (args.poolSize !== undefined) policy.poolSize = args.poolSize;
   },
 );
 

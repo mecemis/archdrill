@@ -1,12 +1,15 @@
 import {
   type ConnectionCallMetrics,
   type ConnectionZoneMetrics,
+  DEFAULT_POOL_SIZE,
+  type PoolMetrics,
   zoneRoutes,
 } from "@archdrill/engine";
 import {
   type Connection,
   type ConnectionPolicy,
   canHandle,
+  MAX_POOL_SIZE,
   MAX_RETRIES,
   MAX_TIMEOUT_MS,
 } from "@archdrill/model";
@@ -29,6 +32,10 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
   // Services and stream processors call over connections from flow steps.
   const callsFlowSteps =
     source !== undefined && canHandle(catalogIndex.capabilities(source.kind, source.flavor), true);
+  const target = components.find((c) => c.id === connection.to);
+  // Stores that run one statement per connection are reached through a pool on each caller instance.
+  const pooled =
+    callsFlowSteps && target !== undefined && catalogIndex.kind(target.kind)?.pooledConnections;
   return (
     <div className="flex flex-col gap-4 p-4">
       <SectionTitle>Connection</SectionTitle>
@@ -57,6 +64,7 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
           the calls a service makes from its flow steps.
         </p>
       )}
+      {pooled && <ConnectionPool connection={connection} />}
       <ZoneRouting connection={connection} />
       <div className="flex gap-2">
         <Button
@@ -254,6 +262,85 @@ function CallMetrics({ connectionId }: { readonly connectionId: string }) {
   return (
     <section className="rounded-md bg-sunken p-2.5 text-xs">
       <h4 className="mb-1 font-semibold text-fg-muted">At {metrics.environment.label}</h4>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
+        {rows.map(([term, value]) => (
+          <div key={term} className="contents">
+            <dt className="text-fg-muted">{term}</dt>
+            <dd className="text-right text-fg">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** The pool each caller instance keeps to every copy it calls, and how full it is. */
+function ConnectionPool({ connection }: { readonly connection: Connection }) {
+  const dispatch = useAttemptStore((s) => s.dispatch);
+  const { metrics } = useScenarioLoad();
+  const value = connection.policy.poolSize ?? DEFAULT_POOL_SIZE;
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const parsed = Math.round(Number(draft));
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.min(MAX_POOL_SIZE, parsed);
+    setDraft(String(next));
+    if (next !== value) dispatch("setConnectionPolicy", { id: connection.id, poolSize: next });
+  };
+  const pool = metrics?.pools.get(connection.id);
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1">
+        <SectionTitle>Connection pool</SectionTitle>
+      </legend>
+      <label className="flex items-center gap-2 text-xs text-fg-muted">
+        <input
+          type="number"
+          min={1}
+          max={MAX_POOL_SIZE}
+          value={draft}
+          aria-label="Pool size (connections to each copy)"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+          }}
+          className={`${INPUT_CLASS} w-20`}
+        />
+        connections from each instance to each copy it calls
+      </label>
+      <p className="text-xs text-fg-subtle">
+        A connection runs one statement at a time, so the pool holds calls a second × their latency
+        (Little's law). Calls beyond it wait for a connection.{" "}
+        {connection.policy.poolSize === undefined &&
+          `${DEFAULT_POOL_SIZE} is the default of HikariCP and node-postgres.`}
+      </p>
+      {metrics && pool && <PoolMetricsTable label={metrics.environment.label} pool={pool} />}
+    </fieldset>
+  );
+}
+
+function PoolMetricsTable({ label, pool }: { readonly label: string; readonly pool: PoolMetrics }) {
+  const rows: [string, string][] = [
+    ["In flight per instance", compact(pool.inFlight)],
+    [
+      "Connections per instance",
+      pool.copies > 1
+        ? `${compact(pool.poolSize * pool.copies)} (${pool.poolSize} × ${pool.copies} copies)`
+        : compact(pool.poolSize),
+    ],
+    ["Busy", percent(pool.utilization, 0)],
+  ];
+  if (pool.waitMs >= 0.05) rows.push(["Wait for a connection", milliseconds(pool.waitMs)]);
+  if (pool.exhausted > 0.0001) rows.push(["Calls finding none free", percent(pool.exhausted, 1)]);
+  if (pool.proxied) rows.push(["Held by", "the connection proxy"]);
+  return (
+    <section className="rounded-md bg-sunken p-2.5 text-xs">
+      <h4 className="mb-1 font-semibold text-fg-muted">At {label}</h4>
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
         {rows.map(([term, value]) => (
           <div key={term} className="contents">

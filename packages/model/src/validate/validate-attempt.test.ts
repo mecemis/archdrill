@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { type Attempt, DEFAULT_POLICY } from "../attempt/schema";
 import { applyCommand, type CommandArgs, type CommandName } from "../commands/index";
 import { asyncAttempt } from "../testing/async";
-import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
+import {
+  cacheAsideAttempt,
+  pooledCatalogIndex,
+  testCatalogIndex,
+  testProblem,
+} from "../testing/fixtures";
 import { createLinkAttempt } from "../testing/write-path";
 import type { IssueCode } from "./issues";
 import { validateAttempt } from "./validate-attempt";
@@ -278,6 +283,31 @@ describe("validateAttempt", () => {
     expect(issues.find((i) => i.code === "zones-ignored")).toMatchObject({
       severity: "warning",
       message: "ALB spans zones on its own; its zone count is ignored.",
+    });
+  });
+
+  it("puts a connection proxy only in front of a store that has one", () => {
+    const pooled = { ...ctx, catalog: pooledCatalogIndex };
+    const proxied = mutate("updateComponent", { id: "db", proxy: true });
+    const cache = mutate("updateComponent", { id: "redis", proxy: true });
+
+    expect(validateAttempt(proxied, pooled)).toEqual([]);
+    expect(validateAttempt(cache, pooled).find((i) => i.code === "proxy-ignored")).toMatchObject({
+      severity: "warning",
+      message: "Redis has no connection proxy to put in front of it; it is ignored.",
+    });
+  });
+
+  it("sizes pools only for stores that run one statement per connection", () => {
+    const pooled = { ...ctx, catalog: pooledCatalogIndex };
+    const toDb = mutate("setConnectionPolicy", { id: "api--db", poolSize: 20 });
+    const toCache = mutate("setConnectionPolicy", { id: "api--redis", poolSize: 20 });
+
+    expect(validateAttempt(toDb, pooled)).toEqual([]);
+    expect(validateAttempt(toCache, pooled).find((i) => i.code === "pool-ignored")).toMatchObject({
+      severity: "warning",
+      message: "Redis serves many calls over each connection; the pool size is ignored.",
+      location: { type: "connection", connectionId: "api--redis" },
     });
   });
 
