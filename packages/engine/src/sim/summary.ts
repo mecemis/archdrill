@@ -186,6 +186,16 @@ export function dropAt(utilization: number): number {
 }
 
 /**
+ * A store's open pooled connections limit what it accepts, but the
+ * statements it serves do not queue behind them. A gateway's held client
+ * connections fill its memory, and still count towards its queueing.
+ */
+const servingOnly = (profile: ComponentProfile): ComponentProfile =>
+  profile.pooledConnections && profile.heldConnections > 0
+    ? { ...profile, heldConnections: 0 }
+    : profile;
+
+/**
  * Latency a component adds per visit: service plus queueing (excluding the
  * network). With a hot key, calls served by its shard queue at that shard's
  * utilisation, the others at an ordinary shard's.
@@ -195,7 +205,7 @@ export function componentLatency(
   profile: ComponentProfile,
   hotLoad?: Load,
 ): Moments {
-  const { normal, hottest } = shardUtilizations(load, hotLoad, profile);
+  const { normal, hottest } = shardUtilizations(load, hotLoad, servingOnly(profile));
   if (hottest === normal) return latencyAt(normal, profile);
   const calls = total(load);
   const hot = total(hotLoad);
@@ -226,6 +236,15 @@ function overloadAwareWait(utilization: number, profile: ComponentProfile): numb
   const near = queueWait(SATURATION_START, profile.servers, profile.serviceTimeMs);
   const t = (utilization - SATURATION_START) / (SATURATION_END - SATURATION_START);
   return near + t * (OVERLOAD_WAIT_MS - near);
+}
+
+/**
+ * Latency per visit with the component just short of saturation: the most a
+ * pooled caller waits on it, since the callers' pools cap how many
+ * statements queue there and turn the rest away themselves.
+ */
+export function saturatedLatency(profile: ComponentProfile): Moments {
+  return latencyAt(SATURATION_START, profile);
 }
 
 /** Share of served attempts that come back after the caller's timeout. */
@@ -277,6 +296,9 @@ export function summarizeComponents(
     const unitCost = units?.monthlyCost ?? 0;
     const crossZone = crossZoneCost.get(id) ?? 0;
     const standbyRegion = standbyCost.get(id) ?? 0;
+    const proxyCost = profile.proxyCostPerHour * HOURS_PER_MONTH;
+    // Per instance: a shard's replicas share its connection capacity.
+    const perInstance = profile.shards / profile.instances;
     metrics.set(id, {
       componentId: id,
       readLoad: load.read,
@@ -293,10 +315,21 @@ export function summarizeComponents(
       faults: faults.get(id)?.labels ?? [],
       faultDisrupts: disrupts(faults.get(id)),
       latency: componentLatency(load, profile, hotLoad),
-      hotLatency: latencyAt(shardUtilizations(load, hotLoad, profile).hottest, profile),
+      hotLatency: latencyAt(
+        shardUtilizations(load, hotLoad, servingOnly(profile)).hottest,
+        profile,
+      ),
       storageGb,
       capacityUnits: units,
-      monthlyCost: instanceCost + requestCost + unitCost + storageCost + crossZone + standbyRegion,
+      connections:
+        profile.heldConnections > 0 && Number.isFinite(profile.connectionCapacity)
+          ? {
+              open: profile.heldConnections * perInstance,
+              limit: profile.connectionCapacity * perInstance,
+            }
+          : null,
+      monthlyCost:
+        instanceCost + requestCost + unitCost + storageCost + crossZone + standbyRegion + proxyCost,
       costBreakdown: {
         instances: instanceCost,
         requests: requestCost,
@@ -304,6 +337,7 @@ export function summarizeComponents(
         storage: storageCost,
         crossZone,
         standbyRegion,
+        proxy: proxyCost,
       },
     });
   }

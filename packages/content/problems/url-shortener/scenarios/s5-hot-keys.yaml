@@ -153,6 +153,26 @@ checks:
       or the edge), add read replicas to the cache's shards, or replicate hot
       keys across shards.
 
+  - id: connections-at-spike
+    use: connection-pools
+    title: Every instance's database pools fit its connection limit at the spike
+    dimension: scalability
+    weight: 2
+    severity: critical
+    requirements: [NFR-2]
+    params: { environment: spike }
+    why: >-
+      Each instance an autoscaler adds opens its own pool to every database
+      copy it calls, so a shard's primary holds instances × pool size
+      connections. PostgreSQL on RDS accepts about 5,000 on a 64 GiB instance
+      (its default max_connections), and refuses the rest at the moment the
+      fleet is largest.
+    fix: >-
+      Size each pool from Little's law (calls a second per instance × their
+      latency, with headroom), check instances × pool size against the
+      limit at the autoscaler's maximum, or put RDS Proxy in front of the
+      database so the pools no longer hold its connections.
+
   - id: spike-p99
     use: latency-below
     title: Redirect p99 stays under 50 ms during the spike

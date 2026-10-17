@@ -22,7 +22,9 @@ type Field =
   | "failoverSec"
   | "crossZoneBilling"
   | "regionFailoverSec"
-  | "crossRegionReplication";
+  | "crossRegionReplication"
+  | "vcpus"
+  | "connectionProxy";
 
 const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
@@ -41,6 +43,8 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "crossZoneBilling", label: "Between zones" },
   { field: "regionFailoverSec", label: "Standby promotion" },
   { field: "crossRegionReplication", label: "Standby region" },
+  { field: "vcpus", label: "vCPUs" },
+  { field: "connectionProxy", label: "Connection proxy" },
 ];
 
 /** What data crossing zones costs at a flavor's end. */
@@ -143,6 +147,12 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
         : `${flavor.regionFailoverSec} s until the standby copy takes writes`;
     case "crossRegionReplication":
       return flavor.crossRegionReplication ? "kept filled from the primary region" : null;
+    case "vcpus":
+      return size?.vcpus === undefined ? null : String(size.vcpus);
+    case "connectionProxy":
+      return flavor.connectionProxy
+        ? `${price(flavor.connectionProxy.pricePerVcpuHour)} a vCPU-hour, ${flavor.connectionProxy.latencyMs} ms a call`
+        : null;
   }
 }
 

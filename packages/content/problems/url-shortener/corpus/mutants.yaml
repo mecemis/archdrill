@@ -678,6 +678,20 @@ mutants:
       fails: [codes-unique-across-regions]
       band: not-passing
 
+  - id: pools-sized-for-a-warm-cache
+    base: postgres-redis-fixed-fleet
+    description: >-
+      Each redirect instance keeps 4 connections to every database copy,
+      plenty while the cache answers almost every redirect. With the cache
+      down, each instance has about 23 statements in flight on its 16
+      connections, and the redirects beyond them wait for one until they
+      give up.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--links-db, poolSize: 4 }
+    expect:
+      scenario: s4-cache-outage
+      fails: [pools-without-the-cache]
+
   # Hot keys, near caches and autoscaling (S5).
   - id: no-near-cache
     base: postgres-redis-cache-aside
@@ -691,6 +705,20 @@ mutants:
     expect:
       scenario: s5-hot-keys
       fails: [serves-spike, spike-availability]
+
+  - id: big-pools-on-an-autoscaled-fleet
+    base: postgres-redis-cache-aside
+    description: >-
+      Each redirect instance keeps 50 connections to every database copy, to
+      be safe. At the spike the autoscaler runs over a hundred of them, and
+      each shard's primary would hold more connections than PostgreSQL's
+      limit of 5,000, so it refuses the pools beyond it.
+    apply:
+      - setConnectionPolicy: { id: redirect-api--links-db, poolSize: 50 }
+    expect:
+      scenario: s5-hot-keys
+      fails: [connections-at-spike, spike-availability]
+      band: not-passing
 
   - id: autoscaling-max-too-low
     base: postgres-redis-cache-aside

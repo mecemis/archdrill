@@ -16,6 +16,7 @@ export const MAX_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 10;
 export const MAX_AGGREGATE_SEC = 3600;
 export const MAX_BUFFER_MESSAGES = 100_000_000;
+export const MAX_POOL_SIZE = 1000;
 
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 export type Position = z.infer<typeof PositionSchema>;
@@ -44,6 +45,11 @@ export const ComponentSchema = z.object({
    * minimum instances; stores replicate to it asynchronously.
    */
   regions: z.number().int().min(1).max(MAX_REGIONS).default(1),
+  /**
+   * Put the flavor's connection proxy in front of it (RDS Proxy), for stores
+   * whose callers hold pools of connections.
+   */
+  proxy: z.boolean().default(false),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
   /**
@@ -87,6 +93,12 @@ export const ConnectionPolicySchema = z.object({
    * that is.
    */
   sameZone: z.boolean().default(false),
+  /**
+   * Connections each caller instance keeps open to every copy it calls of a
+   * store that runs one statement per connection; 10 when not set, as in
+   * HikariCP and node-postgres. A call waits for a free one.
+   */
+  poolSize: z.number().int().min(1).max(MAX_POOL_SIZE).optional(),
 });
 export type ConnectionPolicy = z.infer<typeof ConnectionPolicySchema>;
 /** No timeout, no retries, no circuit breaker, no bulkhead. */

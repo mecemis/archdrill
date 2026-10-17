@@ -196,3 +196,30 @@ test("publishes to a queue the service is not connected to, connecting it", asyn
       .first(),
   ).toBeVisible();
 });
+
+test("fits every instance's pools into the database, or puts a proxy in front", async ({
+  page,
+}) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S5 / }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await page.locator('.react-flow__edge[data-id="redirect-api--links-db"]').dispatchEvent("click");
+
+  const pool = page.getByRole("group", { name: "Connection pool" });
+  const size = pool.getByLabel("Pool size (connections to each copy)");
+  await expect(size).toHaveValue("10");
+  await size.fill("50");
+  await size.press("Enter");
+
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+  await expect(
+    page.getByText("Every instance's database pools fit its connection limit at the spike"),
+  ).toBeVisible();
+
+  await page.locator('.react-flow__node[data-id="links-db"]').click();
+  await page.getByRole("checkbox", { name: "Connection proxy (RDS Proxy)" }).check();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await expect(
+    page.locator('.react-flow__node[data-id="links-db"]').getByText("proxy"),
+  ).toBeVisible();
+});

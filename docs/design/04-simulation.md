@@ -332,6 +332,25 @@ S8 counts clicks: every redirect publishes an event, and a consumer turns events
   - Beyond capacity the excess is refused like any overload.
   - Autoscaling follows whichever is fuller, so it sizes the fleet for connections.
 
+## Connection pools (as built, M24)
+
+A store that runs one statement per connection (`pooledConnections`: PostgreSQL, MySQL) is reached through pools ([ADR 0019](../adr/0019-connection-pools.md)).
+
+- **Pools.** Every caller instance keeps `poolSize` connections (10 by default) to each copy it calls: every copy of each shard when it reads from replicas, each shard's primary otherwise.
+- **Little's law.**
+  - Statements in flight per caller instance: `n = (attempts / instances) × hold`.
+  - `hold` is the store's latency, the round trip and any proxy's hop. The store's part is capped at its latency at `ρ = 0.98`, since the pools keep its queue from growing without end.
+  - The pool's utilisation is `ρ_pool = n / (poolSize × copies)`.
+- **Waiting and running out.**
+  - Each pool is an M/M/c queue with `c = poolSize` and service time `hold`. A call that gets a connection waits Erlang C's `W_q` for it.
+  - Above `ρ_pool = 1`, the share `1 − 1/ρ_pool` of attempts finds none free. It waits for the caller's timeout (30 s without one, HikariCP's `connectionTimeout`) and fails without reaching the store.
+  - Both share the fixed point's damping with overload and timeouts.
+- **The store's limit.**
+  - Each shard's primary holds `Σ callers instances × poolSize`, counting only the instances a fault leaves running, against the size's `maxConnections` (RDS's `max_connections`).
+  - Beyond it, the share `1 − 1/ρ` of its requests is refused.
+  - The statements it serves do not queue behind its open connections, unlike a gateway's requests behind its held client connections.
+- **A proxy** (`proxy: true`) holds the callers' pools instead, so they no longer count against the limit. It adds its latency to every call, and costs its price per vCPU of the instances behind it.
+
 ## Money and events (as built, M16)
 
 - **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.

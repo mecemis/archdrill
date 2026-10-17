@@ -2,6 +2,7 @@ import { analyzeAttempt, simulateEnvironment, simulateTimeline } from "@archdril
 import {
   type Attempt,
   applyCommand,
+  type CatalogIndex,
   type CommandArgs,
   type CommandName,
   type Scenario,
@@ -12,12 +13,15 @@ import { cacheAsideAttempt, testCatalogIndex, testProblem } from "@archdrill/mod
 import { CHECKS } from "./checks/registry";
 import type { CheckContext, CheckOutcome } from "./checks/types";
 
-export function contextFor(attempt: Attempt): CheckContext {
-  const analysis = analyzeAttempt(attempt, { catalog: testCatalogIndex, problem: testProblem });
+export function contextFor(
+  attempt: Attempt,
+  catalog: CatalogIndex = testCatalogIndex,
+): CheckContext {
+  const analysis = analyzeAttempt(attempt, { catalog, problem: testProblem });
   return {
     attempt,
     problem: testProblem,
-    catalog: testCatalogIndex,
+    catalog,
     analysis,
     metrics: new Map(),
     timelines: new Map(),
@@ -36,16 +40,17 @@ export function runCheckWithLoad(
   params: unknown,
   attempt: Attempt,
   workload: Workload,
+  catalog: CatalogIndex = testCatalogIndex,
 ): CheckOutcome {
   const check = CHECKS.get(id);
   if (!check) throw new Error(`unknown check ${id}`);
-  const ctx = contextFor(attempt);
+  const ctx = contextFor(attempt, catalog);
   const metrics = new Map(
     workload.environments.map((env) => [
       env.id,
       simulateEnvironment(workload, env, {
         attempt,
-        catalog: testCatalogIndex,
+        catalog,
         problem: testProblem,
         analysis: ctx.analysis,
       }),

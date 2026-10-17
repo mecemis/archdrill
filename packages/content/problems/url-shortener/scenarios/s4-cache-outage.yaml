@@ -260,6 +260,25 @@ checks:
       Retry at most once or twice with backoff and jitter, and stop retrying
       a dependency that is down (a circuit breaker).
 
+  - id: pools-without-the-cache
+    use: connection-pools
+    title: Database pools have room for every redirect while the cache is down
+    dimension: availability
+    weight: 2
+    severity: major
+    requirements: [NFR-2]
+    params: { environment: cluster-down }
+    why: >-
+      A connection runs one statement at a time, so a pool holds as many
+      calls as it has connections: calls a second times their latency
+      (Little's law). With the cache gone, every redirect needs one. A pool
+      sized for the day the cache answers almost all of them fills up, and
+      the rest wait for a connection until they give up.
+    fix: >-
+      Size each pool for the day the cache is gone: calls a second per
+      instance × the database's latency, with headroom, and keep instances ×
+      pool size within the database's connection limit.
+
   - id: retries-bounded
     use: retries-bounded-with-jitter
     title: Retries are bounded, with backoff and jitter

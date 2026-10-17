@@ -108,6 +108,10 @@
                     "minimum": 1,
                     "maximum": 2
                   },
+                  "proxy": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "data": {
                     "default": [],
                     "type": "array",
@@ -197,6 +201,11 @@
                       "sameZone": {
                         "default": false,
                         "type": "boolean"
+                      },
+                      "poolSize": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000
                       }
                     }
                   }

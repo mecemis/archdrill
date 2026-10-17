@@ -16,6 +16,7 @@ import {
 import type { Analysis, OperationAnalysis } from "../analyze";
 import { type ComponentProfile, componentProfile } from "./capacity";
 import { type ComponentFault, faultedProfile, NO_FAULT } from "./faults";
+import { openConnections, poolSpecs } from "./pools";
 import { messageBytes, type StepCost, stepCosts } from "./step-costs";
 import { replicaRoundTripMs } from "./zone-traffic";
 
@@ -150,6 +151,14 @@ export function buildProfiles(
     if (!profile) continue;
     const holding = gateways.includes(component) ? { ...profile, heldConnections: held } : profile;
     profiles.set(component.id, faultedProfile(holding, faults.get(component.id) ?? NO_FAULT));
+  }
+  // Every caller instance pools to each shard's primary, which accepts only so many connections.
+  for (const [id, open] of openConnections(poolSpecs(ctx), profiles, faults)) {
+    const profile = profiles.get(id);
+    if (!profile || !Number.isFinite(profile.connectionCapacity)) continue;
+    // The capacity counts every replica of a shard, so the primary's share is scaled up to it.
+    const replicas = profile.instances / profile.shards;
+    profiles.set(id, { ...profile, heldConnections: open * replicas });
   }
   return profiles;
 }

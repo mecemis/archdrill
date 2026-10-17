@@ -109,7 +109,7 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
           </div>
         </div>
       </div>
-      {(data.entities.length > 0 || data.isHandler || data.standby) && (
+      {(data.entities.length > 0 || data.isHandler || data.standby || data.proxied) && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {data.isHandler && (
             <span className="rounded-md bg-accent-soft px-1.5 text-[10px] font-semibold text-accent-fg">
@@ -122,6 +122,14 @@ function ComponentNodeView({ data, selected }: NodeProps<Node<ComponentNodeData>
               title="Keeps a standby copy in a second region"
             >
               standby region
+            </span>
+          )}
+          {data.proxied && (
+            <span
+              className="rounded-md bg-muted px-1.5 text-[10px] font-semibold text-fg-muted"
+              title="A connection proxy holds its callers' pools"
+            >
+              proxy
             </span>
           )}
           {data.entities.map((entity) => (
