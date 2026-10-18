@@ -21,6 +21,7 @@ import { useEvaluation, useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { eventLabel, respondLabel, triggerSummary } from "../state/triggers";
 import { type CursorMode, useUi } from "../state/ui-store";
+import { factorLabel } from "../state/what-if-compute";
 import { percent } from "../ui/format";
 import { KindChip } from "../ui/icons";
 import { FOCUS_RING, IconButton } from "../ui/primitives";
@@ -71,6 +72,8 @@ function StudioLayer() {
   const operationId = useUi((s) => s.operation);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const operation = activePack.problem.operations.find((o) => o.id === operationId);
+  // The shares of requests on the steps follow the traffic shown, a what-if too.
+  const { whatIf } = useScenarioLoad();
 
   // Escape closes an open menu first, then the studio. The Flow panel beside the
   // diagram keeps its own Escape for its pickers and popovers.
@@ -113,6 +116,14 @@ function StudioLayer() {
         {operation && (
           <span className="truncate text-sm text-fg-muted">
             {triggerSummary(operation)} · {operation.label}
+          </span>
+        )}
+        {whatIf && (
+          <span
+            className="rounded-md border border-warn-line bg-warn-soft px-1.5 py-0.5 text-xs text-warn-fg"
+            data-testid="studio-what-if"
+          >
+            Traffic {factorLabel(whatIf.factor)}: a what-if, not scored
           </span>
         )}
         <button

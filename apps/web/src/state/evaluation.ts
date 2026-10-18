@@ -6,11 +6,12 @@ import { activePack, catalogIndex } from "./content";
 import { createWorkerClient, type EvaluationReply } from "./evaluation-client";
 import { useAttemptStore } from "./store";
 import { type Highlight, useUi } from "./ui-store";
+import { useWhatIf } from "./what-if";
 
 let cached: { readonly attempt: Attempt; readonly evaluation: AttemptEvaluation } | undefined;
 
 /** Evaluation never reads the layout, so moving nodes must not trigger a re-run. */
-function sameEvaluationInputs(a: Attempt, b: Attempt): boolean {
+export function sameEvaluationInputs(a: Attempt, b: Attempt): boolean {
   return a.architecture === b.architecture && a.flows === b.flows && a.decisions === b.decisions;
 }
 
@@ -134,21 +135,61 @@ export interface ScenarioLoad {
   readonly environmentId: string | null;
   /** Metrics of the selected environment, or undefined when the scenario has no workload or is not evaluated. */
   readonly metrics: EnvironmentMetrics | undefined;
+  /**
+   * The traffic multiple shown instead of the environment's own, or null.
+   * `updating` until the design on screen is simulated at it; `failed` when it could not be.
+   */
+  readonly whatIf: {
+    readonly factor: number;
+    readonly updating: boolean;
+    readonly failed: boolean;
+  } | null;
 }
 
-/** Simulated load of the selected environment of the active scenario. */
+/** The environment shown: the one chosen, if the scenario has it, else its last (heaviest). */
+export function shownEnvironment(scenarioId: string, selected: string | null): string | null {
+  const environments = activePack.scenarios.find((s) => s.id === scenarioId)?.workload
+    ?.environments;
+  if (!environments) return null;
+  return selected && environments.some((e) => e.id === selected)
+    ? selected
+    : (environments.at(-1)?.id ?? null);
+}
+
+/**
+ * Simulated load of the selected environment of the active scenario, or of a
+ * what-if multiple of its traffic once one is set. Scores never use the latter.
+ */
 export function useScenarioLoad(): ScenarioLoad {
   const { scenarios } = useEvaluation();
   const scenarioId = useUi((s) => s.scenarioId);
   const selected = useUi((s) => s.environmentId);
+  const factor = useWhatIf((s) => s.factor);
+  const scaled = useWhatIf((s) => s.result);
+  const failed = useWhatIf((s) => s.failed);
+  const attempt = useAttemptStore((s) => s.attempt);
   const workload = activePack.scenarios.find((s) => s.id === scenarioId)?.workload;
   const environments = workload?.environments.map((e) => ({ id: e.id, label: e.label })) ?? [];
-  const environmentId =
-    selected && environments.some((e) => e.id === selected)
-      ? selected
-      : (environments.at(-1)?.id ?? null);
+  const environmentId = shownEnvironment(scenarioId, selected);
   const result = scenarios.find((s) => s.scenarioId === scenarioId);
   const metrics =
     result?.status === "evaluated" && environmentId ? result.metrics.get(environmentId) : undefined;
-  return { environments, environmentId, metrics };
+  if (factor === 1) return { environments, environmentId, metrics, whatIf: null };
+  // The last what-if of this environment stands in until the one asked for arrives.
+  const shown =
+    scaled &&
+    scaled.question.scenarioId === scenarioId &&
+    scaled.question.environmentId === environmentId
+      ? scaled
+      : null;
+  const current =
+    shown !== null &&
+    shown.question.factor === factor &&
+    sameEvaluationInputs(shown.question.attempt, attempt);
+  return {
+    environments,
+    environmentId,
+    metrics: shown?.metrics ?? metrics,
+    whatIf: { factor, updating: !current && !failed, failed },
+  };
 }

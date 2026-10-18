@@ -591,10 +591,16 @@ Adding steps in a narrow list hid what could be called, and could not be done on
   - Connections lost their mode: an "asynchronous" connection had hidden its target from the picker and its queue from consumers. Waiting is the step's to say (fire-and-forget, outbox).
   - The picker offers components that are not connected yet, and connects them in the same change.
 - **Phase 1, on the canvas (#37).** A cursor at the flow's first open place, a bar that says where the next step goes, a menu of steps next to the component clicked, and step numbers that open the step in the Flow panel.
-- **Phase 2, the flow studio.** The flow as a full-screen sequence diagram. A "+" on each lifeline between rows adds a step there, and each step shows the share of requests that reach it.
+- **Phase 2, the flow studio (#38).** The flow as a full-screen sequence diagram. A "+" on each lifeline between rows adds a step there, and each step shows the share of requests that reach it.
 - **Next, phase 3.**
   - Snippets for the usual patterns (cache-aside, a conditional insert with a retry, a publish through an outbox), opened into steps that can then be edited.
   - A "/" command line to add a step by typing.
+
+## What-if traffic (as built)
+
+Like breakscale's load slider, but over the scenario's own environments.
+- **Multiplying the traffic.** "Traffic ×N" multiplies the shown environment's request rates and connections, and simulates them in a worker, so dragging stays smooth. The canvas and Load show the result; the score does not move.
+- **The breaking point.** "Find the breaking point" steps the multiple up by 1.5 until the design breaks, then halves the distance to within 1%. It names what gives first. For example, the Postgres design's redirects break at ×3 of S2's peak, where the bulkhead to the database starts shedding; the DynamoDB design's break at ×4.2, where NGINX runs out.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

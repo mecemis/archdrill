@@ -9,6 +9,7 @@ import { dockLimit, useLayout } from "./state/layout";
 import { type DockSize, useUi } from "./state/ui-store";
 import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
+import { useWhatIfDriver } from "./state/what-if";
 import { FlowStudio } from "./studio/FlowStudio";
 import { Spotlight } from "./ui/Spotlight";
 import { Toasts } from "./ui/Toasts";
@@ -36,6 +37,7 @@ function dockRow(dock: DockSize, dragged: number, windowHeight: number): string 
 export function App() {
   useShortcuts();
   useRegressionWatch();
+  useWhatIfDriver();
   const dock = useUi((s) => s.dock);
   const dragged = useLayout((s) => s.dock);
   const windowHeight = useWindowHeight();
