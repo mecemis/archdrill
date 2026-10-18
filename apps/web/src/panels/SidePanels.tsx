@@ -121,10 +121,13 @@ export function RightPanel() {
   const setTab = useUi((s) => s.setRightTab);
   const setOpen = useUi((s) => s.setRightOpen);
   const width = useLayout((s) => s.right);
+  // The studio shows its own steps; one list at a time keeps focus and pickers in one place.
+  const studioOpen = useUi((s) => s.studioOpen);
   // Selecting something on the canvas brings up its inspector.
   useEffect(() => {
     if (selection) setTab("inspector");
   }, [selection, setTab]);
+  if (studioOpen) return null;
   if (!open) {
     return (
       <aside

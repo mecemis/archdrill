@@ -5,13 +5,13 @@ import {
   findOperationRoute,
   type Operation,
 } from "@archdrill/model";
-import { AlertTriangle, CircleCheck, Info } from "lucide-react";
+import { AlertTriangle, CircleCheck, Info, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
 import { eventLabel, triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
-import { Button, Field, SectionTitle, Select } from "../../ui/primitives";
+import { Button, Field, FOCUS_RING, SectionTitle, Select } from "../../ui/primitives";
 import { openSlots } from "./add-step";
 import { FlowSequence } from "./FlowSequence";
 import { componentLabel } from "./step-label";
@@ -22,6 +22,7 @@ export function FlowPanel() {
   const operationId = useUi((s) => s.operation);
   const scenarioId = useUi((s) => s.scenarioId);
   const setOperation = useUi((s) => s.setOperation);
+  const studioOpen = useUi((s) => s.studioOpen);
   const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
   const operation = activePack.problem.operations.find((o) => o.id === operationId);
   const flow = attempt.flows.find((f) => f.operation === operationId);
@@ -76,7 +77,18 @@ export function FlowPanel() {
             <RouteNote operation={operation} route={route?.components ?? null} attempt={attempt} />
           )}
           <section className="flex flex-col gap-2">
-            <SectionTitle>Steps</SectionTitle>
+            <div className="flex items-center justify-between">
+              <SectionTitle>Steps</SectionTitle>
+              {!studioOpen && (
+                <button
+                  type="button"
+                  onClick={() => useUi.getState().setStudioOpen(true)}
+                  className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-accent-fg hover:bg-accent-soft ${FOCUS_RING}`}
+                >
+                  <Workflow className="h-3.5 w-3.5" aria-hidden="true" /> Open in the studio
+                </button>
+              )}
+            </div>
             {flow.root === null && <FlowExplainer />}
             <BranchProgress flow={flow} attempt={attempt} />
             <FlowSequence flow={flow} />

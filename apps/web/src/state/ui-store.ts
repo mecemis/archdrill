@@ -62,6 +62,10 @@ interface UiState {
   /** Component clicked on the canvas while a slot was armed. */
   readonly canvasTarget: string | null;
   readonly focusedStep: FocusedStep | null;
+  /** The flow studio covers the app: a sequence diagram of the operation's flow. */
+  readonly studioOpen: boolean;
+  /** Lifelines added in the studio to call next, by operation, until a step calls them. */
+  readonly studioLifelines: Readonly<Record<string, readonly string[]>>;
   readonly hover: Highlight | null;
   readonly pinned: { readonly key: string; readonly highlight: Highlight } | null;
   readonly resultsTab: ResultsTab;
@@ -84,6 +88,8 @@ interface UiState {
   setCanvasTarget: (componentId: string | null) => void;
   /** Shows a step in the Flow panel: opens the panel on Flow and scrolls to it. */
   focusStep: (operation: string, stepId: string) => void;
+  setStudioOpen: (open: boolean) => void;
+  addStudioLifeline: (operation: string, componentId: string) => void;
   setHover: (highlight: Highlight | null) => void;
   togglePin: (key: string, highlight: Highlight) => void;
   clearPin: () => void;
@@ -107,6 +113,8 @@ export const useUi = create<UiState>((set, get) => ({
   slot: null,
   canvasTarget: null,
   focusedStep: null,
+  studioOpen: false,
+  studioLifelines: {},
   hover: null,
   pinned: null,
   resultsTab: "findings",
@@ -133,6 +141,16 @@ export const useUi = create<UiState>((set, get) => ({
   select: (selection) => set({ selection }),
   armSlot: (slot) => set({ slot, canvasTarget: null }),
   setCanvasTarget: (canvasTarget) => set({ canvasTarget }),
+  // Nothing stays selected behind the studio, where a key could act on it unseen.
+  setStudioOpen: (studioOpen) =>
+    set({ studioOpen, slot: null, canvasTarget: null, selection: null }),
+  addStudioLifeline: (operation, componentId) =>
+    set((state) => ({
+      studioLifelines: {
+        ...state.studioLifelines,
+        [operation]: [...(state.studioLifelines[operation] ?? []), componentId],
+      },
+    })),
   focusStep: (operation, stepId) =>
     set({
       operation,

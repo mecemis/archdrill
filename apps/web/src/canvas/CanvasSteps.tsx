@@ -1,5 +1,5 @@
 import { NodeToolbar, Panel, Position } from "@xyflow/react";
-import { ChevronLeft, ChevronRight, ListPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListPlus, Workflow, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addAtSlot,
@@ -214,5 +214,19 @@ export function StepMenu() {
         </div>
       </section>
     </NodeToolbar>
+  );
+}
+
+/** Opens the flow studio on the selected operation. */
+export function StudioButton() {
+  return (
+    <IconButton
+      aria-label="Open the flow studio"
+      title="Open the flow studio: the flow as a sequence diagram"
+      onClick={() => useUi.getState().setStudioOpen(true)}
+      className="border border-line bg-elevated shadow-card"
+    >
+      <Workflow className="h-4 w-4" />
+    </IconButton>
   );
 }
