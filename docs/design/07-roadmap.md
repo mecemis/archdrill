@@ -584,6 +584,18 @@ What fills up before the CPU does. In parts, like M22 and M23:
 - the buffer cache's hit ratio from its memory and the keys' popularity, as for caches;
 - reads that miss it go to the volume, whose IOPS (gp3's 3,000 baseline, provisioned up to 16,000, or io2) are the next limit.
 
+## The flow editor, revisited (as built)
+
+Adding steps in a narrow list hid what could be called, and could not be done on the drawing. Three phases so far, each its own pull request:
+- **Phase 0, call anything (#36).**
+  - Connections lost their mode: an "asynchronous" connection had hidden its target from the picker and its queue from consumers. Waiting is the step's to say (fire-and-forget, outbox).
+  - The picker offers components that are not connected yet, and connects them in the same change.
+- **Phase 1, on the canvas (#37).** A cursor at the flow's first open place, a bar that says where the next step goes, a menu of steps next to the component clicked, and step numbers that open the step in the Flow panel.
+- **Phase 2, the flow studio (#38).** The flow as a full-screen sequence diagram. A "+" on each lifeline between rows adds a step there, and each step shows the share of requests that reach it.
+- **Next, phase 3.**
+  - Snippets for the usual patterns (cache-aside, a conditional insert with a retry, a publish through an outbox), opened into steps that can then be edited.
+  - A "/" command line to add a step by typing.
+
 ## What-if traffic (as built)
 
 Like breakscale's load slider, but over the scenario's own environments.

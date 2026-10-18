@@ -67,7 +67,7 @@ function useFlowView(): FlowView {
 }
 
 /** Facts any of the operation's requests can have, across the scenarios' workloads. */
-function operationFacts(operation: string): Set<string> {
+export function operationFacts(operation: string): Set<string> {
   const facts = new Set<string>();
   for (const scenario of activePack.scenarios) {
     for (const cls of scenario.workload?.operations[operation]?.classes ?? []) {

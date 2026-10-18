@@ -23,7 +23,7 @@ import { useCanvasLoad } from "../state/timeline-view";
 import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
 import { IconButton } from "../ui/primitives";
-import { AddStepsButton, CursorBar, StepMenu } from "./CanvasSteps";
+import { AddStepsButton, CursorBar, StepMenu, StudioButton } from "./CanvasSteps";
 import { ComponentNode } from "./ComponentNode";
 import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
 import { findingsByComponent } from "./node-findings";
@@ -98,6 +98,7 @@ function CanvasInner() {
   const guideOpen = useOnboarding((s) => s.guideOpen);
   const operationId = useUi((s) => s.operation);
   const selection = useUi((s) => s.selection);
+  const studioOpen = useUi((s) => s.studioOpen);
   const slotArmed = useUi((s) => s.slot !== null);
   const hover = useUi((s) => s.hover);
   const pinned = useUi((s) => s.pinned);
@@ -211,6 +212,7 @@ function CanvasInner() {
         useUi.getState().select(null);
         useUi.getState().clearPin();
       }}
+      deleteKeyCode={studioOpen ? null : "Backspace"}
       onDelete={({ nodes: deletedNodes, edges: deletedEdges }) =>
         removeFromCanvas(deletedNodes, deletedEdges)
       }
@@ -228,6 +230,7 @@ function CanvasInner() {
       <Controls showInteractive={false} position="bottom-left" />
       <Panel position="top-right" className="flex gap-1.5">
         <TrafficControl />
+        <StudioButton />
         <AddStepsButton />
         {metrics && (
           <IconButton

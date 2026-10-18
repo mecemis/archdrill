@@ -10,6 +10,7 @@ import { type DockSize, useUi } from "./state/ui-store";
 import { useRegressionWatch } from "./state/use-regression-watch";
 import { useShortcuts } from "./state/use-shortcuts";
 import { useWhatIfDriver } from "./state/what-if";
+import { FlowStudio } from "./studio/FlowStudio";
 import { Spotlight } from "./ui/Spotlight";
 import { Toasts } from "./ui/Toasts";
 
@@ -40,6 +41,8 @@ export function App() {
   const dock = useUi((s) => s.dock);
   const dragged = useLayout((s) => s.dock);
   const windowHeight = useWindowHeight();
+  // Behind the studio the app takes no focus, clicks or keys.
+  const studioOpen = useUi((s) => s.studioOpen);
   return (
     <ReactFlowProvider>
       {/* One explicit column, so a crowded header scrolls instead of widening the page. */}
@@ -47,19 +50,23 @@ export function App() {
         className="grid h-full grid-cols-1 bg-app text-fg"
         style={{ gridTemplateRows: `auto minmax(0,1fr) ${dockRow(dock, dragged, windowHeight)}` }}
       >
-        <Header />
-        <div className="flex min-h-0">
-          <LeftRail />
-          <LeftPanel />
-          <main className="min-h-0 min-w-0 flex-1" aria-label="Design canvas">
-            <DesignCanvas />
-          </main>
-          <RightPanel />
+        {/* Display contents keeps the grid's rows; inert reaches the whole subtree. */}
+        <div className="contents" inert={studioOpen}>
+          <Header />
+          <div className="flex min-h-0">
+            <LeftRail />
+            <LeftPanel />
+            <main className="min-h-0 min-w-0 flex-1" aria-label="Design canvas">
+              <DesignCanvas />
+            </main>
+            <RightPanel />
+          </div>
+          <ResultsDock />
         </div>
-        <ResultsDock />
         <Toasts />
         <Welcome />
         <Spotlight />
+        <FlowStudio />
       </div>
     </ReactFlowProvider>
   );
