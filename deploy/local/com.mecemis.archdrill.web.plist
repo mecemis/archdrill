@@ -2,8 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Keeps ArchDrill's production build running on 127.0.0.1:4173 (see the README).
-    cp deploy/local/com.mecemis.archdrill.web.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mecemis.archdrill.web.plist
+  A template: deploy/local/install.sh fills in __REPO__ and __HOME__ and loads it.
   After pulling new code:
     launchctl kickstart -k gui/$(id -u)/com.mecemis.archdrill.web
 -->
@@ -11,19 +10,19 @@
 <dict>
   <key>Label</key>
   <string>com.mecemis.archdrill.web</string>
-  <!-- Run through /bin/bash with the log redirected inside the command: background jobs need
-       macOS permission to read the external SSD, and that permission is granted per program;
-       bash has it on this Mac, zsh does not. -->
+  <!-- Run through /bin/bash with the log redirected inside the command: a background job needs
+       macOS permission to read an external disk, granted per program, and bash is the program
+       most likely to have it. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>/bin/bash /Users/murat/Projects/archdrill/deploy/local/serve.sh &gt;&gt; /Users/murat/Library/Logs/archdrill-web.log 2&gt;&amp;1</string>
+    <string>/bin/bash '__REPO__/deploy/local/serve.sh' &gt;&gt; '__HOME__/Library/Logs/archdrill-web.log' 2&gt;&amp;1</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/Users/murat/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

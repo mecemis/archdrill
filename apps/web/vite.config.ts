@@ -1,35 +1,23 @@
 import { yamlContent } from "@archdrill/content/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { headersFile, SECURITY_HEADERS } from "./security-headers";
 
-/**
- * Headers for the production build. Everything comes from this origin:
- * scripts, the evaluation worker and styles. React Flow positions nodes with
- * inline style attributes, hence 'unsafe-inline' for styles only. Exports are
- * downloaded from blob: URLs.
- */
-const SECURITY_HEADERS = {
-  "Content-Security-Policy": [
-    "default-src 'self'",
-    "script-src 'self'",
-    "worker-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    "frame-ancestors 'none'",
-  ].join("; "),
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
-};
+/** Writes the security headers next to the build, for a static host (Cloudflare Pages). */
+function headersForStaticHost(): Plugin {
+  return {
+    name: "archdrill:headers",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "_headers", source: headersFile() });
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [yamlContent(), react(), tailwindcss()],
+  plugins: [yamlContent(), react(), tailwindcss(), headersForStaticHost()],
   // `pnpm serve`: the production build on this machine only; Tailscale serves
   // it to the tailnet over HTTPS (see the README).
   preview: {
