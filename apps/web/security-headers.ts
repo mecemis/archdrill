@@ -1,5 +1,6 @@
 /**
- * Headers for the production build. Everything comes from this origin:
+ * Headers `pnpm serve` sends with the production build, which also carries
+ * the content security policy in the page. Everything comes from this origin:
  * scripts, the evaluation worker and styles. React Flow positions nodes with
  * inline style attributes, hence 'unsafe-inline' for styles only. Exports are
  * downloaded from blob: URLs.
@@ -22,23 +23,6 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "Referrer-Policy": "no-referrer",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
 };
-
-/**
- * The same headers as a static host reads them (Cloudflare Pages' `_headers`),
- * so the public build and `pnpm serve` share one policy. Hashed assets are
- * cached for good.
- */
-export function headersFile(headers: Readonly<Record<string, string>> = SECURITY_HEADERS): string {
-  return [
-    "# Generated from apps/web/security-headers.ts at build time; edit that file.",
-    "/*",
-    ...Object.entries(headers).map(([name, value]) => `  ${name}: ${value}`),
-    "",
-    "/assets/*",
-    "  Cache-Control: public, max-age=31536000, immutable",
-    "",
-  ].join("\n");
-}
 
 /**
  * The content security policy as a `<meta>` element carries it, for a host
