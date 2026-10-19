@@ -605,7 +605,7 @@ Like breakscale's load slider, but over the scenario's own environments.
 ## Going public (as built)
 
 - **One security policy everywhere.** The build writes `_headers` from the same definition the local preview serves, so the public site and `pnpm serve` share one content security policy.
-- **Publishing.** Pushes to `main` publish the build to Cloudflare Pages once the repository has the project's name and a token. The first run creates the project.
+- **Publishing.** Pushes to `main` publish the build to Cloudflare Pages, at [archdrill-w2m.pages.dev](https://archdrill-w2m.pages.dev). The workflow creates the project if it is missing.
 - **README.** It is rewritten around what the app does today, with new screenshots and an acknowledgement of breakscale's vendor data.
 - **Running locally.** The local LaunchAgent is a template with an install script.
 

@@ -2,6 +2,8 @@
 
 Scenario-based system design practice with deterministic simulation and evaluation.
 
+**Try it: [archdrill-w2m.pages.dev](https://archdrill-w2m.pages.dev).** It runs entirely in your browser: no account, and your designs never leave it.
+
 You design **one architecture** for a problem, then drive it through **scenarios**: the write path, the read path, caching, peak traffic and hot keys, failures, losing a zone or a region, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. Paths, data flow, configuration, and simulated load and faults are all analysed, and every finding points at the part of the design that caused it.
 
 ![The URL shortener at a viral spike: a million redirects a second, utilisation on every component, request rates on connections, and the scenario's score](docs/media/overview.png)
