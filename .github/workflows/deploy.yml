@@ -23,8 +23,6 @@ jobs:
       contents: read
       deployments: write
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +33,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Writes dist/_headers too, so Cloudflare serves the same security headers as `pnpm serve`.
+      # Installing and building run dependencies' scripts, so only the steps below see the token.
       - run: pnpm build
-      # The first run creates the project; later runs find it there.
-      - name: Create the Pages project if needed
+      - name: Create the Pages project if it is missing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          pnpm dlx wrangler@4 pages project list | grep -qw "$PROJECT" \
-            || pnpm dlx wrangler@4 pages project create "$PROJECT" --production-branch main
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT")
+          case "$status" in
+            200) echo "Project $PROJECT exists." ;;
+            404) pnpm dlx wrangler@4 pages project create "$PROJECT" --production-branch main ;;
+            *) echo "Could not look up project $PROJECT: HTTP $status"; exit 1 ;;
+          esac
       - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm dlx wrangler@4 pages deploy apps/web/dist --project-name "$PROJECT" --branch main

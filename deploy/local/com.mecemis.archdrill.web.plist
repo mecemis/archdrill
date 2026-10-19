@@ -17,7 +17,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>/bin/bash __REPO__/deploy/local/serve.sh &gt;&gt; __HOME__/Library/Logs/archdrill-web.log 2&gt;&amp;1</string>
+    <string>/bin/bash '__REPO__/deploy/local/serve.sh' &gt;&gt; '__HOME__/Library/Logs/archdrill-web.log' 2&gt;&amp;1</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
