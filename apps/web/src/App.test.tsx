@@ -551,7 +551,7 @@ describe("App with background work", () => {
     ).toBeDefined();
   });
 
-  it("offers batches that collect items to jobs, not to requests", () => {
+  it("offers batches that collect items to jobs", () => {
     useAttemptStore.getState().dispatch("removeFlow", { operation: "purge-expired" });
     useAttemptStore.getState().dispatch("createFlow", {
       operation: "purge-expired",
@@ -563,16 +563,19 @@ describe("App with background work", () => {
     openSettings("delete-link");
 
     expect(screen.getByLabelText(/items wait for the batch to fill/)).toBeDefined();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  it("does not offer batches that collect items to requests", () => {
     useAttemptStore.getState().dispatch("removeFlow", { operation: "disable-link" });
     useAttemptStore
       .getState()
       .dispatch("createFlow", { operation: "disable-link", handler: "api" });
+    renderApp();
     chooseOperation("disable-link");
     choose(/^Delete Link from /);
     openSettings("delete-link");
 
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDefined();
     expect(screen.queryByLabelText(/Batch size/)).toBeNull();
   });
 });
