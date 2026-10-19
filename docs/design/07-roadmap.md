@@ -605,7 +605,7 @@ Like breakscale's load slider, but over the scenario's own environments.
 ## Going public (as built)
 
 - **One security policy everywhere.** The build writes `_headers` from the same definition the local preview serves, so the public site and `pnpm serve` share one content security policy.
-- **Publishing.** Pushes to `main` publish the build to Cloudflare Pages, at [archdrill-w2m.pages.dev](https://archdrill-w2m.pages.dev). The workflow creates the project if it is missing.
+- **Publishing.** Pushes to `main` publish the build to GitHub Pages, at [mecemis.github.io/archdrill](https://mecemis.github.io/archdrill/), and to Cloudflare Pages, at [archdrill-w2m.pages.dev](https://archdrill-w2m.pages.dev). GitHub Pages sends no headers of its own, so its build carries the content security policy in the page. The Cloudflare workflow creates its project if it is missing.
 - **README.** It is rewritten around what the app does today, with new screenshots and an acknowledgement of breakscale's vendor data.
 - **Running locally.** The local LaunchAgent is a template with an install script.
 

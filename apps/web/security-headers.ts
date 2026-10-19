@@ -39,3 +39,15 @@ export function headersFile(headers: Readonly<Record<string, string>> = SECURITY
     "",
   ].join("\n");
 }
+
+/**
+ * The content security policy as a `<meta>` element carries it, for a host
+ * that sends no headers of its own (GitHub Pages). Browsers ignore
+ * frame-ancestors there, so it is left out rather than warned about.
+ */
+export function metaPolicy(headers: Readonly<Record<string, string>> = SECURITY_HEADERS): string {
+  return (headers["Content-Security-Policy"] ?? "")
+    .split("; ")
+    .filter((directive) => !directive.startsWith("frame-ancestors"))
+    .join("; ");
+}
