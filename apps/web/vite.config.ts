@@ -3,7 +3,14 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
-import { headersFile, SECURITY_HEADERS } from "./security-headers";
+import { headersFile, metaPolicy, SECURITY_HEADERS } from "./security-headers";
+
+/**
+ * Set when building for GitHub Pages: the path the site is served under
+ * (`/archdrill/`). GitHub Pages sends no headers of our own, so the policy
+ * goes into the page instead of a `_headers` file.
+ */
+const githubPagesBase = process.env.GITHUB_PAGES_BASE;
 
 /** Writes the security headers next to the build, for a static host (Cloudflare Pages). */
 function headersForStaticHost(): Plugin {
@@ -16,8 +23,34 @@ function headersForStaticHost(): Plugin {
   };
 }
 
+/** Puts the policy in the page, ahead of every script, for a host that sends no headers. */
+function policyInPage(): Plugin {
+  return {
+    name: "archdrill:policy-in-page",
+    apply: "build",
+    transformIndexHtml: () => [
+      {
+        tag: "meta",
+        attrs: { "http-equiv": "Content-Security-Policy", content: metaPolicy() },
+        injectTo: "head-prepend",
+      },
+      {
+        tag: "meta",
+        attrs: { name: "referrer", content: "no-referrer" },
+        injectTo: "head-prepend",
+      },
+    ],
+  };
+}
+
 export default defineConfig({
-  plugins: [yamlContent(), react(), tailwindcss(), headersForStaticHost()],
+  base: githubPagesBase ?? "/",
+  plugins: [
+    yamlContent(),
+    react(),
+    tailwindcss(),
+    githubPagesBase ? policyInPage() : headersForStaticHost(),
+  ],
   // `pnpm serve`: the production build on this machine only; Tailscale serves
   // it to the tailnet over HTTPS (see the README).
   preview: {
