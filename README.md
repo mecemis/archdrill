@@ -2,7 +2,7 @@
 
 Scenario-based system design practice with deterministic simulation and evaluation.
 
-**Try it: [mecemis.github.io/archdrill](https://mecemis.github.io/archdrill/)** (also at [archdrill-w2m.pages.dev](https://archdrill-w2m.pages.dev)). It runs entirely in your browser: no account, and your designs never leave it.
+**Try it: [mecemis.github.io/archdrill](https://mecemis.github.io/archdrill/)**. It runs entirely in your browser: no account, and your designs never leave it.
 
 You design **one architecture** for a problem, then drive it through **scenarios**: the write path, the read path, caching, peak traffic and hot keys, failures, losing a zone or a region, and edge cases. Each scenario is evaluated on how the design *behaves*, not on which component names appear. Paths, data flow, configuration, and simulated load and faults are all analysed, and every finding points at the part of the design that caused it.
 
@@ -123,17 +123,13 @@ pnpm test        # unit, integration and corpus tests (Vitest)
 pnpm e2e         # browser tests (Playwright; uses the installed Chrome locally)
 pnpm report      # corpus report and the evaluation-time budget (Markdown in packages/content/report/out)
 pnpm check       # Biome lint/format check + TypeScript
-pnpm build       # production build, with the security headers in dist/_headers
+pnpm build       # production build, with the content security policy in the page
 pnpm serve       # build and serve the production build on 127.0.0.1:4173
 ```
 
 ### Deploying
 
-The production build is a static site, published on every push to `main` in two places:
-- **GitHub Pages**, through [`.github/workflows/github-pages.yml`](.github/workflows/github-pages.yml). GitHub Pages sends no headers of its own, so that build (`GITHUB_PAGES_BASE=/archdrill/ pnpm build`) puts the content security policy in the page.
-- **Cloudflare Pages**, through [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), once the repository has a variable `CLOUDFLARE_PAGES_PROJECT` (the project's name) and the secrets `CLOUDFLARE_API_TOKEN` (with "Cloudflare Pages: Edit") and `CLOUDFLARE_ACCOUNT_ID`. That build writes the same security headers to `dist/_headers` that `pnpm serve` sends.
-
-Either way the policy is strict: every script is served from the site itself.
+The production build is a static site. Pushes to `main` publish it to GitHub Pages through [`.github/workflows/github-pages.yml`](.github/workflows/github-pages.yml), built with `GITHUB_PAGES_BASE=/archdrill/` so it is served under that path. GitHub Pages sends no headers of its own, so the build puts the content security policy in the page; `pnpm serve` sends it as headers too. The policy is strict: every script is served from the site itself.
 
 ### Running it on your own machine
 

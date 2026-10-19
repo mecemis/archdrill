@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { headersFile, metaPolicy, SECURITY_HEADERS } from "./security-headers";
+import { metaPolicy, SECURITY_HEADERS } from "./security-headers";
 
-describe("headersFile", () => {
-  it("gives the static host every header the local build serves", () => {
-    const file = headersFile();
-
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-      expect(file).toContain(`  ${name}: ${value}\n`);
-    }
-    expect(file).toMatch(/^\/assets\/\*\n {2}Cache-Control: public, max-age=31536000, immutable$/m);
-  });
-
+describe("SECURITY_HEADERS", () => {
   it("keeps the policy strict: nothing from other origins, no inline scripts", () => {
     const policy = SECURITY_HEADERS["Content-Security-Policy"] ?? "";
 
