@@ -1,0 +1,45 @@
+name: Deploy
+
+# Publishes the production build to Cloudflare Pages on every push to main.
+# Skipped until the repository is set up for it: the variable
+# CLOUDFLARE_PAGES_PROJECT (the project's name) and the secrets
+# CLOUDFLARE_API_TOKEN (a token with "Cloudflare Pages: Edit") and
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  pages:
+    if: vars.CLOUDFLARE_PAGES_PROJECT != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Writes dist/_headers too, so Cloudflare serves the same security headers as `pnpm serve`.
+      - run: pnpm build
+      # The first run creates the project; later runs find it there.
+      - name: Create the Pages project if needed
+        run: |
+          pnpm dlx wrangler@4 pages project list | grep -qw "$PROJECT" \
+            || pnpm dlx wrangler@4 pages project create "$PROJECT" --production-branch main
+      - name: Deploy
+        run: pnpm dlx wrangler@4 pages deploy apps/web/dist --project-name "$PROJECT" --branch main
