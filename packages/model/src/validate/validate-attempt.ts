@@ -126,6 +126,27 @@ function validateComponentCatalog(component: Component, catalog: CatalogIndex): 
       ),
     );
   }
+  if (component.iops !== undefined) {
+    const volume = flavor.storageVolume;
+    if (!volume) {
+      issues.push(
+        warning(
+          "iops-ignored",
+          `${flavor.label} has no volume to provision I/Os on; they are ignored.`,
+          location,
+        ),
+      );
+    } else if (component.iops < volume.stripedIops || component.iops > volume.maxIops) {
+      const range = `${volume.stripedIops.toLocaleString("en-US")} to ${volume.maxIops.toLocaleString("en-US")}`;
+      issues.push(
+        error(
+          "iops-out-of-range",
+          `${flavor.label}'s volume is provisioned for ${range} I/Os a second.`,
+          location,
+        ),
+      );
+    }
+  }
   if (component.autoscale) {
     if (!kind.replicable || kind.holdsData || flavor.managedRedundancy) {
       issues.push(

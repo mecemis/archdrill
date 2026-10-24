@@ -1,4 +1,5 @@
 import { cacheHitRatio } from "./cache-model";
+import type { MissedCache } from "./page-cache";
 import type { LoopState } from "./propagate";
 import { type CacheSpec, cacheKey } from "./setup";
 import type { Propagation } from "./summary";
@@ -128,4 +129,36 @@ export function relaxCaches(
     }
   }
   return delta;
+}
+
+/**
+ * What gives the probability a cache answers a lookup of one key of each
+ * popularity bucket: the cache model at its current lookups and memory, and
+ * a scale that makes it give, over all keys, the hit ratio the fixed point
+ * has reached (which also counts how warm the cache is and how often a miss
+ * writes the entry back).
+ */
+export function bucketHitsInput(
+  cache: CacheSpec,
+  flow: Propagation,
+  loop: LoopState,
+  instancesOf: (componentId: string) => number,
+  windowOf: (key: string) => number | undefined = () => undefined,
+): MissedCache | null {
+  const key = cacheKey(cache.componentId, cache.entity);
+  const spec = warmedFor(cache, windowOf(key));
+  if (!spec.populated || !spec.existing) return null;
+  const total = flow.lookups.get(key) ?? { existing: 0, absent: 0, hot: 0 };
+  const copies = spec.callerOf ? Math.max(1, instancesOf(spec.callerOf)) : 1;
+  const lookups = { existing: total.existing / copies, absent: total.absent / copies, hot: 0 };
+  const [positiveItems] = splitCapacity(spec, lookups);
+  const input = {
+    rate: lookups.existing,
+    popularity: spec.existing,
+    capacityItems: positiveItems,
+    ttlSec: spec.ttlSec,
+  };
+  const modelled = cacheHitRatio(input);
+  const reached = loop.hit.get(key) ?? 0;
+  return { input, scale: modelled > 0 ? reached / modelled : 0 };
 }

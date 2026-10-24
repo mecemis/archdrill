@@ -181,6 +181,74 @@
                   "required": ["latencyMs", "pricePerVcpuHour"],
                   "additionalProperties": false
                 },
+                "pageCache": {
+                  "type": "object",
+                  "properties": {
+                    "memoryShare": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1
+                    },
+                    "pageBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "pagesPerRead": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "pagesPerWrite": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["memoryShare", "pageBytes", "pagesPerRead", "pagesPerWrite"],
+                  "additionalProperties": false
+                },
+                "storageVolume": {
+                  "type": "object",
+                  "properties": {
+                    "baselineIops": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "stripedFromGb": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "stripedIops": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxIops": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "pricePerIopsMonth": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "readMs": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "baselineIops",
+                    "stripedFromGb",
+                    "stripedIops",
+                    "maxIops",
+                    "pricePerIopsMonth",
+                    "readMs"
+                  ],
+                  "additionalProperties": false
+                },
                 "sizes": {
                   "default": {},
                   "type": "object",
@@ -244,6 +312,11 @@
                         "exclusiveMinimum": 0,
                         "maximum": 9007199254740991
                       },
+                      "ebsIops": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
                       "standsFor": {
                         "type": "string",
                         "minLength": 1
@@ -261,6 +334,7 @@
                             "maxConnections",
                             "networkGbps",
                             "vcpus",
+                            "ebsIops",
                             "storagePricePerGbMonth",
                             "requestCost",
                             "requestUnits",
@@ -271,7 +345,9 @@
                             "crossZoneBilling",
                             "regionFailoverSec",
                             "crossRegionReplication",
-                            "connectionProxy"
+                            "connectionProxy",
+                            "pageCache",
+                            "storageVolume"
                           ]
                         },
                         "additionalProperties": {
@@ -424,6 +500,7 @@
                       "maxConnections",
                       "networkGbps",
                       "vcpus",
+                      "ebsIops",
                       "storagePricePerGbMonth",
                       "requestCost",
                       "requestUnits",
@@ -434,7 +511,9 @@
                       "crossZoneBilling",
                       "regionFailoverSec",
                       "crossRegionReplication",
-                      "connectionProxy"
+                      "connectionProxy",
+                      "pageCache",
+                      "storageVolume"
                     ]
                   },
                   "additionalProperties": {

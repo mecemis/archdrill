@@ -69,6 +69,22 @@ function capacityProfile(popularity: ZipfPopularity, capacityItems: number): Cap
 }
 
 /**
+ * The same model per popularity bucket of `zipfBuckets`: the probability a
+ * lookup of one key of each bucket hits. The popular keys hit, the tail
+ * misses; what misses is what a store behind the cache sees.
+ */
+export function cacheHitsByBucket(input: CacheModelInput): readonly number[] {
+  const profile = capacityProfile(input.popularity, Math.max(0, input.capacityItems));
+  const ttl = input.ttlSec;
+  return profile.perKey.map((q, i) => {
+    if (input.rate <= 0 || input.capacityItems <= 0) return 0;
+    const lambda = input.rate * q;
+    const ttlHit = ttl === null ? 1 : (lambda * ttl) / (1 + lambda * ttl);
+    return Math.min(profile.capacityHits[i] ?? 0, ttlHit);
+  });
+}
+
+/**
  * Steady-state hit ratio of an LRU cache with optional TTL, filled on misses
  * (cache-aside), under Zipf-distributed key popularity.
  *

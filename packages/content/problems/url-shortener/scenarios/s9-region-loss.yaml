@@ -254,11 +254,11 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: The two regions cost less than $80,000 a month
+    title: The two regions cost less than $86,000 a month
     dimension: cost
     weight: 2
     severity: major
-    params: { environment: avg, monthlyUsd: 80000 }
+    params: { environment: avg, monthlyUsd: 86000 }
     why: >-
       A standby region doubles what holds data: every copy of ~79 TB of
       links, and the cache. Fleets cost only what runs in standby, and the

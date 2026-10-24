@@ -47,6 +47,30 @@ export interface ComponentProfile {
   /** Full copies of the stored data: each replica of a shard holds that shard's data. */
   readonly storageCopies: number;
   readonly storagePricePerGbMonth: number;
+  /** Gigabytes billed at least, across its shards (one copy): provisioning I/Os takes a striped volume. */
+  readonly minStoredGb: number;
+  /** What the I/Os provisioned above the volume's own cost a month, every copy. */
+  readonly provisionedIopsCostPerMonth: number;
+  /** For a store that reads pages from a volume: what its reads and writes take of it. */
+  readonly storage: StorageProfile | null;
+}
+
+/** A store's volume, and what its reads and writes take of it. */
+export interface StorageProfile {
+  /** Volume I/Os a read takes on average: the pages of the reads its page cache misses. */
+  readonly ioPerRead: number;
+  /** Volume I/Os a write takes: the pages it dirties, on every copy of its shard. */
+  readonly ioPerWrite: number;
+  /** I/Os a second one copy sustains: its volume's, or its instance's if fewer. */
+  readonly iopsPerCopy: number;
+  /** The same for every copy together. */
+  readonly iopsCapacity: number;
+  /** Milliseconds one page read takes from an idle volume. */
+  readonly readMs: number;
+  /** Pages a read that misses reads. */
+  readonly pagesPerRead: number;
+  /** Share of its reads of ordinary keys the page cache answers. */
+  readonly hitRatio: number;
 }
 
 /**
@@ -108,5 +132,40 @@ export function componentProfile(
     capacityUnits: flavor.capacityUnits ?? null,
     storageCopies: replicas,
     storagePricePerGbMonth: flavor.storagePricePerGbMonth ?? 0,
+    ...provisionedVolume(component, flavor, shards, instances),
+    storage: null,
+  };
+}
+
+/** I/Os a second a store's copy has: provisioned within the volume's range, else what its size gives. */
+export function volumeIops(
+  volume: NonNullable<Flavor["storageVolume"]>,
+  provisioned: number | undefined,
+  copyGb: number,
+): number {
+  if (provisioned !== undefined) {
+    return Math.min(volume.maxIops, Math.max(volume.stripedIops, provisioned));
+  }
+  return copyGb >= volume.stripedFromGb ? volume.stripedIops : volume.baselineIops;
+}
+
+/**
+ * Provisioned I/Os are billed above what the striped volume includes, on
+ * every copy; provisioning takes a striped volume, so at least its size.
+ */
+function provisionedVolume(
+  component: Component,
+  flavor: Flavor,
+  shards: number,
+  instances: number,
+): { minStoredGb: number; provisionedIopsCostPerMonth: number } {
+  const volume = flavor.storageVolume;
+  if (!volume || component.iops === undefined) {
+    return { minStoredGb: 0, provisionedIopsCostPerMonth: 0 };
+  }
+  const extra = volumeIops(volume, component.iops, volume.stripedFromGb) - volume.stripedIops;
+  return {
+    minStoredGb: volume.stripedFromGb * shards,
+    provisionedIopsCostPerMonth: extra * volume.pricePerIopsMonth * instances,
   };
 }

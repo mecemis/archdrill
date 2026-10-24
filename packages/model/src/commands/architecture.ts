@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   type Attempt,
   DEFAULT_POLICY,
+  MAX_IOPS,
   MAX_POOL_SIZE,
   MAX_REGIONS,
   MAX_REPLICAS,
@@ -75,6 +76,8 @@ export const updateComponent = defineCommand(
     zones: z.number().int().min(1).max(MAX_ZONES).optional(),
     regions: z.number().int().min(1).max(MAX_REGIONS).optional(),
     proxy: z.boolean().optional(),
+    /** Provisioned I/Os a second per copy; null goes back to the volume's baseline. */
+    iops: z.number().int().positive().max(MAX_IOPS).nullable().optional(),
   }),
   (draft, args) => {
     const component = draft.architecture.components[requireComponentIndex(draft, args.id)];
@@ -88,6 +91,8 @@ export const updateComponent = defineCommand(
     if (args.zones !== undefined) component.zones = args.zones;
     if (args.regions !== undefined) component.regions = args.regions;
     if (args.proxy !== undefined) component.proxy = args.proxy;
+    if (args.iops === null) delete component.iops;
+    else if (args.iops !== undefined) component.iops = args.iops;
     // Instances cannot be spread over more zones than there are of them.
     component.zones = Math.max(1, Math.min(component.zones, component.replicas * component.shards));
   },

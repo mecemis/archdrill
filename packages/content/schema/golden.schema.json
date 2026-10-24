@@ -112,6 +112,11 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "iops": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 256000
+                  },
                   "data": {
                     "default": [],
                     "type": "array",

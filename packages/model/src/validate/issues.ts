@@ -12,6 +12,8 @@ export const ISSUE_CODES = [
   "zones-exceed-instances",
   "regions-ignored",
   "proxy-ignored",
+  "iops-ignored",
+  "iops-out-of-range",
   "pool-ignored",
   "autoscale-not-supported",
   "autoscale-below-minimum",

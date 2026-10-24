@@ -269,6 +269,41 @@ export const testCatalog: Catalog = CatalogSchema.parse({
 export const testCatalogIndex = createCatalogIndex(testCatalog);
 
 /**
+ * The test catalog with Postgres reading its pages from a volume, as RDS on
+ * gp3 does: 32 GiB an instance, 69.2% of it caching 8 KiB pages, two pages a
+ * read; 12,000 I/Os a second from the instance, and a volume of 3,000 below
+ * 400 GB and 12,000 from it, provisionable to 64,000.
+ */
+export const diskCatalogIndex = createCatalogIndex({
+  ...testCatalog,
+  kinds: testCatalog.kinds.map((kind) =>
+    kind.id === "relational-db"
+      ? {
+          ...kind,
+          flavors: kind.flavors.map((f) => ({
+            ...f,
+            pageCache: { memoryShare: 0.692, pageBytes: 8192, pagesPerRead: 2, pagesPerWrite: 1 },
+            storageVolume: {
+              baselineIops: 3000,
+              stripedFromGb: 400,
+              stripedIops: 12000,
+              maxIops: 64000,
+              pricePerIopsMonth: 0.02,
+              readMs: 1,
+            },
+            sizes: Object.fromEntries(
+              Object.entries(f.sizes).map(([id, s]) => [
+                id,
+                { ...s, memoryGb: 32, ebsIops: 12000 },
+              ]),
+            ),
+          })),
+        }
+      : kind,
+  ),
+});
+
+/**
  * The test catalog with Postgres as RDS runs it: one statement per
  * connection, 25 connections an instance (low enough to reach), 8 vCPUs and
  * a connection proxy.

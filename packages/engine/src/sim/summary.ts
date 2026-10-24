@@ -69,6 +69,14 @@ export interface Propagation {
   readonly fills: ReadonlyMap<string, { existing: number; hot: number }>;
   /** Per entity: requests for existing keys that looked it up in any cache, and how many any tier answered. */
   readonly entityLookups: ReadonlyMap<string, { lookups: number; hits: number }>;
+  /**
+   * Per component and entity (`cacheKey`): reads a second of ordinary keys,
+   * by the caches they missed for that entity on the way (their ids joined
+   * with commas; empty for reads that came straight). The hot key's reads
+   * are left out: it stays in any cache. Consistent reads count as their
+   * load does, once per copy they cannot use.
+   */
+  readonly storeReads: ReadonlyMap<string, ReadonlyMap<string, number>>;
   /** Requests per second crossing each connection, retries included. */
   readonly traffic: ReadonlyMap<string, number>;
   /** Per connection that flow steps call over: calls, attempts and failures per second. */
@@ -126,10 +134,27 @@ export function networkShare(load: Load | undefined, profile: ComponentProfile):
 const heldShare = (profile: ComponentProfile) =>
   profile.heldConnections > 0 ? profile.heldConnections / profile.connectionCapacity : 0;
 
+/**
+ * Share of a store's volume I/Os a load takes: the pages of reads its page
+ * cache misses, and the pages writes dirty on every copy. The hot key always
+ * stays in memory, so `hot` loads read nothing from the volume.
+ */
+export function diskShare(load: Load | undefined, profile: ComponentProfile, hot = false): number {
+  const disk = profile.storage;
+  if (!load || !disk || disk.iopsCapacity <= 0) return 0;
+  const reads = hot ? 0 : load.read * disk.ioPerRead;
+  return (reads + load.write * disk.ioPerWrite) / disk.iopsCapacity;
+}
+
 export function utilizationOf(load: Load | undefined, profile: ComponentProfile): number {
-  // Requests take CPU, returned values take the network, open connections take memory:
-  // whichever is fullest limits the component.
-  return Math.max(requestShare(load, profile), networkShare(load, profile), heldShare(profile));
+  // Requests take CPU, returned values take the network, open connections take memory,
+  // pages read and written take the volume: whichever is fullest limits the component.
+  return Math.max(
+    requestShare(load, profile),
+    networkShare(load, profile),
+    heldShare(profile),
+    diskShare(load, profile),
+  );
 }
 
 /** Beyond capacity, the excess share of arrivals is rejected. */
@@ -169,15 +194,32 @@ export function shardUtilizations(
   const network = networkShare(load, profile);
   const hotNetwork = networkShare(hotLoad, profile);
   const held = heldShare(profile);
+  const { normal: disk, hottest: hotDisk } = diskShares(load, hotLoad, profile);
   return {
-    normal: Math.max(requests - hotRequests, network - hotNetwork, held),
+    normal: Math.max(requests - hotRequests, network - hotNetwork, held, disk),
     hottest: Math.max(
       profile.shards * hotRequests + requests - hotRequests,
       profile.shards * hotNetwork + network - hotNetwork,
       keyLimit,
       held,
+      hotDisk,
     ),
   };
+}
+
+/**
+ * How busy an ordinary shard's volumes are, and the hot key's shard's: the
+ * hot key's writes land on one shard, and its reads on none.
+ */
+function diskShares(
+  load: Load | undefined,
+  hotLoad: Load | undefined,
+  profile: ComponentProfile,
+): { readonly normal: number; readonly hottest: number } {
+  const all = diskShare(load, profile);
+  if (!profile.sharded || total(hotLoad) <= 0) return { normal: all, hottest: all };
+  const hot = diskShare(hotLoad, profile, true);
+  return { normal: all - hot, hottest: profile.shards * hot + all - hot };
 }
 
 /** Share of arrivals rejected at a utilisation. */
@@ -204,6 +246,42 @@ export function componentLatency(
   load: Load | undefined,
   profile: ComponentProfile,
   hotLoad?: Load,
+): Moments {
+  return withDiskReads(servedLatency(load, profile, hotLoad), load, hotLoad, profile);
+}
+
+/** M/D/1 per copy: a volume serves its I/Os at a steady rate. */
+const DISK_UTILIZATION_CAP = 0.98;
+
+/**
+ * Reads the page cache misses wait for their pages: each page an idle
+ * volume's read time, plus the wait behind the copy's other I/Os (an M/D/1
+ * queue). Beyond saturation the store's overload wait takes over.
+ */
+function withDiskReads(
+  latency: Moments,
+  load: Load | undefined,
+  hotLoad: Load | undefined,
+  profile: ComponentProfile,
+): Moments {
+  const disk = profile.storage;
+  const visits = total(load);
+  if (!disk || !load || visits <= 0 || disk.ioPerRead <= 0) return latency;
+  const rho = Math.min(DISK_UTILIZATION_CAP, diskShares(load, hotLoad, profile).normal);
+  const wait = ((rho / (2 * (1 - rho))) * 1000) / disk.iopsPerCopy;
+  const perMiss = disk.pagesPerRead * (disk.readMs + wait);
+  // Visits that read from the volume: reads that miss, a share ioPerRead / pagesPerRead of reads.
+  const missing = Math.min(1, (load.read * disk.ioPerRead) / disk.pagesPerRead / visits);
+  return {
+    mean: latency.mean + missing * perMiss,
+    variance: latency.variance + missing * (1 - missing) * perMiss ** 2,
+  };
+}
+
+function servedLatency(
+  load: Load | undefined,
+  profile: ComponentProfile,
+  hotLoad: Load | undefined,
 ): Moments {
   const { normal, hottest } = shardUtilizations(load, hotLoad, servingOnly(profile));
   if (hottest === normal) return latencyAt(normal, profile);
@@ -277,7 +355,7 @@ export function summarizeComponents(
           SECONDS_PER_MONTH) /
         1e6
       : 0;
-    const storageGb = (stored.get(id) ?? 0) * profile.storageCopies;
+    const storageGb = Math.max(stored.get(id) ?? 0, profile.minStoredGb) * profile.storageCopies;
     const instanceCost = profile.costPerHour * HOURS_PER_MONTH;
     const network = networkShare(load, profile);
     const hotNetwork = profile.sharded ? networkShare(hotLoad, profile) : 0;
@@ -297,6 +375,8 @@ export function summarizeComponents(
     const crossZone = crossZoneCost.get(id) ?? 0;
     const standbyRegion = standbyCost.get(id) ?? 0;
     const proxyCost = profile.proxyCostPerHour * HOURS_PER_MONTH;
+    const iopsCost = profile.provisionedIopsCostPerMonth;
+    const disk = profile.storage;
     // Per instance: a shard's replicas share its connection capacity.
     const perInstance = profile.shards / profile.instances;
     metrics.set(id, {
@@ -328,8 +408,22 @@ export function summarizeComponents(
               limit: profile.connectionCapacity * perInstance,
             }
           : null,
+      disk: disk && {
+        hitRatio: disk.hitRatio,
+        readIops: (load.read * disk.ioPerRead) / profile.instances,
+        writeIops: (load.write * disk.ioPerWrite) / profile.instances,
+        limit: disk.iopsPerCopy,
+        utilization: diskShares(load, hotLoad, profile).hottest,
+      },
       monthlyCost:
-        instanceCost + requestCost + unitCost + storageCost + crossZone + standbyRegion + proxyCost,
+        instanceCost +
+        requestCost +
+        unitCost +
+        storageCost +
+        crossZone +
+        standbyRegion +
+        proxyCost +
+        iopsCost,
       costBreakdown: {
         instances: instanceCost,
         requests: requestCost,
@@ -338,6 +432,7 @@ export function summarizeComponents(
         crossZone,
         standbyRegion,
         proxy: proxyCost,
+        iops: iopsCost,
       },
     });
   }

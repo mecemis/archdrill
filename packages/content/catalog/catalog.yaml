@@ -416,6 +416,14 @@ kinds:
         label: PostgreSQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
+        pageCache: { memoryShare: 0.692, pageBytes: 8192, pagesPerRead: 2, pagesPerWrite: 1 }
+        storageVolume:
+          baselineIops: 3000
+          stripedFromGb: 429.5
+          stripedIops: 12000
+          maxIops: 64000
+          pricePerIopsMonth: 0.02
+          readMs: 1
         failoverSec: 35
         regionFailoverSec: 180
         crossZoneBilling: other-end
@@ -429,8 +437,16 @@ kinds:
             networkGbps: 0.781
             maxConnections: 831
             vcpus: 2
+            memoryGb: 8
+            ebsIops: 3600
             standsFor: db.m6i.large (RDS PostgreSQL, 2 vCPU)
             provenance:
+              memoryGb:
+                published: aws-rds-instance-price-list
+                note: db.m6i.large, 8 GiB.
+              ebsIops:
+                published: ec2-ebs-optimized
+                note: m6i.large's baseline in 16 KiB I/Os; it bursts to 40,000 for 30 minutes a day. RDS enforces the instance's limit whatever its volumes are provisioned for.
               maxConnections:
                 model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 8 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
                 basis:
@@ -454,8 +470,16 @@ kinds:
             networkGbps: 3.125
             maxConnections: 3326
             vcpus: 8
+            memoryGb: 32
+            ebsIops: 12000
             standsFor: db.m6i.2xlarge (RDS PostgreSQL, 8 vCPU)
             provenance:
+              memoryGb:
+                published: aws-rds-instance-price-list
+                note: db.m6i.2xlarge, 32 GiB.
+              ebsIops:
+                published: ec2-ebs-optimized
+                note: m6i.2xlarge's baseline in 16 KiB I/Os; it bursts to 40,000 for 30 minutes a day. RDS enforces the instance's limit whatever its volumes are provisioned for.
               maxConnections:
                 model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 32 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
                 basis:
@@ -479,8 +503,16 @@ kinds:
             networkGbps: 6.25
             maxConnections: 5000
             vcpus: 16
+            memoryGb: 64
+            ebsIops: 20000
             standsFor: db.m6i.4xlarge (RDS PostgreSQL, 16 vCPU)
             provenance:
+              memoryGb:
+                published: aws-rds-instance-price-list
+                note: db.m6i.4xlarge, 64 GiB.
+              ebsIops:
+                published: ec2-ebs-optimized
+                note: m6i.4xlarge's baseline in 16 KiB I/Os; it bursts to 40,000 for 30 minutes a day. RDS enforces the instance's limit whatever its volumes are provisioned for.
               maxConnections:
                 model: RDS's default max_connections for PostgreSQL, LEAST({DBInstanceClassMemory/9531392}, 5000), with DBInstanceClassMemory at 92.3% of the class's 64 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
                 basis:
@@ -499,6 +531,18 @@ kinds:
         defaultSize: m
         notes: Primary-key lookups and single-row inserts on a well-indexed table. Every replica stores a full copy of its shard; storage is priced like managed gp3 volumes.
         provenance:
+          pageCache:
+            model: "PostgreSQL reads through the operating system's page cache, so the pages shared_buffers holds ({DBInstanceClassMemory/32768} 8 KB pages, a quarter of DBInstanceClassMemory) are mostly in the page cache too. What is cached once is the page cache, the three quarters shared_buffers leaves, of DBInstanceClassMemory at 92.3% of the instance's memory (as for max_connections); the connections' own memory is left out. A read by key touches its index leaf and its row's heap page, 8 KiB each; a write dirties one page, written back once."
+            basis:
+              - rds-postgres-memory
+              - rds-postgres-parameters
+              - aws-rds-max-connections
+          storageVolume:
+            model: 'RDS gp3: 3,000 I/Os a second below 400 GiB (429.5 GB), and from there four striped volumes with 12,000, provisionable from 12,000 to 64,000 at $0.02 per I/O a second a month above it. A page read takes a millisecond from an idle volume, at the fast end of the "single-digit millisecond" AWS gives gp3 99% of the time; a third party measured 1.67 ms on average under a heavy OLTP load.'
+            basis:
+              - rds-storage
+              - aws-rds-storage-price
+              - cloudthat-io2-postgres
           connectionProxy:
             model: 'RDS Proxy: $0.015 an hour per vCPU of the instances behind it, as the Price List API publishes it, and two milliseconds a call, within the "low single-digit milliseconds" AWS says it typically adds.'
             basis:
@@ -529,6 +573,14 @@ kinds:
         label: MySQL
         description: Open-source relational database. Replicas serve reads and take over on failover.
         storagePricePerGbMonth: 0.115
+        pageCache: { memoryShare: 0.692, pageBytes: 16384, pagesPerRead: 1, pagesPerWrite: 1 }
+        storageVolume:
+          baselineIops: 3000
+          stripedFromGb: 429.5
+          stripedIops: 12000
+          maxIops: 64000
+          pricePerIopsMonth: 0.02
+          readMs: 1
         failoverSec: 35
         regionFailoverSec: 180
         crossZoneBilling: other-end
@@ -542,8 +594,16 @@ kinds:
             networkGbps: 3.125
             maxConnections: 2520
             vcpus: 8
+            memoryGb: 32
+            ebsIops: 12000
             standsFor: db.m6i.2xlarge (RDS MySQL, 8 vCPU)
             provenance:
+              memoryGb:
+                published: aws-rds-instance-price-list
+                note: db.m6i.2xlarge, 32 GiB.
+              ebsIops:
+                published: ec2-ebs-optimized
+                note: m6i.2xlarge's baseline in 16 KiB I/Os; it bursts to 40,000 for 30 minutes a day. RDS enforces the instance's limit whatever its volumes are provisioned for.
               maxConnections:
                 model: RDS's default max_connections for MySQL, {DBInstanceClassMemory/12582880}, with DBInstanceClassMemory at 92.3% of the class's 32 GiB, the share AWS's own example leaves after the operating system and RDS processes (630 connections instead of 683 on 8 GiB).
                 basis:
@@ -562,6 +622,17 @@ kinds:
                   - rds-m6i-prices
         defaultSize: m
         provenance:
+          pageCache:
+            model: "InnoDB caches pages in its buffer pool, {DBInstanceClassMemory*3/4} by RDS's default, and bypasses the operating system's cache; DBInstanceClassMemory at 92.3% of the instance's memory (as for max_connections). A read by primary key reads the clustered index's leaf, which holds the row: one 16 KiB page. A write dirties one page, written back once."
+            basis:
+              - rds-mysql-parameters
+              - aws-rds-max-connections
+          storageVolume:
+            model: 'RDS gp3: 3,000 I/Os a second below 400 GiB (429.5 GB), and from there four striped volumes with 12,000, provisionable from 12,000 to 64,000 at $0.02 per I/O a second a month above it. A page read takes a millisecond from an idle volume, at the fast end of the "single-digit millisecond" AWS gives gp3 99% of the time; a third party measured 1.67 ms on average under a heavy OLTP load.'
+            basis:
+              - rds-storage
+              - aws-rds-storage-price
+              - cloudthat-io2-postgres
           connectionProxy:
             model: 'RDS Proxy: $0.015 an hour per vCPU of the instances behind it, as the Price List API publishes it, and two milliseconds a call, within the "low single-digit milliseconds" AWS says it typically adds.'
             basis:
@@ -1305,6 +1376,54 @@ sources:
     publisher: AWS
     kind: price
     retrieved: 2026-10-14
+  - id: rds-postgres-memory
+    title: "RDS for PostgreSQL memory: shared buffers"
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Tuning.concepts.memory.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-24
+  - id: rds-postgres-parameters
+    title: "Working with parameters on your RDS for PostgreSQL DB instance: units"
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.PostgreSQL.CommonDBATasks.Parameters.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-24
+  - id: rds-mysql-parameters
+    title: "Best practices for configuring parameters for Amazon RDS for MySQL, part 1: innodb_buffer_pool_size"
+    url: https://aws.amazon.com/blogs/database/best-practices-for-configuring-parameters-for-amazon-rds-for-mysql-part-1-parameters-related-to-performance/
+    publisher: AWS Database Blog
+    kind: documentation
+    retrieved: 2026-10-24
+  - id: rds-storage
+    title: "Amazon RDS DB instance storage: gp3, striping, latency, instance IOPS limits"
+    url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html
+    publisher: AWS
+    kind: documentation
+    retrieved: 2026-10-24
+  - id: ec2-ebs-optimized
+    title: Amazon EBS-optimized instance types (baseline and maximum IOPS)
+    url: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-optimized.html
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-24
+  - id: aws-rds-storage-price
+    title: "AWS Price List API: Amazon RDS, us-east-1 (gp3 storage, IOPS and throughput, published 2026-10-20)"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-24
+  - id: aws-rds-instance-price-list
+    title: "AWS Price List API: Amazon RDS, us-east-1 (db.m6i memory, published 2026-10-20)"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-east-1/index.json
+    publisher: AWS
+    kind: spec
+    retrieved: 2026-10-24
+  - id: cloudthat-io2-postgres
+    title: Boosting PostgreSQL performance with Amazon EBS io2 Block Express (gp3 latency under OLTP load)
+    url: https://www.cloudthat.com/resources/blog/boosting-postgresql-performance-with-amazon-ebs-io2-block-express
+    publisher: CloudThat
+    kind: benchmark
+    retrieved: 2026-10-24
   - id: aws-rds-max-connections
     title: "Quotas and constraints for Amazon RDS: maximum number of database connections"
     url: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html#RDS_Limits.MaxConnections

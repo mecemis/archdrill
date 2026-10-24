@@ -5,11 +5,12 @@ import {
   hasFact,
   type Workload,
 } from "@archdrill/model";
-import { relaxCaches } from "./cache-loop";
+import { bucketHitsInput, relaxCaches } from "./cache-loop";
 import { NETWORK_RTT_MS } from "./calls";
 import type { ComponentProfile } from "./capacity";
 import { type ComponentFault, resolveFaults } from "./faults";
 import type { OutcomeState } from "./outcomes";
+import { pageCacheHitRatio } from "./page-cache";
 import {
   IDLE_POOL,
   liveInstances,
@@ -31,11 +32,14 @@ import {
   buildCacheSpecs,
   buildOperations,
   buildProfiles,
+  buildStorageSpecs,
   type CacheSpec,
   cacheKey,
   type OperationModel,
   occupancies,
   type SimulationContext,
+  type StorageSpec,
+  type StorageState,
 } from "./setup";
 import {
   componentLatency,
@@ -90,6 +94,8 @@ export interface Fixtures {
   readonly connections: readonly Connection[];
   /** Pools the callers keep to stores that run one statement per connection. */
   readonly pools: readonly PoolSpec[];
+  /** Stores that cache pages of their data and read the rest from a volume. */
+  readonly stores: readonly StorageSpec[];
   readonly autoscaled: readonly Component[];
   readonly faults: ReadonlyMap<string, ComponentFault>;
   readonly occupancy: ReadonlyMap<string, { all: number; aliases: number }>;
@@ -126,12 +132,22 @@ export function createModel(fixtures: Fixtures, previous?: LoopState): Model {
 }
 
 export function profilesOf(model: Model, fixtures: Fixtures, whole = false) {
+  const states = new Map<string, StorageState>(
+    fixtures.stores.map((spec) => [
+      spec.componentId,
+      {
+        ioPerRead: model.loop.ioPerRead.get(spec.componentId) ?? 0,
+        hitRatio: model.loop.pageHit.get(spec.componentId) ?? 1,
+      },
+    ]),
+  );
   return buildProfiles(
     fixtures.ctx,
     fixtures.faults,
     model.loop.replicas,
     whole,
     fixtures.clientConnections,
+    { specs: fixtures.stores, states },
   );
 }
 
@@ -185,6 +201,7 @@ export function buildFixtures(
     caches,
     connections: ctx.attempt.architecture.connections,
     pools: poolSpecs(ctx),
+    stores: buildStorageSpecs(workload, ctx),
     autoscaled: ctx.attempt.architecture.components.filter((c) => c.autoscale),
     faults,
     occupancy,
@@ -213,6 +230,7 @@ export function solve(
       relaxCaches(fixtures.caches, flow, model.loop, damping, instancesIn(profiles), (key) =>
         fixtures.cacheWindows.get(key),
       ),
+      relaxStorage(fixtures, flow, model.loop, damping, instancesIn(profiles)),
     );
     if (delta < tolerance) return { converged: true, iterations };
   }
@@ -275,6 +293,59 @@ function relaxAutoscaling(
     const target = Math.min(bounds.max, Math.max(component.replicas, wanted));
     const change = relax(loop.replicas, component.id, target, damping);
     delta = Math.max(delta, change / Math.max(1, target));
+  }
+  return delta;
+}
+
+/**
+ * Page caches follow the reads: each entity's reads, by the caches they
+ * missed on the way, give its hit ratio; the pages of the reads that miss
+ * are what the store reads from its volume.
+ */
+function relaxStorage(
+  fixtures: Fixtures,
+  flow: Propagation,
+  loop: LoopState,
+  damping: number,
+  instancesOf: (componentId: string) => number,
+): number {
+  let delta = 0;
+  const caches = new Map(fixtures.caches.map((c) => [cacheKey(c.componentId, c.entity), c]));
+  for (const spec of fixtures.stores) {
+    const read = [...spec.popularity].flatMap(([entity, popularity]) => {
+      const ways = flow.storeReads.get(cacheKey(spec.componentId, entity));
+      const rate = ways ? [...ways.values()].reduce((sum, r) => sum + r, 0) : 0;
+      return ways && rate > 0 ? [{ entity, popularity, ways, rate }] : [];
+    });
+    // The entities read from it share its memory.
+    const cachedKeys = spec.cachedKeys / Math.max(1, read.length);
+    let io = 0;
+    let hits = 0;
+    let reads = 0;
+    for (const { entity, popularity, ways, rate } of read) {
+      const streams = [...ways].map(([way, wayRate]) => ({
+        rate: wayRate,
+        missed: (way === "" ? [] : way.split(",")).flatMap((cacheId) => {
+          const cache = caches.get(cacheKey(cacheId, entity));
+          const missedCache = cache
+            ? bucketHitsInput(cache, flow, loop, instancesOf, (key) =>
+                fixtures.cacheWindows.get(key),
+              )
+            : null;
+          return missedCache ? [missedCache] : [];
+        }),
+      }));
+      const hit = pageCacheHitRatio(popularity, spec.shards, cachedKeys, streams);
+      io += rate * (1 - hit) * spec.pagesPerRead;
+      hits += rate * hit;
+      reads += rate;
+    }
+    const readLoad = flow.loads.get(spec.componentId)?.read ?? 0;
+    const ioTarget = readLoad > 0 ? io / readLoad : 0;
+    const hitTarget = reads > 0 ? hits / reads : 1;
+    // Relative to a page a read, so the tolerance means the same for any store.
+    delta = Math.max(delta, relax(loop.ioPerRead, spec.componentId, ioTarget, damping));
+    delta = Math.max(delta, relax(loop.pageHit, spec.componentId, hitTarget, damping));
   }
   return delta;
 }

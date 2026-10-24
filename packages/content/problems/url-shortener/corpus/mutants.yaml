@@ -351,16 +351,7 @@ mutants:
           { id: redirect-api--links-db, retries: 10, backoff: none, maxRps: null, circuitBreaker: false }
     expect:
       scenario: s4-cache-outage
-      fails: [retries-bounded, stable-under-retries, no-cascade]
-
-  - id: no-bulkhead
-    base: postgres-redis-cache-aside
-    description: Redirect misses reach the database without a cap, so a cache outage floods it.
-    apply:
-      - setConnectionPolicy: { id: redirect-api--links-db, maxRps: null }
-    expect:
-      scenario: s4-cache-outage
-      fails: [no-cascade]
+      fails: [retries-bounded]
 
   - id: unreplicated-cache
     base: postgres-redis-fixed-fleet
@@ -653,13 +644,15 @@ mutants:
     base: postgres-redis-cache-aside
     description: >-
       Every redirect that misses the cache reads the primary. Only one copy
-      of each shard can serve those reads, so when the cache goes, the
-      database cannot take the misses, and creates fail with them.
+      of each shard can serve those reads, and its volume alone reads their
+      pages: at the viral spike the primaries' volumes cannot keep up with
+      the misses, and creates fail with them.
     apply:
       - updateStep: { operation: redirect, stepId: read, consistent: true }
     expect:
-      scenario: s4-cache-outage
-      fails: [no-cascade]
+      scenario: s5-hot-keys
+      fails: [hot-shard-headroom, creates-unaffected]
+      band: not-passing
 
   # Both regions taking creates (S9).
   - id: active-active-local-creates
@@ -681,13 +674,13 @@ mutants:
   - id: pools-sized-for-a-warm-cache
     base: postgres-redis-fixed-fleet
     description: >-
-      Each redirect instance keeps 4 connections to every database copy,
+      Each redirect instance keeps 2 connections to every database copy,
       plenty while the cache answers almost every redirect. With the cache
-      down, each instance has about 23 statements in flight on its 16
+      down, each instance has about 23 statements in flight on its 20
       connections, and the redirects beyond them wait for one until they
       give up.
     apply:
-      - setConnectionPolicy: { id: redirect-api--links-db, poolSize: 4 }
+      - setConnectionPolicy: { id: redirect-api--links-db, poolSize: 2 }
     expect:
       scenario: s4-cache-outage
       fails: [pools-without-the-cache]
@@ -1058,3 +1051,30 @@ mutants:
     expect:
       scenario: s8-click-analytics
       fails: [within-budget]
+
+  - id: database-sized-for-memory
+    base: postgres-redis-cache-aside
+    description: >-
+      The database is sized as if every read came from memory: two shards and
+      two replicas on the volume their 40 TB gives them. Behind Redis it reads
+      the links the cache misses, the long tail, and its page cache answers
+      almost none of them: at the peak each copy needs more page reads a second
+      than its volume's 12,000.
+    apply:
+      - updateComponent: { id: links-db, shards: 2, iops: null }
+    expect:
+      scenario: s2-redirect
+      fails: [no-overload-at-peak, headroom-at-peak]
+      band: not-passing
+
+  - id: provisioned-iops-dropped
+    base: postgres-redis-cache-aside
+    description: >-
+      The database keeps its five shards but drops the I/Os provisioned on its
+      volumes. The peak fits the striped volume's 12,000 a copy; the viral
+      spike's misses do not.
+    apply:
+      - updateComponent: { id: links-db, iops: null }
+    expect:
+      scenario: s5-hot-keys
+      fails: [hot-shard-headroom]

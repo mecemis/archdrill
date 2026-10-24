@@ -4,7 +4,8 @@ title: PostgreSQL and Redis on a fixed fleet
 description: >-
   The same cache-aside design with fixed fleets and no near cache: NGINX (12 × 4 vCPU) →
   Redirect API (33 × 8 vCPU) and Link API (3 × 4 vCPU) → Redis (3 shards × 2
-  replicas) → PostgreSQL (16 vCPU, 2 shards × 2 replicas, semi-synchronous),
+  replicas) → PostgreSQL (16 vCPU, 5 shards × 2 replicas, 20,000 I/Os
+  provisioned on each copy for the links the cache misses, semi-synchronous),
   with the redirect bulkhead and the cache's circuit breaker. The bulkhead
   leaves the database room for a cold cache's misses after a restart. Sized
   for the known peak with a third to spare, so that two of its three zones
@@ -33,8 +34,9 @@ attempt:
         flavor: postgres
         label: Links DB
         size: l
-        shards: 2
+        shards: 5
         replicas: 2
+        iops: 20000
         zones: 3
         data: [{ entity: Link }]
       - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2, zones: 2 }

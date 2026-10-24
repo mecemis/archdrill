@@ -12,6 +12,8 @@ export const MAX_SHARDS = 1024;
 export const MAX_ZONES = 3;
 /** A design runs in its primary region, and may keep a standby copy in a second one. */
 export const MAX_REGIONS = 2;
+/** The most I/Os a second any volume offers (RDS io2 Block Express). */
+export const MAX_IOPS = 256_000;
 export const MAX_TIMEOUT_MS = 60_000;
 export const MAX_RETRIES = 10;
 export const MAX_AGGREGATE_SEC = 3600;
@@ -50,6 +52,12 @@ export const ComponentSchema = z.object({
    * whose callers hold pools of connections.
    */
   proxy: z.boolean().default(false),
+  /**
+   * I/Os a second provisioned on each copy's volume, for stores that read
+   * pages from one (RDS gp3 from 400 GiB). Without it, the volume has its
+   * baseline for its size.
+   */
+  iops: z.number().int().positive().max(MAX_IOPS).optional(),
   /** Entities this component stores (durable stores only). */
   data: z.array(DataBindingSchema).default([]),
   /**

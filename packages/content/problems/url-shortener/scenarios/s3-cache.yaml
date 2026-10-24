@@ -8,7 +8,7 @@ story: |
   "Your redirect service works, but finance flagged the data tier: it is the
   biggest line on the bill, and at peak the database runs hot. Link popularity
   is extremely skewed: a small share of links gets most of the clicks. Bring
-  the cost under $40,000 a month without hurting latency or correctness."
+  the cost under $46,000 a month without hurting latency or correctness."
 focusOperations: [redirect]
 workload:
   operations:
@@ -36,12 +36,12 @@ dimensions:
 checks:
   - id: within-budget
     use: cost-within-budget
-    title: The design costs less than $40,000 a month
+    title: The design costs less than $46,000 a month
     dimension: cost
     weight: 3
     gate: true
     severity: critical
-    params: { environment: avg, monthlyUsd: 40000 }
+    params: { environment: avg, monthlyUsd: 46000 }
     why: >-
       This is the scenario's goal. Every read replica stores a full copy of
       ~79 TB of links, and pay-per-request stores bill every redirect, so

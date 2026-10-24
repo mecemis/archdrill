@@ -5,7 +5,9 @@ description: >-
   NGINX (25 × 4 vCPU) → Redirect API (8 vCPU, 10 to 120 instances) and a gateway → Link API
   (2 vCPU, 3 to 12 instances) → Redis
   cache-aside with negative caching (3 shards × 2 replicas) → PostgreSQL
-  (16 vCPU, 2 shards × 2 replicas, semi-synchronous). Redirects run in their own
+  (16 vCPU, 5 shards × 2 replicas, semi-synchronous). Behind the cache the
+  database reads mostly the long tail of links, from disk: five shards, with
+  20,000 I/Os provisioned on each copy, serve it. Redirects run in their own
   service and cap their database calls with a bulkhead, so a cache outage
   cannot take link creation down. A 10-second near cache in the redirect
   service absorbs viral links, both services autoscale between an
@@ -61,8 +63,9 @@ attempt:
         flavor: postgres
         label: Links DB
         size: l
-        shards: 2
+        shards: 5
         replicas: 2
+        iops: 20000
         zones: 3
         data: [{ entity: Link }]
       - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2, zones: 2 }

@@ -50,6 +50,7 @@ export const SIZE_NUMBERS = [
   "maxConnections",
   "networkGbps",
   "vcpus",
+  "ebsIops",
 ] as const;
 export const FLAVOR_NUMBERS = [
   "storagePricePerGbMonth",
@@ -63,6 +64,8 @@ export const FLAVOR_NUMBERS = [
   "regionFailoverSec",
   "crossRegionReplication",
   "connectionProxy",
+  "pageCache",
+  "storageVolume",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
@@ -100,6 +103,12 @@ export const SizeSchema = z.object({
   costPerHour: z.number().nonnegative(),
   /** vCPUs of one instance, for what is billed by them (a connection proxy). */
   vcpus: z.number().int().positive().optional(),
+  /**
+   * I/O operations a second one instance sustains to its block storage (its
+   * EBS-optimized baseline, in I/Os of up to 16 KiB), however many its
+   * volumes are provisioned for. Instances burst above it for minutes only.
+   */
+  ebsIops: z.number().int().positive().optional(),
   /** The real offering this size stands for, such as "db.m6i.large (AWS RDS)". */
   standsFor: z.string().min(1).optional(),
   provenance: ProvenanceMapSchema.default({}),
@@ -162,6 +171,43 @@ export const FlavorSchema = z
       .strictObject({
         latencyMs: z.number().nonnegative(),
         pricePerVcpuHour: z.number().nonnegative(),
+      })
+      .optional(),
+    /**
+     * A store that keeps its data on disk and caches pages of it in memory.
+     * A read whose pages are cached costs no I/O; one whose pages are not
+     * reads them from the volume.
+     */
+    pageCache: z
+      .strictObject({
+        /** Share of an instance's memory that holds cached pages. */
+        memoryShare: z.number().positive().max(1),
+        /** Bytes of one page. */
+        pageBytes: z.number().int().positive(),
+        /** Pages a read by key touches (an index's and a row's), each one I/O when not cached. */
+        pagesPerRead: z.number().int().positive(),
+        /** Pages a write dirties and later writes back: one I/O each, on every copy. */
+        pagesPerWrite: z.number().int().positive(),
+      })
+      .optional(),
+    /**
+     * The block storage a store with a page cache reads from (RDS gp3): its
+     * I/Os a second, which grow with its size and can be provisioned above
+     * that, and how long a page read takes.
+     */
+    storageVolume: z
+      .strictObject({
+        /** I/Os a second of a small volume, not provisionable. */
+        baselineIops: z.number().int().positive(),
+        /** Gigabytes from which the volume is striped and gets `stripedIops`. */
+        stripedFromGb: z.number().positive(),
+        stripedIops: z.number().int().positive(),
+        /** The most I/Os a second a striped volume can be provisioned for. */
+        maxIops: z.number().int().positive(),
+        /** USD per I/O a second provisioned above `stripedIops`, a month. */
+        pricePerIopsMonth: z.number().nonnegative(),
+        /** Milliseconds one page read takes from an idle volume. */
+        readMs: z.number().positive(),
       })
       .optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),

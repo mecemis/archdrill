@@ -189,10 +189,15 @@ export const utilizationBelow = defineCheck({
         c.hottestShardUtilization > c.utilization + 1e-9
           ? `${label(ctx, c.componentId)}: its hottest shard at ${percent(c.hottestShardUtilization)} while the tier averages ${percent(c.utilization)}; one hot key lands on one shard`
           : `${label(ctx, c.componentId)}: ${percent(c.utilization)} utilised`;
-      // Say so when the network, not the CPU, is what fills up.
-      return c.networkUtilization >= busiest(c) - 1e-9
-        ? `${where}. The bytes it sends fill its network bandwidth.`
-        : where;
+      // Say so when the network or the disk, not the CPU, is what fills up.
+      if (c.networkUtilization >= busiest(c) - 1e-9) {
+        return `${where}. The bytes it sends fill its network bandwidth.`;
+      }
+      const disk = c.disk;
+      if (disk && disk.utilization >= busiest(c) - 1e-9) {
+        return `${where}. Its page cache answers ${percent(disk.hitRatio)} of reads; the rest read their pages from the volume: ${count(disk.readIops + disk.writeIops)} I/Os a second on each copy, of the ${count(disk.limit)} one copy sustains.`;
+      }
+      return where;
     });
     const overloaded = hot.some((c) => busiest(c) > 1);
     const over = hot
