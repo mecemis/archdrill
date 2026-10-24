@@ -73,6 +73,7 @@ Only the URL shortener's PostgreSQL goldens moved; its MySQL and hash-based gold
   - **`consistent-reads-everywhere`:** now fails S5: the primaries' volumes alone read the spike's misses, and creates fail with them.
   - **`pools-sized-for-a-warm-cache`:** now 2 connections a copy (10 copies, 20 an instance). With the cache down, about 23 statements are in flight a redirect instance.
   - **`retry-storm`:** still fails `retries-bounded`. Its storm no longer cascades: a database sized for its disk serves the retried misses (74% busy with the whole cache down).
+  - **`big-pools-on-an-autoscaled-fleet`** still fails S5's connection limit. RDS Proxy still fixes the limit, but behind ten instances it costs $1,752 a month (16 vCPUs × 10 × $0.015 an hour), which takes an average day to $48,780, over S5's budget: the proxied design scores 89, not 100.
   - **`no-bulkhead` is retired.** On a database sized for its disk, a cache outage's misses fit (74% busy). The bulkhead it removed protects nothing S4 tests any more.
 
 ## Known gaps
