@@ -708,7 +708,8 @@ function End({ sequence, main }: { readonly sequence: Sequence; readonly main: b
 }
 
 /**
- * Where the next step goes. The main list keeps its picker open; elsewhere a
+ * Where the next step goes. The main list keeps its picker open, except while
+ * steps are added on the canvas, which says where they go itself; elsewhere a
  * few likely steps and an Add a step button stay out of the way until needed.
  */
 function OpenEnd({
@@ -724,7 +725,10 @@ function OpenEnd({
   readonly main?: boolean;
 }) {
   const { ctx, facts, picker } = useFlowView();
-  const active = picker.open === key || (picker.open === null && main);
+  const onCanvas = useUi(
+    (s) => s.slot?.source === "canvas" && s.slot.operation === ctx.flow.operation,
+  );
+  const active = picker.open === key || (picker.open === null && main && !onCanvas);
   if (active) {
     return (
       <PickerFor

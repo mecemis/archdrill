@@ -263,3 +263,26 @@ test("adds steps on the canvas, carrying on behind each one", async ({ page }) =
     .click();
   await expect(page.locator("[data-focused]")).toContainText("Publish");
 });
+
+test("types steps on the command line", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("redirect");
+  // "/" in a field types a slash; outside one, it opens the command line.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  await page.keyboard.press("/");
+  const line = page.getByRole("combobox", { name: "Type a step" });
+  await expect(line).toBeFocused();
+  await page.keyboard.type("check");
+  await page.keyboard.press("ArrowDown");
+  const matches = page.getByTestId("command-matches");
+  await expect(matches.locator('[aria-selected="true"]')).toContainText("Check status");
+  await page.keyboard.press("Enter");
+
+  const bar = page.getByTestId("cursor-bar");
+  await expect(line).toHaveValue("");
+  await expect(bar).toContainText("check status, if active");
+  await page.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+});

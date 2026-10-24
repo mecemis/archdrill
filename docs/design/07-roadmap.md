@@ -593,7 +593,7 @@ Adding steps in a narrow list hid what could be called, and could not be done on
 - **Phase 1, on the canvas (#37).** A cursor at the flow's first open place, a bar that says where the next step goes, a menu of steps next to the component clicked, and step numbers that open the step in the Flow panel.
 - **Phase 2, the flow studio (#38).** The flow as a full-screen sequence diagram. A "+" on each lifeline between rows adds a step there, and each step shows the share of requests that reach it.
 - **Phase 3, part 1: patterns (#44).** The picker and the studio's menu offer the usual patterns that fit the place: cache-aside on read paths, an insert with a retry where the design makes keys, and a publish through an outbox right behind a committed write to a store with transactions. One choice adds the steps as one change, connected and bound like single steps, and they can then be edited.
-- **Next, phase 3, part 2.** A "/" command line to add a step by typing.
+- **Phase 3, part 2: the command line (#45).** "/" starts adding on the canvas and focuses a line in its bar. Typing narrows what can go at the place, Enter adds the highlighted choice, and the place moves behind it, so a path can be typed step by step.
 
 ## What-if traffic (as built)
 

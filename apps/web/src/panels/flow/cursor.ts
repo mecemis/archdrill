@@ -1,11 +1,13 @@
 import type { Attempt, Flow, StepInput } from "@archdrill/model";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
+import { useToasts } from "../../state/toasts";
 import { operationById, runsInBackground } from "../../state/triggers";
 import { type CursorMode, type Slot, useUi } from "../../state/ui-store";
 import { openSlots } from "./add-step";
 import type { EditContext } from "./flow-edits";
-import { commitStep } from "./pick";
+import type { Pattern } from "./patterns";
+import { commitPattern, commitStep } from "./pick";
 import { outcomeLabel } from "./sentences";
 import { sequenceOf } from "./sequence";
 import { stepTitle } from "./step-label";
@@ -134,16 +136,65 @@ export function nextCursor(before: Flow, after: Flow, attempt: Attempt): CursorM
 }
 
 /**
- * Adds a step chosen on the canvas at the armed slot, then moves the slot
- * behind it so the next click carries on from there. Returns whether it was added.
+ * Adds at the armed slot, then moves the slot behind what was added so the
+ * next choice carries on from there. Returns whether it was added.
  */
-export function addAtSlot(slot: Slot, step: StepInput): boolean {
+function addAt(slot: Slot, commit: (ctx: EditContext, mode: CursorMode) => boolean): boolean {
   const attempt = useAttemptStore.getState().attempt;
   const ctx = editContextFor(attempt, slot.operation);
-  if (!ctx || !commitStep(ctx, modeOf(slot), step)) return false;
+  if (!ctx || !commit(ctx, modeOf(slot))) return false;
   const now = useAttemptStore.getState().attempt;
   const flow = now.flows.find((f) => f.operation === slot.operation);
   const next = flow ? nextCursor(ctx.flow, flow, now) : null;
   useUi.getState().armSlot(next ? slotFor(slot.operation, next, "canvas") : null);
+  return true;
+}
+
+/** Adds a step chosen on the canvas at the armed slot, and carries on behind it. */
+export function addAtSlot(slot: Slot, step: StepInput): boolean {
+  return addAt(slot, (ctx, mode) => commitStep(ctx, mode, step));
+}
+
+/** Adds a pattern's steps at the armed slot, and carries on behind them. */
+export function addPatternAtSlot(slot: Slot, pattern: Pattern): boolean {
+  return addAt(slot, (ctx, mode) => commitPattern(ctx, mode, pattern));
+}
+
+/**
+ * Opens the command line ("/"): adding on the canvas, at the place a picker
+ * in the Flow panel had, else at the flow's first open place. Says why when
+ * there is nowhere to add. Returns whether it handled the key.
+ */
+export function openCommandLine(): boolean {
+  const ui = useUi.getState();
+  // The studio has its own menus; the canvas's bar is behind it.
+  if (ui.studioOpen) return false;
+  const attempt = useAttemptStore.getState().attempt;
+  const ctx = editContextFor(attempt, ui.operation);
+  const operation = operationById(ui.operation);
+  if (!ctx) {
+    useToasts
+      .getState()
+      .notify(
+        `Choose the service that handles ${operation?.label ?? "this operation"} in the Flow panel first.`,
+        "error",
+      );
+    return true;
+  }
+  if (ui.slot?.source !== "canvas" || ui.slot.operation !== ui.operation) {
+    const place =
+      ui.slot?.operation === ui.operation ? modeOf(ui.slot) : cursorPositions(ctx.flow, attempt)[0];
+    if (!place) {
+      useToasts
+        .getState()
+        .notify(
+          "Every branch already leads somewhere: change one in the Flow panel to add a step there.",
+          "error",
+        );
+      return true;
+    }
+    ui.armSlot(slotFor(ui.operation, place, "canvas"));
+  }
+  ui.requestCommandLine(true);
   return true;
 }

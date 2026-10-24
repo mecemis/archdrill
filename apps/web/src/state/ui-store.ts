@@ -61,6 +61,8 @@ interface UiState {
   readonly slot: Slot | null;
   /** Component clicked on the canvas while a slot was armed. */
   readonly canvasTarget: string | null;
+  /** "/" asked for the command line in the canvas's bar; it takes focus, then clears this. */
+  readonly commandLineRequested: boolean;
   readonly focusedStep: FocusedStep | null;
   /** The flow studio covers the app: a sequence diagram of the operation's flow. */
   readonly studioOpen: boolean;
@@ -86,6 +88,7 @@ interface UiState {
   select: (selection: Selection) => void;
   armSlot: (slot: Slot | null) => void;
   setCanvasTarget: (componentId: string | null) => void;
+  requestCommandLine: (requested: boolean) => void;
   /** Shows a step in the Flow panel: opens the panel on Flow and scrolls to it. */
   focusStep: (operation: string, stepId: string) => void;
   setStudioOpen: (open: boolean) => void;
@@ -112,6 +115,7 @@ export const useUi = create<UiState>((set, get) => ({
   selection: null,
   slot: null,
   canvasTarget: null,
+  commandLineRequested: false,
   focusedStep: null,
   studioOpen: false,
   studioLifelines: {},
@@ -141,6 +145,7 @@ export const useUi = create<UiState>((set, get) => ({
   select: (selection) => set({ selection }),
   armSlot: (slot) => set({ slot, canvasTarget: null }),
   setCanvasTarget: (canvasTarget) => set({ canvasTarget }),
+  requestCommandLine: (commandLineRequested) => set({ commandLineRequested }),
   // Nothing stays selected behind the studio, where a key could act on it unseen.
   setStudioOpen: (studioOpen) =>
     set({ studioOpen, slot: null, canvasTarget: null, selection: null }),

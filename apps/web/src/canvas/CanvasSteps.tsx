@@ -19,6 +19,7 @@ import { useToasts } from "../state/toasts";
 import { useUi } from "../state/ui-store";
 import { KindChip } from "../ui/icons";
 import { FOCUS_RING, IconButton, Select } from "../ui/primitives";
+import { CommandLine } from "./CommandLine";
 
 /** What adding on the canvas reads, recomputed only when the flows or the architecture change. */
 function useAddingContext(operation: string | undefined) {
@@ -70,7 +71,10 @@ export function AddStepsButton() {
   );
 }
 
-/** Where the next step goes while adding on the canvas, and the way to move it or stop. */
+/**
+ * Where the next step goes while adding on the canvas, the way to move it or
+ * stop, and a command line to type the step instead of clicking it.
+ */
 export function CursorBar() {
   const slot = useUi((s) => s.slot);
   // A picker in the Flow panel says where its step goes itself.
@@ -86,43 +90,46 @@ export function CursorBar() {
   return (
     <Panel position="bottom-center">
       <div
-        className="flex max-w-[44rem] items-center gap-2 rounded-xl border border-accent-line bg-elevated py-1.5 pr-1.5 pl-3 text-sm shadow-pop"
+        className="relative flex w-[min(44rem,calc(100vw-2rem))] flex-col gap-1.5 rounded-xl border border-accent-line bg-elevated p-1.5 text-sm shadow-pop"
         data-testid="cursor-bar"
       >
-        <span className="min-w-0 text-fg-muted">
-          <span className="font-semibold text-fg">{ctx.operation.label}</span>: adding{" "}
-          <span className="text-fg">
-            {describeCursor(mode, ctx.flow, ctx.attempt, ctx.background)}
+        <div className="flex items-center gap-2 pl-1.5">
+          <span className="min-w-0 flex-1 text-fg-muted">
+            <span className="font-semibold text-fg">{ctx.operation.label}</span>: adding{" "}
+            <span className="text-fg">
+              {describeCursor(mode, ctx.flow, ctx.attempt, ctx.background)}
+            </span>
+            . Type a step, or click a highlighted component.
           </span>
-          . Click a highlighted component.
-        </span>
-        {positions.length > 1 && (
-          <span className="flex shrink-0">
-            <IconButton
-              className="h-7 w-7"
-              aria-label="Previous place"
-              title="Previous place"
-              onClick={() => move(-1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </IconButton>
-            <IconButton
-              className="h-7 w-7"
-              aria-label="Next place"
-              title="Next place"
-              onClick={() => move(1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </IconButton>
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => useUi.getState().armSlot(null)}
-          className={`shrink-0 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent ${FOCUS_RING}`}
-        >
-          Done
-        </button>
+          {positions.length > 1 && (
+            <span className="flex shrink-0">
+              <IconButton
+                className="h-7 w-7"
+                aria-label="Previous place"
+                title="Previous place"
+                onClick={() => move(-1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </IconButton>
+              <IconButton
+                className="h-7 w-7"
+                aria-label="Next place"
+                title="Next place"
+                onClick={() => move(1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </IconButton>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => useUi.getState().armSlot(null)}
+            className={`shrink-0 rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent ${FOCUS_RING}`}
+          >
+            Done
+          </button>
+        </div>
+        <CommandLine slot={slot} ctx={ctx} mode={mode} />
       </div>
     </Panel>
   );
