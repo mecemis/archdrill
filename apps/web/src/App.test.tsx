@@ -205,6 +205,27 @@ describe("App", () => {
     expect(flow?.steps["check-status"]).toMatchObject({ next: { active: "read-link" } });
   });
 
+  it("adds a usual pattern as its steps, in one change", () => {
+    useAttemptStore.getState().replace(cacheAsideAttempt());
+    useAttemptStore.getState().dispatch("removeFlow", { operation: "redirect" });
+    useAttemptStore.getState().dispatch("createFlow", { operation: "redirect", handler: "api" });
+    renderApp();
+
+    // An empty flow opens the picker at its first step.
+    const picker = within(screen.getByTestId("step-picker"));
+    fireEvent.click(picker.getByRole("button", { name: /^Cache-aside: Look up Link in Redis/ }));
+
+    const flow = () =>
+      useAttemptStore.getState().attempt.flows.find((f) => f.operation === "redirect");
+    expect(flow()?.root).toBe("get-link");
+    expect(flow()?.steps["get-link"]).toMatchObject({ next: { miss: "read-link" } });
+    expect(flow()?.steps["read-link"]).toMatchObject({ next: { found: "set-link" } });
+    expect(screen.getByText("Every branch ends with a response.")).toBeDefined();
+
+    act(() => useAttemptStore.getState().undo());
+    expect(flow()?.root).toBeNull();
+  });
+
   it("shows a flow that only responds, and puts a step in front of the response", () => {
     useAttemptStore.getState().dispatch("createFlow", { operation: "redirect", handler: "api" });
     useAttemptStore.getState().dispatch("addStep", {

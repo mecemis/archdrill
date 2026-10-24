@@ -34,6 +34,7 @@ Interviews reward knowing what happens on a cache miss, when the cache is down, 
   - **The canvas:** click a component and its steps open next to it, then click your way along the path.
   - **The flow studio:** a full-screen sequence diagram with a "+" on every lifeline.
 - **Connect as you go:** choosing a step on a component the service is not connected to yet connects it.
+- **Patterns:** cache-aside, a conditional insert with a retry, or a publish through an outbox, added as their steps in one go wherever they fit, then edited like any other.
 
 ![The flow studio: the redirect flow as a sequence diagram, with each step's share of the simulated requests: 100% look in the near cache, 50% reach Redis, 10% the database](docs/media/studio.png)
 

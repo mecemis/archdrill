@@ -12,7 +12,7 @@ import {
 } from "@archdrill/model";
 import type { AnyCommand } from "../../state/attempt-store";
 import { missingBinding } from "./add-step";
-import { continuingOutcomes, defaultExitStatus, type ExitContext } from "./defaults";
+import { continuingOutcomes, defaultExitStatus, type ExitContext, successStatus } from "./defaults";
 
 /** Everything an edit needs to know about the flow it changes. */
 export interface EditContext extends ExitContext {
@@ -108,11 +108,20 @@ function defaultExits(
   );
 }
 
-function binding(ctx: EditContext, step: StepInput): AnyCommand[] {
-  const missing = missingBinding(ctx.attempt, step, ctx.problem, ctx.catalog);
-  return missing
-    ? [{ name: "setComponentData", args: { id: missing.componentId, entities: missing.entities } }]
-    : [];
+/** Stores the steps' entities where their calls need them, one change per store. */
+function bindings(ctx: EditContext, steps: readonly StepInput[]): AnyCommand[] {
+  const byComponent = new Map<string, Set<string>>();
+  for (const step of steps) {
+    const missing = missingBinding(ctx.attempt, step, ctx.problem, ctx.catalog);
+    if (!missing) continue;
+    const entities = byComponent.get(missing.componentId) ?? new Set<string>();
+    for (const entity of missing.entities) entities.add(entity);
+    byComponent.set(missing.componentId, entities);
+  }
+  return [...byComponent].map(([id, entities]) => ({
+    name: "setComponentData" as const,
+    args: { id, entities: [...entities] },
+  }));
 }
 
 /**
@@ -136,7 +145,7 @@ export function appendStep(ctx: EditContext, at: Position, step: StepInput): Any
       ? { to: "root" as const }
       : { to: "outcome" as const, stepId: at.stepId, outcome: at.outcomes[0] as string };
   return [
-    ...binding(ctx, step),
+    ...bindings(ctx, [step]),
     { name: "addStep", args: { operation, id, step, attach } },
     ...(at.kind === "after"
       ? at.outcomes.slice(1).map((outcome) => ({
@@ -196,7 +205,7 @@ export function insertBefore(
       ? { to: "root" as const }
       : { to: "outcome" as const, stepId: at.stepId, outcome: at.outcomes[0] as string };
   return [
-    ...binding(ctx, step),
+    ...bindings(ctx, [step]),
     { name: "addStep", args: { operation, id, step, attach, continueWith: { outcome: first } } },
     ...(at.kind === "after"
       ? at.outcomes.slice(1).map((outcome) => ({
@@ -210,6 +219,118 @@ export function insertBefore(
     })),
     ...defaultExits(ctx, id, step, taken, created, continuing),
   ];
+}
+
+/** Where an outcome of a step in a group leads. */
+export type Lead =
+  | { readonly step: string }
+  | { readonly status: number }
+  /** On to whatever follows the group. */
+  | { readonly out: true };
+
+/** A step of a group added at once, named by the key the group's leads use. */
+export interface GroupStep {
+  readonly key: string;
+  readonly step: Exclude<StepInput, { readonly type: "respond" }>;
+  /** The outcomes the group decides; the others end as a single step's would. */
+  readonly next: Readonly<Record<string, Lead>>;
+}
+
+/**
+ * Adds a group of steps as one change, its first step at a position. In front
+ * of a step (`before`), every way out of the group leads into it. At an open
+ * place, ways out of one step stay open for the next step, and ways out of
+ * several steps end with the success response, which they share.
+ */
+export function addSteps(
+  ctx: EditContext,
+  at: Position,
+  before: string | null,
+  group: readonly GroupStep[],
+): AnyCommand[] {
+  const [first] = group;
+  if (first === undefined || (at.kind === "after" && at.outcomes.length === 0)) return [];
+  const operation = ctx.flow.operation;
+  const taken = takenIds(ctx.flow);
+  const created = new Map<number, string>();
+  const ids = new Map(group.map((g) => [g.key, newStepId(g.step, taken)]));
+  const byKey = new Map(group.map((g) => [g.key, g]));
+  const link = (stepId: string, outcome: string, target: string | null): AnyCommand => ({
+    name: "linkOutcome",
+    args: { operation, stepId, outcome, target },
+  });
+  const firstId = ids.get(first.key) as string;
+  const commands: AnyCommand[] = [
+    ...bindings(
+      ctx,
+      group.map((g) => g.step),
+    ),
+    // In front of a step, the group takes its place and leads back into it.
+    ...(before === null
+      ? []
+      : at.kind === "root"
+        ? [{ name: "setRoot" as const, args: { operation, stepId: null } }]
+        : at.outcomes.map((outcome) => link(at.stepId, outcome, null))),
+    {
+      name: "addStep",
+      args: {
+        operation,
+        id: firstId,
+        step: first.step,
+        attach:
+          at.kind === "root"
+            ? { to: "root" }
+            : { to: "outcome", stepId: at.stepId, outcome: at.outcomes[0] as string },
+      },
+    },
+    ...(at.kind === "after"
+      ? at.outcomes.slice(1).map((outcome) => link(at.stepId, outcome, firstId))
+      : []),
+  ];
+  const ends: { readonly stepId: string; readonly outcome: string }[] = [];
+  const added = new Set([first.key]);
+  const queue = [first];
+  for (let current = queue.shift(); current; current = queue.shift()) {
+    const id = ids.get(current.key) as string;
+    const outcomes = feasibleOutcomes({ ...current.step, next: {} } as Step, ctx.attempt);
+    const decided = outcomes.filter((o) => current.next[o] !== undefined);
+    for (const outcome of decided) {
+      const lead = current.next[outcome] as Lead;
+      if ("out" in lead) {
+        ends.push({ stepId: id, outcome });
+      } else if ("status" in lead) {
+        commands.push(...respondTo(ctx, { stepId: id, outcome }, lead.status, taken, created));
+      } else {
+        const target = byKey.get(lead.step);
+        const targetId = ids.get(lead.step);
+        if (!target || !targetId) continue;
+        if (added.has(lead.step)) {
+          commands.push(link(id, outcome, targetId));
+        } else {
+          added.add(lead.step);
+          queue.push(target);
+          commands.push({
+            name: "addStep",
+            args: {
+              operation,
+              id: targetId,
+              step: target.step,
+              attach: { to: "outcome", stepId: id, outcome },
+            },
+          });
+        }
+      }
+    }
+    commands.push(...defaultExits(ctx, id, current.step, taken, created, decided));
+  }
+  if (before !== null) {
+    // Nothing would lead back into the step the group went in front of.
+    if (ends.length === 0) return [];
+    return [...commands, ...ends.map((end) => link(end.stepId, end.outcome, before))];
+  }
+  if (new Set(ends.map((end) => end.stepId)).size < 2) return commands;
+  const status = ctx.background ? 200 : successStatus(ctx.operation, ctx.problem, ctx.attempt);
+  return [...commands, ...ends.flatMap((end) => respondTo(ctx, end, status, taken, created))];
 }
 
 /** What an outcome of a step does instead. */
