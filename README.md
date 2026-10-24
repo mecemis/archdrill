@@ -29,10 +29,11 @@ Interviews reward knowing what happens on a cache miss, when the cache is down, 
 ### Describe what the services do
 
 - **A flow per operation:** requests from a client, messages a consumer takes off a queue, or a scheduled job. Each step calls a component (look up, read, insert if absent, publish) or decides something (check expiry, validate the URL), and every outcome leads somewhere.
-- **Three ways to build a flow:**
+- **Four ways to build a flow:**
   - **A list** in the Flow panel, with the likely next steps first.
   - **The canvas:** click a component and its steps open next to it, then click your way along the path.
   - **The flow studio:** a full-screen sequence diagram with a "+" on every lifeline.
+  - **Typing:** press `/` and type what a step does ("read link", "publish", "404"). Enter adds it, and the next one goes behind it.
 - **Connect as you go:** choosing a step on a component the service is not connected to yet connects it.
 - **Patterns:** cache-aside, a conditional insert with a retry, or a publish through an outbox, added as their steps in one go wherever they fit, then edited like any other.
 

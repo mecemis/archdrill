@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { openCommandLine } from "../panels/flow/cursor";
 import { useAttemptStore } from "./store";
 import { useUi } from "./ui-store";
 
@@ -11,7 +12,7 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || ["TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-/** Undo/redo and escape, ignored while the user is typing in a form field. */
+/** Undo/redo, escape and "/" for the command line, ignored while the user is typing in a form field. */
 export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -22,6 +23,9 @@ export function useShortcuts(): void {
         const { undo, redo } = useAttemptStore.getState();
         if (event.shiftKey) redo();
         else undo();
+      }
+      if (event.key === "/" && !mod && !event.altKey && openCommandLine()) {
+        event.preventDefault();
       }
       if (event.key === "Escape") {
         const ui = useUi.getState();

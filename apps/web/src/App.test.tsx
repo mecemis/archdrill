@@ -226,6 +226,46 @@ describe("App", () => {
     expect(flow()?.root).toBeNull();
   });
 
+  it("types a flow on the command line, one step after another", () => {
+    renderApp();
+    // Without a flow there is nowhere to add yet, and "/" says so.
+    fireEvent.keyDown(window, { key: "/" });
+    expect(
+      screen.getByText("Choose the service that handles Redirect in the Flow panel first."),
+    ).toBeDefined();
+    act(() =>
+      useAttemptStore.getState().dispatch("createFlow", { operation: "redirect", handler: "api" }),
+    );
+
+    fireEvent.keyDown(window, { key: "/" });
+    const line = screen.getByRole("combobox", { name: "Type a step" }) as HTMLInputElement;
+    expect(document.activeElement).toBe(line);
+
+    // Escape clears what was typed first.
+    fireEvent.change(line, { target: { value: "nothing like this" } });
+    fireEvent.keyDown(line, { key: "Escape" });
+    expect(line.value).toBe("");
+
+    fireEvent.change(line, { target: { value: "read links" } });
+    fireEvent.keyDown(line, { key: "Enter" });
+    expect(line.value).toBe("");
+    expect(screen.getByTestId("cursor-bar").textContent).toContain("Links · read Link, if found");
+
+    fireEvent.change(line, { target: { value: "302" } });
+    fireEvent.keyDown(line, { key: "Enter" });
+    const flow = useAttemptStore.getState().attempt.flows.find((f) => f.operation === "redirect");
+    expect(flow?.steps["read-link"]).toMatchObject({ next: { found: "r302" } });
+    expect(screen.getByText("Every branch ends with a response.")).toBeDefined();
+    // Every branch leads somewhere now: typing carries on in front of the response.
+    expect(screen.getByTestId("cursor-bar").textContent).toContain("before responding");
+
+    // Escape on an empty line stops adding, and "/" starts again.
+    fireEvent.keyDown(line, { key: "Escape" });
+    expect(screen.queryByTestId("cursor-bar")).toBeNull();
+    fireEvent.keyDown(window, { key: "/" });
+    expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Type a step" }));
+  });
+
   it("shows a flow that only responds, and puts a step in front of the response", () => {
     useAttemptStore.getState().dispatch("createFlow", { operation: "redirect", handler: "api" });
     useAttemptStore.getState().dispatch("addStep", {
