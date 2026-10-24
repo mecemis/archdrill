@@ -6,7 +6,8 @@ import { editContextFor } from "../panels/flow/cursor";
 import { FlowPanel } from "../panels/flow/FlowPanel";
 import { operationFacts } from "../panels/flow/FlowSequence";
 import type { EditContext } from "../panels/flow/flow-edits";
-import { commitStep, operationEntity } from "../panels/flow/pick";
+import { patternsAt } from "../panels/flow/patterns";
+import { commitPattern, commitStep, operationEntity } from "../panels/flow/pick";
 import { outcomeLabel } from "../panels/flow/sentences";
 import type { SequenceItem } from "../panels/flow/sequence";
 import { componentLabel } from "../panels/flow/step-label";
@@ -688,7 +689,10 @@ function GapRow({
   );
 }
 
-/** What can go at a place, for the lifeline clicked, or everything when none was. */
+/**
+ * What can go at a place, for the lifeline clicked, or everything when none
+ * was: then the usual patterns that fit come first.
+ */
 function PlaceMenu({
   menu,
   ctx,
@@ -723,6 +727,18 @@ function PlaceMenu({
   if (menu.column !== null) add(menu.column);
   else for (let i = 0; i < columns.length; i++) add(i);
   const shown = groups.filter((g) => g.options.length > 0);
+  const patterns = menu.column === null ? patternsAt(ctx, menu.mode, entity) : [];
+  // The new steps are the ones to look at next, here and in the list beside.
+  const added = (ok: boolean) => {
+    if (!ok) return;
+    onClose();
+    const now = useAttemptStore.getState().attempt;
+    const after = now.flows.find((f) => f.operation === ctx.flow.operation);
+    const first = Object.keys(after?.steps ?? {}).find(
+      (id) => !(id in ctx.flow.steps) && after?.steps[id]?.type !== "respond",
+    );
+    if (first) useUi.getState().focusStep(ctx.flow.operation, first);
+  };
   const section = useRef<HTMLElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   // Shown where it opened, scrolled into view if that is below the fold, and focused.
@@ -730,7 +746,8 @@ function PlaceMenu({
     section.current?.scrollIntoView({ block: "nearest" });
     first.current?.focus({ preventScroll: true });
   }, []);
-  const firstKey = shown[0]?.options[0]?.key;
+  // The first choice is focused: the first pattern, when there are any.
+  const firstKey = patterns.length > 0 ? undefined : shown[0]?.options[0]?.key;
   return (
     <section
       ref={section}
@@ -745,8 +762,24 @@ function PlaceMenu({
           <X className="h-3.5 w-3.5" />
         </IconButton>
       </header>
-      {shown.length === 0 && (
+      {shown.length === 0 && patterns.length === 0 && (
         <p className="px-1 text-xs text-fg-subtle">Nothing of this kind can go here.</p>
+      )}
+      {patterns.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          <p className="px-1 text-[11px] font-semibold text-fg-subtle">Patterns</p>
+          {patterns.map((pattern, i) => (
+            <button
+              key={pattern.key}
+              ref={i === 0 ? first : undefined}
+              type="button"
+              onClick={() => added(commitPattern(ctx, menu.mode, pattern))}
+              className={`rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
+            >
+              <span className="font-semibold">{pattern.name}:</span> {pattern.label}
+            </button>
+          ))}
+        </div>
       )}
       {shown.map((group) => (
         <div key={group.title} className="flex flex-col gap-0.5">
@@ -756,17 +789,7 @@ function PlaceMenu({
               key={option.key}
               ref={option.key === firstKey ? first : undefined}
               type="button"
-              onClick={() => {
-                if (!commitStep(ctx, menu.mode, option.step)) return;
-                onClose();
-                // The new step is the one to look at next, here and in the list beside.
-                const now = useAttemptStore.getState().attempt;
-                const after = now.flows.find((f) => f.operation === ctx.flow.operation);
-                const added = Object.keys(after?.steps ?? {}).find(
-                  (id) => !(id in ctx.flow.steps) && after?.steps[id]?.type !== "respond",
-                );
-                if (added) useUi.getState().focusStep(ctx.flow.operation, added);
-              }}
+              onClick={() => added(commitStep(ctx, menu.mode, option.step))}
               className={`rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
             >
               {option.label}

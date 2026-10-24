@@ -586,15 +586,14 @@ What fills up before the CPU does. In parts, like M22 and M23:
 
 ## The flow editor, revisited (as built)
 
-Adding steps in a narrow list hid what could be called, and could not be done on the drawing. Three phases so far, each its own pull request:
+Adding steps in a narrow list hid what could be called, and could not be done on the drawing. The phases so far, each part its own pull request:
 - **Phase 0, call anything (#36).**
   - Connections lost their mode: an "asynchronous" connection had hidden its target from the picker and its queue from consumers. Waiting is the step's to say (fire-and-forget, outbox).
   - The picker offers components that are not connected yet, and connects them in the same change.
 - **Phase 1, on the canvas (#37).** A cursor at the flow's first open place, a bar that says where the next step goes, a menu of steps next to the component clicked, and step numbers that open the step in the Flow panel.
 - **Phase 2, the flow studio (#38).** The flow as a full-screen sequence diagram. A "+" on each lifeline between rows adds a step there, and each step shows the share of requests that reach it.
-- **Next, phase 3.**
-  - Snippets for the usual patterns (cache-aside, a conditional insert with a retry, a publish through an outbox), opened into steps that can then be edited.
-  - A "/" command line to add a step by typing.
+- **Phase 3, part 1: patterns (#44).** The picker and the studio's menu offer the usual patterns that fit the place: cache-aside on read paths, an insert with a retry where the design makes keys, and a publish through an outbox right behind a committed write to a store with transactions. One choice adds the steps as one change, connected and bound like single steps, and they can then be edited.
+- **Next, phase 3, part 2.** A "/" command line to add a step by typing.
 
 ## What-if traffic (as built)
 

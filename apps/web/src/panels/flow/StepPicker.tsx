@@ -1,5 +1,5 @@
 import type { Step, StepInput } from "@archdrill/model";
-import { CornerDownRight, GitFork, Reply, Search, Sparkles, X } from "lucide-react";
+import { Blocks, CornerDownRight, GitFork, Reply, Search, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { activePack } from "../../state/content";
 import { useUi } from "../../state/ui-store";
@@ -7,7 +7,8 @@ import { KindChip } from "../../ui/icons";
 import { FOCUS_RING, IconButton, Select } from "../../ui/primitives";
 import { slotFor } from "./cursor";
 import type { EditContext } from "./flow-edits";
-import { commitStep, operationEntity, type PickerMode } from "./pick";
+import { type Pattern, patternsAt } from "./patterns";
+import { commitPattern, commitStep, operationEntity, type PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 import { componentLabel } from "./step-label";
 import { callOptions, decisionOptions, type Option, responseOptions } from "./step-options";
@@ -26,9 +27,10 @@ const matches = (label: string, terms: readonly string[]) =>
   terms.every((t) => label.toLowerCase().includes(t));
 
 /**
- * Chooses the next step: suggestions first, then everything the service can
- * do (its calls, decisions and responses), searchable. Choosing adds the step
- * at once, with its usual exits filled in.
+ * Chooses the next step: suggestions first, then the usual patterns that fit
+ * here, then everything the service can do (its calls, decisions and
+ * responses), searchable. Choosing adds the step, or the pattern's steps, at
+ * once, with their usual exits filled in.
  */
 export function StepPicker({
   ctx,
@@ -116,13 +118,18 @@ export function StepPicker({
     .map((s) => ({ key: s.key, label: stepSentence(s.step, attempt, background), step: s.step }));
   const decisions = decisionOptions(ctx, facts);
   const responses = responseOptions(ctx, mode);
+  const patterns = patternsAt(ctx, mode, entity).filter((p) =>
+    matches(`${p.name}: ${p.label}`, terms),
+  );
 
-  const choose = (option: Option) => {
-    // A failed change keeps the picker, and the canvas lit, for another try.
-    if (!commitStep(ctx, mode, option.step)) return;
+  // A failed change keeps the picker, and the canvas lit, for another try.
+  const added = (ok: boolean) => {
+    if (!ok) return;
     useUi.getState().armSlot(null);
     onClose?.();
   };
+  const choose = (option: Option) => added(commitStep(ctx, mode, option.step));
+  const choosePattern = (pattern: Pattern) => added(commitPattern(ctx, mode, pattern));
 
   const filtered = (options: readonly Option[]) => options.filter((o) => matches(o.label, terms));
   const targetSection = (target: string, options: readonly Option[]) => {
@@ -233,23 +240,33 @@ export function StepPicker({
         </p>
       )}
       <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-        {sections.map((section) => (
-          <div key={section.key} className="flex flex-col gap-0.5">
-            <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-fg-subtle">
-              {section.heading}
-            </p>
-            {section.options.map((option) => (
-              <button
-                key={`${section.key}:${option.key}`}
-                type="button"
-                onClick={() => choose(option)}
-                className={`rounded-lg px-2.5 py-1.5 text-left text-[13px] text-fg hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
-              >
-                {option.label}
-              </button>
-            ))}
+        {sections.map((section, i) => (
+          <div key={section.key} className="contents">
+            {i === 0 && section.key !== "suggested" && (
+              <PatternList patterns={patterns} onChoose={choosePattern} />
+            )}
+            <div className="flex flex-col gap-0.5">
+              <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-fg-subtle">
+                {section.heading}
+              </p>
+              {section.options.map((option) => (
+                <button
+                  key={`${section.key}:${option.key}`}
+                  type="button"
+                  onClick={() => choose(option)}
+                  className={`rounded-lg px-2.5 py-1.5 text-left text-[13px] text-fg hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            {/* The usual patterns come right after the likeliest single steps. */}
+            {section.key === "suggested" && (
+              <PatternList patterns={patterns} onChoose={choosePattern} />
+            )}
           </div>
         ))}
+        {sections.length === 0 && <PatternList patterns={patterns} onChoose={choosePattern} />}
         {unconnected.length > 0 && (
           <details
             className="flex flex-col gap-2"
@@ -280,7 +297,7 @@ export function StepPicker({
             ))}
           </details>
         )}
-        {sections.length === 0 && unconnected.length === 0 && (
+        {sections.length === 0 && unconnected.length === 0 && patterns.length === 0 && (
           <p className="px-1 text-xs text-fg-subtle">Nothing matches "{query}".</p>
         )}
       </div>
@@ -288,5 +305,33 @@ export function StepPicker({
         Tip: click a highlighted component on the canvas to see only its steps.
       </p>
     </section>
+  );
+}
+
+/** Patterns that fit the place, each added as its steps by one choice. */
+function PatternList({
+  patterns,
+  onChoose,
+}: {
+  readonly patterns: readonly Pattern[];
+  readonly onChoose: (pattern: Pattern) => void;
+}) {
+  if (patterns.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-0.5" data-testid="step-patterns">
+      <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-fg-subtle">
+        <Blocks className="h-3.5 w-3.5" aria-hidden="true" /> Patterns
+      </p>
+      {patterns.map((pattern) => (
+        <button
+          key={pattern.key}
+          type="button"
+          onClick={() => onChoose(pattern)}
+          className={`rounded-lg px-2.5 py-1.5 text-left text-[13px] text-fg hover:bg-accent-soft hover:text-accent-fg ${FOCUS_RING}`}
+        >
+          <span className="font-semibold">{pattern.name}:</span> {pattern.label}
+        </button>
+      ))}
+    </div>
   );
 }
