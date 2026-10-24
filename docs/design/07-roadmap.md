@@ -585,7 +585,7 @@ What fills up before the CPU does. In parts, like M22 and M23:
 - **Behind a cache.** A store sees what the caches in front miss: the long tail. Per popularity bucket, the caches' hits filter its reads. Behind Redis, the URL shortener's database page cache answers about 1% of reads.
 - **The volume.** RDS gp3 gives 3,000 I/Os a second below 400 GiB and 12,000 from it, provisionable to 64,000 at $0.02 an I/O a month; the instance caps it (12,000 for 8 vCPUs, 20,000 for 16). The volume's share joins CPU, network and connections in a store's utilisation, and a miss waits a millisecond a page plus the volume's queue.
 - **The corpus.** The PostgreSQL goldens add shards and provision I/Os, the budgets of S3, S5 and S9 that assumed a database in memory move up, two mutants are added and one is retired.
-- **Next, part 3 (the interface).** Provisioned I/Os in the inspector, and the page cache and the volume in the results.
+- **Part 3, the interface (#47).** A database with a volume gets a Volume section in the inspector: the I/Os provisioned on each copy, what they cost, a note when more is paid for than the instance sustains, and at the scenario's environment the page cache's hit ratio and a copy's I/Os against its limit. The Load table shows the volume's utilisation and the provisioned I/Os' cost, and the provenance panel cites the new figures.
 
 ## The flow editor, revisited (as built)
 

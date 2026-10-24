@@ -259,6 +259,17 @@ function ComponentRow({
               limited by its network
             </span>
           )}
+        {metrics.disk && metrics.disk.utilization > 0.05 && (
+          <span
+            className={`block text-xs ${metrics.disk.utilization > 1 ? "font-semibold text-bad-fg" : "text-fg-subtle"}`}
+            title={`Its page cache answers ${percent(metrics.disk.hitRatio, 1)} of reads; the rest read their pages from the volume, ${compact(metrics.disk.readIops + metrics.disk.writeIops)} of the ${compact(metrics.disk.limit)} I/Os a second one copy sustains`}
+          >
+            volume {percent(metrics.disk.utilization, 0)}
+            {metrics.disk.utilization >=
+              Math.max(metrics.utilization, metrics.hottestShardUtilization) - 1e-9 &&
+              " (limits it)"}
+          </span>
+        )}
         {metrics.connections && (
           <span
             className={`block text-xs ${metrics.connections.open > metrics.connections.limit ? "font-semibold text-bad-fg" : "text-fg-subtle"}`}
@@ -288,6 +299,14 @@ function ComponentRow({
             title="What its calls send and receive across zones costs, both ends' share"
           >
             {usd(metrics.costBreakdown.crossZone)} between zones
+          </span>
+        )}
+        {metrics.costBreakdown.iops >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title="I/Os provisioned on its volumes above what they include"
+          >
+            {usd(metrics.costBreakdown.iops)} provisioned I/Os
           </span>
         )}
         {metrics.costBreakdown.proxy >= 1 && (

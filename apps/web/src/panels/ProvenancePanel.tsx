@@ -24,7 +24,10 @@ type Field =
   | "regionFailoverSec"
   | "crossRegionReplication"
   | "vcpus"
-  | "connectionProxy";
+  | "connectionProxy"
+  | "ebsIops"
+  | "pageCache"
+  | "storageVolume";
 
 const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "costPerHour", label: "Price" },
@@ -36,6 +39,9 @@ const FIELDS: readonly { readonly field: Field; readonly label: string }[] = [
   { field: "perKeyCapacityPerSec", label: "Per-key limit" },
   { field: "maxConnections", label: "Connections" },
   { field: "memoryGb", label: "Memory" },
+  { field: "pageCache", label: "Page cache" },
+  { field: "storageVolume", label: "Volume" },
+  { field: "ebsIops", label: "Disk I/Os" },
   { field: "networkGbps", label: "Network" },
   { field: "latencyMs", label: "Latency" },
   { field: "startupSec", label: "Startup" },
@@ -153,6 +159,18 @@ function catalogValue(field: Field, flavor: Flavor, size: Size | undefined): str
       return flavor.connectionProxy
         ? `${price(flavor.connectionProxy.pricePerVcpuHour)} a vCPU-hour, ${flavor.connectionProxy.latencyMs} ms a call`
         : null;
+    case "ebsIops":
+      return size?.ebsIops === undefined ? null : `${compact(size.ebsIops)} a second an instance`;
+    case "pageCache":
+      return flavor.pageCache
+        ? `${Math.round(flavor.pageCache.memoryShare * 1000) / 10}% of memory, ${flavor.pageCache.pagesPerRead} × ${flavor.pageCache.pageBytes / 1024} KiB pages a read`
+        : null;
+    case "storageVolume": {
+      const volume = flavor.storageVolume;
+      return volume
+        ? `${compact(volume.baselineIops)} I/Os a second, ${compact(volume.stripedIops)} from ${compact(volume.stripedFromGb)} GB, up to ${compact(volume.maxIops)} at ${price(volume.pricePerIopsMonth)} an I/O a month; ${volume.readMs} ms a page`
+        : null;
+    }
   }
 }
 
