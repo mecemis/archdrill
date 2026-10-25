@@ -120,7 +120,7 @@ The mutation report and the engine golden-numbers diff are uploaded as artefacts
 
 - `pnpm report` measures the first budget on every golden design padded to 30 components, after JIT warm-up.
   - Locally: p95 54–64 ms for the two designs that pass every scenario.
-  - CI enforces 250 ms, because shared runners are slower and noisier.
+  - CI enforced 250 ms, because shared runners are slower and noisier. Since M25 the times are corrected for the machine instead: a fixed reference workload, independent of the engine, is timed between the evaluations, and each p95 is divided by how much longer it took than on the machine the budgets were set on. Raw times on shared runners vary by half from run to run; corrected ones vary by about 10%. CI checks the corrected p95 against 130 ms (2,600 ms with timelines), 30% over the target.
 - The canvas no longer evaluates on the main thread.
 - Initial load: 244 KB gzipped JS. Libraries are in separate cached chunks: React 68 KB, React Flow 57 KB, others 36 KB.
 - The evaluation worker (about 90 KB gzipped) loads alongside the page.
