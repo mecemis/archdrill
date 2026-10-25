@@ -300,7 +300,10 @@ function relaxAutoscaling(
 /**
  * Page caches follow the reads: each entity's reads, by the caches they
  * missed on the way, give its hit ratio; the pages of the reads that miss
- * are what the store reads from its volume.
+ * are what the store reads from its volume. The first pass sets them, so
+ * a design that settles in a few passes does not wait some 25 for them to
+ * be damped up from nothing; after that they are damped like the rest, as
+ * an overloaded store's refusals feed back on the caches in front of it.
  */
 function relaxStorage(
   fixtures: Fixtures,
@@ -343,9 +346,9 @@ function relaxStorage(
     const readLoad = flow.loads.get(spec.componentId)?.read ?? 0;
     const ioTarget = readLoad > 0 ? io / readLoad : 0;
     const hitTarget = reads > 0 ? hits / reads : 1;
-    // Relative to a page a read, so the tolerance means the same for any store.
-    delta = Math.max(delta, relax(loop.ioPerRead, spec.componentId, ioTarget, damping));
-    delta = Math.max(delta, relax(loop.pageHit, spec.componentId, hitTarget, damping));
+    const step = loop.ioPerRead.has(spec.componentId) ? damping : 1;
+    delta = Math.max(delta, relax(loop.ioPerRead, spec.componentId, ioTarget, step));
+    delta = Math.max(delta, relax(loop.pageHit, spec.componentId, hitTarget, step));
   }
   return delta;
 }

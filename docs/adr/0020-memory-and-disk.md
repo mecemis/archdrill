@@ -34,7 +34,9 @@ The catalog's relational database capacity was measured with the data in memory:
   - Reads that missed caches on the way follow what is left after those caches: `cacheHitsByBucket` gives, per popularity bucket, the probability each cache answers. It is scaled to the hit ratio the fixed point has reached, which also counts warming and fills.
   - Propagation records each store's reads by the caches they missed (`storeReads`). The hot key's reads are left out: it stays in any cache.
   - The entities read from a store share its memory.
-  - Inputs are rounded to four significant digits and memoised, as the cache model's are.
+  - Inputs are rounded to three significant digits and memoised, as the cache model's are; the characteristic time is found by Newton's method within a bracket.
+  - The page cache's hit ratio and I/Os a read are set on the first pass of the fixed point and damped after, so a design that settles in a few passes does not wait for them. Each path's store reads are worked out once.
+  - Evaluating every scenario of a golden padded to 30 components takes about 10% longer than before: 83 ms instead of 74 ms for `postgres-redis-two-regions`, within the 100 ms budget.
 - **The volume.**
   - Each copy's data is the dataset over its shards, which gives the volume: 3,000 I/Os a second, or 12,000 from 400 GiB.
   - `iops` on the component provisions 12,000 to 64,000, takes a striped volume (at least 400 GiB billed), and costs $0.02 an I/O a month above 12,000, every copy.
@@ -60,12 +62,12 @@ Only the URL shortener's PostgreSQL goldens moved; its MySQL and hash-based gold
 - **Shards, not replicas, add I/Os cheaply.** A replica copies a shard's whole 40 TB; a shard halves what each copy holds.
   - **`postgres-redis-cache-aside`:** 5 shards × 2 replicas, 20,000 I/Os provisioned a copy (what m6i.4xlarge sustains). The spike's 14,200 I/Os a copy, reads and writes, are 71% of it.
   - **`postgres-redis-fixed-fleet`:** the same, so that two zones still carry the peak when one is lost.
-  - **`postgres-redis-two-regions`:** 3 shards × 2 replicas, 20,000 I/Os a copy.
+  - **`postgres-redis-two-regions`:** 4 shards × 2 replicas, 20,000 I/Os a copy. With three, S5's viral spike (not one it is meant to pass) left its volumes at 105%, in the saturation band where timeouts flip between passes and the fixed point does not settle; with four they are at 88%.
   - **`postgres-sized-for-cache-loss`:** keeps 4 shards × 3 replicas and provisions 16,000 I/Os a copy. With the whole cache gone its page cache answers 76% of 300,000 reads a second, and each copy takes 12,800 I/Os a second, 80% of its 16,000.
 - **The budgets that assumed a database in memory move.** Links DB costs $30,165 a month instead of $22,328.
   - **S3:** $40,000 → $46,000. The cache-aside golden costs $44,837 at average traffic; the fixed fleet $42,867.
   - **S5:** $40,000 → $48,000. An average day of the cache-aside golden costs $47,028.
-  - **S9:** $80,000 → $86,000. The two regions cost $80,522.
+  - **S9:** $80,000 → $86,000. The two regions cost $84,998.
   - The lesson of S3 holds: a database tier that serves 300,000 reads a second without the cache still costs far more.
 - **Mutants**, 101 in all, every one caught:
   - **`database-sized-for-memory` (new):** the cache-aside golden's database as it was, 2 shards × 2 replicas and no provisioned I/Os. S2 fails `no-overload-at-peak` and `headroom-at-peak` at the normal peak.
