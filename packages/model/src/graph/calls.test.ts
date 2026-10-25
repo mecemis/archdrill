@@ -4,6 +4,7 @@ import { applyCommand, type CommandArgs, type CommandName } from "../commands/in
 import { asyncAttempt } from "../testing/async";
 import { cacheAsideAttempt, testCatalogIndex } from "../testing/fixtures";
 import { withNearCache } from "../testing/near-cache";
+import { photosAttempt, photosCatalogIndex } from "../testing/photos";
 import { callableFrom, connectionToCall } from "./calls";
 
 function apply<N extends CommandName>(attempt: Attempt, name: N, args: CommandArgs<N>): Attempt {
@@ -20,6 +21,11 @@ const withQueue = (attempt: Attempt) =>
   });
 
 describe("callableFrom", () => {
+  it("offers object storage nothing to call: it only answers with the object or stores it", () => {
+    expect(callableFrom("photos", photosAttempt(), photosCatalogIndex)).toEqual([]);
+    expect(callableFrom("api", photosAttempt(), photosCatalogIndex)).toEqual(["photos"]);
+  });
+
   it("offers what offers an action, connected or not, but not clients, itself or a load balancer", () => {
     expect(callableFrom("api", withQueue(cacheAsideAttempt()), testCatalogIndex)).toEqual([
       "redis",

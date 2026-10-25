@@ -295,6 +295,8 @@ export const KindSchema = z.object({
   holdsData: z.boolean(),
   /** Whether data can be split across shards (each shard holds part of the keys). */
   shardable: z.boolean().default(false),
+  /** What its shards are called, where they have a name of their own (an object store's prefixes). */
+  shardsLabel: z.string().min(1).optional(),
   /**
    * Who takes writes: every replica (stateless services) or only each shard's
    * primary (replicated stores, where replicas add read capacity only).

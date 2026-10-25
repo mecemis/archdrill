@@ -1,4 +1,5 @@
 import {
+  Archive,
   Boxes,
   Cable,
   Database,
@@ -30,6 +31,7 @@ const KIND_ICONS: Readonly<Record<string, LucideIcon>> = {
   "relational-db": Database,
   "key-value-db": Table2,
   "wide-column-db": Rows3,
+  "object-store": Archive,
   queue: Inbox,
   "stream-processor": Waves,
   "id-generator": KeyRound,
@@ -69,6 +71,7 @@ const KIND_CATEGORIES: Readonly<Record<string, Category>> = {
   "relational-db": "storage",
   "key-value-db": "storage",
   "wide-column-db": "storage",
+  "object-store": "storage",
   queue: "messaging",
   "stream-processor": "messaging",
   "id-generator": "coordination",

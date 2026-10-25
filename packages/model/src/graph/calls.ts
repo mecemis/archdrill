@@ -1,5 +1,6 @@
 import type { Attempt } from "../attempt/schema";
 import { ACTIONS } from "../catalog/actions";
+import { onlyServesObjects } from "../catalog/capabilities";
 import type { CatalogIndex } from "../catalog/schema";
 
 const actions = Object.values(ACTIONS);
@@ -8,9 +9,12 @@ const PUBLISH = ACTIONS["queue.publish"].capability;
 /**
  * Components a handler's steps can call: anything that offers an action,
  * connected to it or not (a step can connect it). Clients only send
- * requests, and an in-process component lives in the one service using it.
+ * requests, an in-process component lives in the one service using it, and
+ * object storage, answering with the object or storing it, calls nothing.
  */
 export function callableFrom(handler: string, attempt: Attempt, catalog: CatalogIndex): string[] {
+  const self = attempt.architecture.components.find((c) => c.id === handler);
+  if (self && onlyServesObjects(catalog.capabilities(self.kind, self.flavor))) return [];
   return attempt.architecture.components
     .filter((c) => {
       if (c.id === handler) return false;

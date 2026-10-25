@@ -334,8 +334,8 @@ export function propagate(
       const lost = ingress.lost(id, write);
       // Work routed to a failed node is not done there.
       const served = arriving * (1 - lost);
-      // A proxy on the way sends the request on and the response back.
-      add(loads, id, served, write, id === handler ? 0 : served * op.wireBytes);
+      // A proxy on the way sends the request on and the response back; the handler sends the response.
+      add(loads, id, served, write, served * (id === handler ? op.responseBytes : op.wireBytes));
       arriving *= (1 - ingress.overload(id)) * (1 - lost);
     };
     // Work that starts inside the system enters at the first component on its
@@ -415,6 +415,10 @@ export function propagate(
               : requests * cost.weight;
           const bytes = carried * cost.bytes;
           add(loads, step.target, work, write, bytes);
+          // What the handler's calls send (writes, messages) leaves over its own network.
+          if (cost.sentBytes > 0 && handler !== undefined) {
+            add(loads, handler, 0, false, carried * cost.sentBytes);
+          }
           const read = reads[stepIndex];
           if (read && !hot) {
             const ways = storeReads.get(read.key) ?? new Map<string, number>();

@@ -26,6 +26,7 @@ export const ISSUE_CODES = [
   "flow-unknown-operation",
   "flow-unknown-handler",
   "flow-handler-not-compute",
+  "flow-handler-serves-only",
   "flow-handler-unreachable",
   "flow-root-missing",
   "flow-cycle",

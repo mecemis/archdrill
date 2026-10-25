@@ -58,7 +58,8 @@
                 "push-notifications",
                 "payments",
                 "external",
-                "threat-lists"
+                "threat-lists",
+                "serves-objects"
               ]
             }
           },
@@ -71,6 +72,10 @@
           "shardable": {
             "default": false,
             "type": "boolean"
+          },
+          "shardsLabel": {
+            "type": "string",
+            "minLength": 1
           },
           "writeScaling": {
             "default": "all-replicas",
@@ -139,7 +144,8 @@
                       "push-notifications",
                       "payments",
                       "external",
-                      "threat-lists"
+                      "threat-lists",
+                      "serves-objects"
                     ]
                   }
                 },

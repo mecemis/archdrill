@@ -62,6 +62,10 @@ function scaleLabel(data: ComponentNodeData): string | null {
 
 function instanceLabel(data: ComponentNodeData): string | null {
   if (!data.replicable && (data.shards ?? 1) <= 1) return null;
+  // Managed storage spread over named shards: a count of them, no replicas to speak of.
+  if (!data.replicable && data.shardsLabel !== null) {
+    return `${data.shards} ${data.shardsLabel.toLowerCase()}`;
+  }
   if (data.shards !== null && data.shards > 1) return `${data.shards}×${data.replicas}`;
   if (data.autoscaleMax !== null) return `×${data.replicas}–${data.autoscaleMax}`;
   return `×${data.replicas}`;
@@ -71,9 +75,11 @@ function scaleTitle(data: ComponentNodeData): string {
   const counts =
     data.autoscaleMax !== null
       ? "replicas, autoscaling up to the maximum"
-      : data.shards !== null
-        ? "shards × replicas"
-        : "replicas";
+      : data.shardsLabel !== null && !data.replicable
+        ? data.shardsLabel.toLowerCase()
+        : data.shards !== null
+          ? "shards × replicas"
+          : "replicas";
   return data.zones !== null && data.zones > 1
     ? `${counts}, spread over ${data.zones} availability zones`
     : counts;

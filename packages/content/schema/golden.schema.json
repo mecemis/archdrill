@@ -387,6 +387,7 @@
                             "isCelebrity",
                             "isLargeGroup",
                             "matchThreatList",
+                            "signUpload",
                             "obfuscateId"
                           ]
                         },

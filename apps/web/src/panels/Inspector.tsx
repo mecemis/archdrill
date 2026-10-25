@@ -16,6 +16,8 @@ import { ZonePicker } from "./ZonePicker";
 
 const MAX_REPLICAS = 200;
 const MAX_SHARDS = 64;
+/** Object storage takes as many prefixes as its keys spread over, at no cost of their own. */
+const MAX_PREFIXES = 256;
 
 export function Inspector() {
   const selection = useUi((s) => s.selection);
@@ -86,8 +88,8 @@ function ComponentInspector({ component }: { readonly component: Component }) {
       )}
       {kind?.shardable && (
         <CountSlider
-          label="Shards"
-          max={MAX_SHARDS}
+          label={kind.shardsLabel ?? "Shards"}
+          max={kind.shardsLabel ? MAX_PREFIXES : MAX_SHARDS}
           value={component.shards}
           onCommit={(shards) => update({ shards })}
         />

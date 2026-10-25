@@ -39,10 +39,30 @@ test("shows a runaway client taking the headroom of the shard that counts it", a
 test("passes every news feed scenario with a hybrid fan-out", async ({ page }) => {
   await importGolden(page, "hybrid-fan-out", "news-feed");
 
-  for (const scenario of [/S1 /, /S2 /, /S3 /]) {
+  for (const scenario of [/S1 /, /S2 /, /S3 /, /S4 /]) {
     await page.getByRole("button", { name: scenario }).click();
     await expect(page.getByTestId("scenario-score")).toHaveText("100");
   }
+});
+
+test("lets object storage hand photos to clients itself", async ({ page }) => {
+  await importGolden(page, "hybrid-fan-out", "news-feed");
+  await page.getByRole("button", { name: /S4 / }).click();
+  await expect(page.getByTestId("node-Photos")).toContainText("70 prefixes");
+
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("read-photo");
+  const handler = page.getByLabel("Handled by");
+  await expect(handler).toHaveValue("photos");
+  await expect(page.getByText("Ingress: Users → Photos")).toBeVisible();
+
+  // Relayed by a service, 60 GB a second of photos fill its network and the load balancer's bill.
+  await handler.selectOption("timeline-api");
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+  await expect(page.getByText("Almost every photo loads at peak (99%)")).toBeVisible();
+
+  await handler.selectOption("photos");
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
 });
 
 test("passes every chat scenario with gateways sized for connections", async ({ page }) => {

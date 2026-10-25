@@ -364,6 +364,13 @@ A store whose flavor has a `pageCache` and a `storageVolume` (PostgreSQL, MySQL)
 - **Utilisation.** `(reads × ioPerRead + writes × pagesPerWrite × copies) / (iopsPerCopy × instances)` joins requests, network and connections in `utilizationOf`; whichever is fullest limits the store, and beyond 1 the share `1 − 1/ρ` is refused. A consistent read's I/O counts as its load does, on the primary alone.
 - **Latency.** Reads that miss wait `pagesPerRead × (readMs + W)`, where `W` is an M/D/1 wait at the copy's volume utilisation (capped at 0.98, beyond which the store's overload wait applies).
 
+## Object storage (as built, M25)
+
+Object storage answers clients itself ([ADR 0021](../adr/0021-object-storage.md)).
+
+- **As a handler.** A component that only serves objects (`serves-objects` without `stateless-compute`) can handle clients' requests. Its flow only responds, so a request costs it one read or one write, as the operation's class says, against `capacityPerSec × shards` (its prefixes). It bills `requestCost` for them like any metered store, and `storagePricePerGbMonth` for the data bound to it.
+- **What a handler sends.** The handler's network carries the response to every request it serves (`bytes.response`), and each call's `sentBytes`: the item a write, a message or a request to another service carries, unless the target lives in the handler's own memory. Proxies on the way still carry the request and the response. Services' sizes have `networkGbps`, so this joins requests in their utilisation, and their autoscalers follow it.
+
 ## Money and events (as built, M16)
 
 - **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.

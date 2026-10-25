@@ -12,7 +12,7 @@ import {
   actionTakesParam,
   CONDITIONAL_OUTCOMES,
 } from "../catalog/actions";
-import { canHandle } from "../catalog/capabilities";
+import { canHandle, onlyServesObjects } from "../catalog/capabilities";
 import { getLogic, type LogicId } from "../catalog/logic";
 import {
   type CatalogIndex,
@@ -299,13 +299,15 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
   }
   const issues: Issue[] = [];
   const capabilities = ctx.catalog.capabilities(handler.kind, handler.flavor);
-  if (!canHandle(capabilities, operation.trigger.type === "event")) {
+  if (!canHandle(capabilities, operation.trigger.type)) {
     issues.push(
       error(
         "flow-handler-not-compute",
         capabilities.has("stream-processing")
           ? `"${handler.label}" processes messages from a queue; ${operation.label} needs a service.`
-          : `"${handler.label}" cannot handle requests; pick a service.`,
+          : capabilities.has("serves-objects")
+            ? `"${handler.label}" only answers clients' requests; ${operation.label} needs a service.`
+            : `"${handler.label}" cannot handle requests; pick a service.`,
         location,
       ),
     );
@@ -328,6 +330,7 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
     );
   }
   issues.push(...validateFlowGraph(flow, attempt));
+  if (onlyServesObjects(capabilities)) issues.push(...servesOnly(flow, handler.label));
   for (const [stepId, step] of Object.entries(flow.steps)) {
     if (step.type === "call") issues.push(...validateCallStep(flow, stepId, step, attempt, ctx));
     const offered = ctx.problem.logic;
@@ -343,6 +346,21 @@ function validateFlow(flow: Flow, attempt: Attempt, ctx: ValidationContext): Iss
     if (step.type === "logic") issues.push(...logicNeeds(flow, stepId, step.logic, attempt, ctx));
   }
   return issues;
+}
+
+/** Object storage answers with the object, or stores it: a flow it handles can only respond. */
+function servesOnly(flow: Flow, handler: string): Issue[] {
+  return Object.entries(flow.steps).flatMap(([stepId, step]) =>
+    step.type === "respond"
+      ? []
+      : [
+          error(
+            "flow-handler-serves-only",
+            `"${handler}" serves and stores objects itself; it cannot call anything or decide anything. Leave only the response, or handle ${flow.operation} in a service.`,
+            { type: "step", operation: flow.operation, stepId },
+          ),
+        ],
+  );
 }
 
 /** A decision that rests on another component (a downloaded list) needs that component connected. */

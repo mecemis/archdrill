@@ -140,11 +140,14 @@ describe("a load balancer billed in capacity units", () => {
     expect(lb?.capacityUnits?.units).toBeCloseTo(4, 6);
   });
 
-  it("processes every request and response it forwards; the handler sends none of them", () => {
+  it("processes every request and response it forwards; the handler sends the responses", () => {
     const result = simulate(catalogWithAlb());
     // A redirect and its response are 600 and 300 bytes in the test problem.
     expect(result.components.get("lb")?.bytesOut).toBeCloseTo(1000 * 900, 3);
-    expect(result.components.get("api")?.bytesOut).toBe(0);
+    // The handler sends each response, and a 500-byte link to the cache after each miss.
+    const api = result.components.get("api")?.bytesOut ?? 0;
+    expect(api).toBeGreaterThanOrEqual(1000 * 300);
+    expect(api).toBeLessThan(1000 * (300 + 500));
   });
 
   it("fills a proxy's network with what it forwards", () => {

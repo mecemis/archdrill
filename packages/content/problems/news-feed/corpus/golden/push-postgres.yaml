@@ -4,10 +4,12 @@ title: Fan-out on write with PostgreSQL
 description: >-
   The same services with posts in sharded PostgreSQL and every post copied
   into its followers' timelines, celebrities included. Valid until accounts
-  with tens of millions of followers start posting.
+  with tens of millions of followers start posting. Photos go straight
+  between phones and S3, as in the hybrid design.
 expect:
   s1-timeline: { minScore: 90 }
   s3-timelines-lost: { minScore: 90 }
+  s4-photos: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: news-feed
@@ -47,7 +49,15 @@ attempt:
         size: m
         replicas: 4
         autoscale: { max: 16, targetUtilization: 0.7 }
+      - id: photos
+        kind: object-store
+        flavor: s3
+        label: Photos
+        shards: 70
+        data: [{ entity: Photo }]
     connections:
+      - { id: users--photos, from: users, to: photos }
+      - { id: post-api--photos, from: post-api, to: photos }
       - { id: users--lb, from: users, to: lb }
       - { id: lb--post-api, from: lb, to: post-api }
       - { id: lb--timeline-api, from: lb, to: timeline-api }
@@ -139,6 +149,22 @@ attempt:
           next: { ok: done, error: retry }
         done: { type: respond, status: 200 }
         retry: { type: respond, status: 503 }
+    - operation: start-upload
+      handler: post-api
+      root: sign
+      steps:
+        sign: { type: logic, logic: signUpload, next: { ok: u200 } }
+        u200: { type: respond, status: 200 }
+    - operation: upload-photo
+      handler: photos
+      root: stored
+      steps:
+        stored: { type: respond, status: 200 }
+    - operation: read-photo
+      handler: photos
+      root: served
+      steps:
+        served: { type: respond, status: 200 }
   decisions:
     pagination: cursor
   layout:
@@ -150,3 +176,4 @@ attempt:
     posts-db: { x: 700, y: 260 }
     events: { x: 700, y: 460 }
     fan-out: { x: 960, y: 300 }
+    photos: { x: 420, y: 560 }

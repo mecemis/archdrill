@@ -16,6 +16,7 @@ import {
   type StepInput,
 } from "@archdrill/model";
 import type { Slot } from "../../state/ui-store";
+import { servesOnly } from "./step-options";
 
 /** A step one click adds to an open branch. */
 export interface Suggestion {
@@ -138,6 +139,14 @@ export interface SuggestionInput {
  */
 export function suggestNext(input: SuggestionInput): Suggestion[] {
   const { attempt, flow, slot, problem, operation, catalog, background } = input;
+  // Object storage only answers: with the object, or that it stored it.
+  if (servesOnly({ attempt, flow, catalog })) {
+    return successStatuses(operation).map((status) => ({
+      key: `respond:${status}`,
+      kind: "respond",
+      step: { type: "respond", status },
+    }));
+  }
   const outcome = slot.attach.to === "outcome" ? slot.attach.outcome : null;
   const path = slot.attach.to === "outcome" ? pathTo(flow, slot.attach.stepId) : [];
   const previous = path.at(-1);

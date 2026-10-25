@@ -36,6 +36,8 @@ export interface ComponentNodeData extends Record<string, unknown> {
   readonly replicas: number;
   /** Shards for shardable kinds, otherwise null. */
   readonly shards: number | null;
+  /** What the kind calls its shards, where they have a name of their own (prefixes). */
+  readonly shardsLabel: string | null;
   /** Zones its instances are spread over, for components a design places; otherwise null. */
   readonly zones: number | null;
   /** It keeps a standby copy in a second region. */
@@ -196,6 +198,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         sizeLabel: size?.label ?? null,
         replicas: component.replicas,
         shards: kind?.shardable ? component.shards : null,
+        shardsLabel: kind?.shardsLabel ?? null,
         zones: kind && flavor && placedInZones(kind, flavor) ? component.zones : null,
         standby:
           kind !== undefined &&

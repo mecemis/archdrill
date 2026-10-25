@@ -109,3 +109,99 @@ mutants:
     expect:
       scenario: s3-timelines-lost
       fails: [cache-timeout]
+
+  - id: photos-through-timeline-service
+    base: hybrid-fan-out
+    description: The timeline service reads every photo from S3 and sends it on through the load balancer.
+    apply:
+      - addConnection: { from: timeline-api, to: photos }
+      - removeFlow: { operation: read-photo }
+      - createFlow: { operation: read-photo, handler: timeline-api }
+      - addStep:
+          operation: read-photo
+          id: fetch
+          step: { type: call, target: photos, action: store.read, entity: Photo }
+          attach: { to: root }
+      - addStep:
+          operation: read-photo
+          id: p200
+          step: { type: respond, status: 200 }
+          attach: { to: outcome, stepId: fetch, outcome: found }
+      - addStep:
+          operation: read-photo
+          id: p404
+          step: { type: respond, status: 404 }
+          attach: { to: outcome, stepId: fetch, outcome: notFound }
+      - addStep:
+          operation: read-photo
+          id: p503
+          step: { type: respond, status: 503 }
+          attach: { to: outcome, stepId: fetch, outcome: error }
+    expect:
+      scenario: s4-photos
+      fails: [photos-served, within-budget, headroom-peak, photos-skip-services]
+      band: not-passing
+
+  - id: uploads-through-post-service
+    base: hybrid-fan-out
+    description: The post service takes every upload and writes it to S3 itself.
+    apply:
+      - removeFlow: { operation: upload-photo }
+      - createFlow: { operation: upload-photo, handler: post-api }
+      - addStep:
+          operation: upload-photo
+          id: store
+          step: { type: call, target: photos, action: store.insert, entity: Photo }
+          attach: { to: root }
+      - addStep:
+          operation: upload-photo
+          id: u200
+          step: { type: respond, status: 200 }
+          attach: { to: outcome, stepId: store, outcome: ok }
+      - addStep:
+          operation: upload-photo
+          id: u503
+          step: { type: respond, status: 503 }
+          attach: { to: outcome, stepId: store, outcome: error }
+    expect:
+      scenario: s4-photos
+      fails: [uploads-skip-services]
+
+  - id: unsigned-uploads
+    base: hybrid-fan-out
+    description: Phones get an upload URL that nobody signed.
+    apply:
+      - removeStep: { operation: start-upload, stepId: sign, bypass: ok }
+    expect:
+      scenario: s4-photos
+      fails: [uploads-signed]
+      band: not-passing
+
+  - id: few-photo-prefixes
+    base: hybrid-fan-out
+    description: Photos are spread over 16 prefixes.
+    apply:
+      - updateComponent: { id: photos, shards: 16 }
+    expect:
+      scenario: s4-photos
+      fails: [photos-served, headroom-peak]
+      band: not-passing
+
+  - id: photo-prefixes-at-the-limit
+    base: hybrid-fan-out
+    description: Photos are spread over 60 prefixes, enough for the peak with no room to spare.
+    apply:
+      - updateComponent: { id: photos, shards: 60 }
+    expect:
+      scenario: s4-photos
+      fails: [headroom-peak]
+
+  - id: photos-in-cache-only
+    base: hybrid-fan-out
+    description: Photos are served from S3, but nothing keeps them there.
+    apply:
+      - setComponentData: { id: photos, entities: [] }
+    expect:
+      scenario: s4-photos
+      fails: [photos-kept]
+      band: not-passing

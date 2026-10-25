@@ -611,6 +611,22 @@ Like breakscale's load slider, but over the scenario's own environments.
 - **README.** It is rewritten around what the app does today, with new screenshots and an acknowledgement of breakscale's vendor data.
 - **Running locally.** The local LaunchAgent is a template with an install script.
 
+## M25: Media
+
+Photos and other large objects, which do not pass through the services. In parts, like M24:
+
+**Part 1, object storage (as built).** Object storage answers clients itself ([ADR 0021](../adr/0021-object-storage.md)).
+- **The model.**
+  - A `serves-objects` capability lets a component handle clients' requests with a flow that only responds: it answers with the object, or stores it, and calls nothing.
+  - A `signUpload` decision signs an upload URL for one key, without a call.
+  - A handler's network carries what it sends: its responses, and what its calls write. Services get the baseline network of the c6i instance each size stands for.
+- **The catalog.** S3 Standard: 5,500 reads and 3,500 writes a second per prefix, $0.40 a million reads, $5 a million writes, $0.023 a GB a month, and about 120 ms a request.
+- **The scenario.** News feed S4, photos: 500 uploads and 300,000 reads of 200 KB photos a second at peak. Gates on signed uploads, photos kept durably, and 99% of photos loading; checks on photo latency, headroom and a $275,000 budget; senior signals for photos and uploads that skip the services.
+- **The corpus.** Both news feed goldens keep photos in S3 over 70 prefixes and score 100. Six mutants, every one caught: relaying photos through the timeline service (the load balancer alone costs $655,000 a month), relaying uploads, unsigned URLs, photos bound to nothing, and too few prefixes. No other score moved.
+- **Shown.** Object storage in the palette, its prefixes on the node and in the inspector, and a step picker that offers it only a response.
+
+**Part 2, a CDN (next).** Edge caches in front of object storage: their hit ratio from the photos' popularity, what reaches the origin, a viral photo that one prefix cannot serve, and data sent to the internet billed for every design.
+
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).
 - An optional backend (accounts, sync, community problem packs).

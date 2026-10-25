@@ -34,6 +34,12 @@ export interface StepCost {
    */
   readonly carriedBytes: number;
   /**
+   * Bytes of the item the caller sends over its own network: what a write,
+   * a message or a request to another service carries. 0 for reads, and for
+   * calls to a component in the caller's own memory.
+   */
+  readonly sentBytes: number;
+  /**
    * Calls' worth of the target's capacity one call takes, where the target
    * does not meter by size: a consistent read on a store whose replicas
    * serve reads can only use its primary (or a majority, for quorum stores).
@@ -48,6 +54,7 @@ export const PLAIN_COST: StepCost = {
   payload: null,
   bytes: 0,
   carriedBytes: 0,
+  sentBytes: 0,
   weight: 1,
 };
 
@@ -126,10 +133,12 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
   const bandwidth = size?.networkGbps !== undefined;
   const bytes = itemBytes(step, ctx);
   const carriedBytes = returnsValue || SENDS_ITEM.has(step.action) ? bytes : 0;
+  const inProcess = ctx.catalog.kind(component.kind)?.inProcess ?? false;
+  const sentBytes = SENDS_ITEM.has(step.action) && !inProcess ? bytes : 0;
   if (!meter && !(returnsValue && bandwidth)) {
     return carriedBytes === 0 && weight === 1
       ? PLAIN_COST
-      : { ...PLAIN_COST, carriedBytes, weight };
+      : { ...PLAIN_COST, carriedBytes, sentBytes, weight };
   }
   const perRequest = meter?.per === "request";
   return {
@@ -145,6 +154,7 @@ function callCost(step: CallPathStep, ctx: SimulationContext): StepCost {
         : null,
     bytes: returnsValue && bandwidth ? bytes : 0,
     carriedBytes,
+    sentBytes,
     weight,
   };
 }

@@ -27,7 +27,7 @@ export function FlowPanel() {
   const operation = activePack.problem.operations.find((o) => o.id === operationId);
   const flow = attempt.flows.find((f) => f.operation === operationId);
   const services = attempt.architecture.components.filter((c) =>
-    canHandle(catalogIndex.capabilities(c.kind, c.flavor), operation?.trigger.type === "event"),
+    canHandle(catalogIndex.capabilities(c.kind, c.flavor), operation?.trigger.type ?? "request"),
   );
   // Derived here rather than read from the analysis, which is empty while the design has errors.
   const route = useMemo(

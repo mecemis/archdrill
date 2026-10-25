@@ -73,6 +73,8 @@ export interface OperationModel {
   readonly costs: readonly (readonly StepCost[])[];
   /** Bytes of one request and its response on the wire; 0 for work that clients do not send. */
   readonly wireBytes: number;
+  /** Bytes of the response the handler sends back; 0 for work that clients do not send. */
+  readonly responseBytes: number;
   /**
    * Bytes each hop on the way to the handler carries per request: the
    * request and its response, or the message a consumer receives.
@@ -311,6 +313,8 @@ export function buildOperations(
     publishes: publishedEvents(analysis),
     costs: stepCosts(analysis.paths, ctx),
     wireBytes: wireBytes(analysis.operation),
+    responseBytes:
+      analysis.operation.trigger.type === "request" ? (analysis.operation.bytes?.response ?? 0) : 0,
     hopBytes:
       analysis.operation.trigger.type === "event"
         ? messageBytes(ctx.problem, analysis.operation.trigger.event)
