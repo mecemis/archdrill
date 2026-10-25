@@ -13,6 +13,9 @@ import type { ConnectionEdgeData } from "./projection";
 
 const MIN_LABELLED_LENGTH = 90;
 
+/** How strongly an edge is drawn under each emphasis. */
+const EMPHASIS_OPACITY = { normal: 1, highlighted: 1, dimmed: 0.3, faded: 0.4 } as const;
+
 /** Edge colours, as design tokens; each has an arrowhead of its own. */
 const STROKES = {
   error: "var(--bad)",
@@ -99,16 +102,18 @@ function ConnectionEdgeView(props: EdgeProps<Edge<ConnectionEdgeData>>) {
           stroke: STROKES[stroke],
           strokeWidth: selected ? 3 : active ? 2.25 : 1.5,
           strokeDasharray: data?.messaging ? "6 4" : undefined,
-          opacity: data?.emphasis === "dimmed" ? 0.3 : 1,
+          opacity: EMPHASIS_OPACITY[data?.emphasis ?? "normal"],
         }}
       />
-      {animate && data && (data.rate ?? 0) > 0 && data.emphasis !== "dimmed" && (
-        <TrafficDots path={path} data={data} />
-      )}
+      {animate &&
+        data &&
+        (data.rate ?? 0) > 0 &&
+        data.emphasis !== "dimmed" &&
+        data.emphasis !== "faded" && <TrafficDots path={path} data={data} />}
       {data && (data.steps.length > 0 || rate > 0) && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan pointer-events-none absolute flex gap-0.5"
+            className={`nodrag nopan pointer-events-none absolute flex gap-0.5 ${data.emphasis === "faded" ? "opacity-50" : ""}`}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           >
             {rate > 0 && (

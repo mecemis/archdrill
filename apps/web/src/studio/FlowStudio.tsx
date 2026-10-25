@@ -20,7 +20,7 @@ import {
 import { activePack, catalogIndex } from "../state/content";
 import { useEvaluation, useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
-import { eventLabel, respondLabel, triggerSummary } from "../state/triggers";
+import { eventLabel, operationsFocusFirst, respondLabel, triggerSummary } from "../state/triggers";
 import { type CursorMode, useUi } from "../state/ui-store";
 import { factorLabel } from "../state/what-if-compute";
 import { percent } from "../ui/format";
@@ -166,7 +166,7 @@ function OperationList() {
       aria-label="Operations"
       className="flex min-h-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-2"
     >
-      {activePack.problem.operations.map((op) => {
+      {operationsFocusFirst(scenario?.focusOperations ?? []).map((op) => {
         const flow = attempt.flows.find((f) => f.operation === op.id);
         const open = flow ? openSlots(flow, attempt).length : 0;
         const status = !flow

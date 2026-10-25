@@ -26,6 +26,8 @@ interface Stored {
   readonly dock: number;
   /** Traffic moving along the canvas edges. */
   readonly animateTraffic: boolean;
+  /** The canvas fades what only operations outside the scenario's focus use. */
+  readonly focusView: boolean;
 }
 
 const DEFAULTS: Stored = {
@@ -33,6 +35,7 @@ const DEFAULTS: Stored = {
   right: LIMITS.right.initial,
   dock: LIMITS.dock.initial,
   animateTraffic: true,
+  focusView: true,
 };
 
 function load(): Stored {
@@ -50,6 +53,7 @@ function load(): Stored {
         typeof parsed.animateTraffic === "boolean"
           ? parsed.animateTraffic
           : DEFAULTS.animateTraffic,
+      focusView: typeof parsed.focusView === "boolean" ? parsed.focusView : DEFAULTS.focusView,
     };
   } catch {
     return DEFAULTS;
@@ -61,6 +65,7 @@ interface LayoutState extends Stored {
   setRight: (width: number) => void;
   setDockHeight: (height: number) => void;
   setAnimateTraffic: (on: boolean) => void;
+  setFocusView: (on: boolean) => void;
   /** Remembers the current sizes; called when a drag or key press ends. */
   save: () => void;
   reset: (panel: "left" | "right" | "dock") => void;
@@ -76,10 +81,17 @@ export const useLayout = create<LayoutState>((set, get) => ({
     set({ animateTraffic });
     get().save();
   },
+  setFocusView: (focusView) => {
+    set({ focusView });
+    get().save();
+  },
   save: () => {
-    const { left, right, dock, animateTraffic } = get();
+    const { left, right, dock, animateTraffic, focusView } = get();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ left, right, dock, animateTraffic }));
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ left, right, dock, animateTraffic, focusView }),
+      );
     } catch {
       // Not remembered across visits, but still applied now.
     }
