@@ -30,6 +30,13 @@ function numbers() {
       }
     }
   }
+  if (catalog.internetTransfer) {
+    found.push({
+      where: "catalog",
+      field: "internetTransfer",
+      provenance: catalog.internetTransfer.provenance,
+    });
+  }
   return found;
 }
 

@@ -228,16 +228,17 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: The design costs less than $60,000 a month at peak
+    title: The design costs less than $76,000 a month at peak
     dimension: cost
     weight: 2
     severity: major
     requirements: [FR-6]
-    params: { environment: peak, monthlyUsd: 60000 }
+    params: { environment: peak, monthlyUsd: 76000 }
     why: >-
       Counting is a feature, not the product. Per-request pricing (a managed
       queue, an on-demand table) charges for every one of 800 billion clicks a
-      month.
+      month. Sending the redirects themselves costs about $15,700 at this
+      rate, whatever the design.
     fix: >-
       Use a log you size by throughput (such as Kafka) rather than a queue
       billed per message, and write aggregated counts to a store sized for the

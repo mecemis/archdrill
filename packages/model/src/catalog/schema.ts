@@ -416,6 +416,35 @@ export const CalibrationSchema = z.strictObject({
 });
 export type Calibration = z.infer<typeof CalibrationSchema>;
 
+/** One tier of a monthly volume price: from this many GB in the month, at this price a GB. */
+export const TransferTierSchema = z.strictObject({
+  fromGb: z.number().nonnegative(),
+  usdPerGb: z.number().nonnegative(),
+});
+export type TransferTier = z.infer<typeof TransferTierSchema>;
+
+/**
+ * What data sent from the Region to clients over the internet costs, in
+ * tiers of the month's total: each GB is billed at the tier it falls in.
+ */
+export const InternetTransferSchema = z
+  .strictObject({
+    tiers: z.array(TransferTierSchema).min(1),
+    provenance: ProvenanceSchema,
+  })
+  .refine((t) => t.tiers[0]?.fromGb === 0, {
+    message: "the first tier starts at 0 GB",
+    path: ["tiers"],
+  })
+  .refine(
+    (t) => t.tiers.every((tier, i) => i === 0 || tier.fromGb > (t.tiers[i - 1]?.fromGb ?? 0)),
+    {
+      message: "tiers climb: each starts above the one before",
+      path: ["tiers"],
+    },
+  );
+export type InternetTransfer = z.infer<typeof InternetTransferSchema>;
+
 type CatalogInput = {
   readonly kinds: readonly Kind[];
   readonly sources: readonly Source[];
@@ -462,6 +491,8 @@ export const CatalogSchema = z
     sources: z.array(SourceSchema).default([]),
     /** Benchmarks the engine reproduces with the catalog's numbers. */
     calibrations: z.array(CalibrationSchema).default([]),
+    /** What data sent to clients over the internet costs; free when absent. */
+    internetTransfer: InternetTransferSchema.optional(),
   })
   .superRefine((catalog, ctx) => {
     const sourceIds = new Set(catalog.sources.map((s) => s.id));
@@ -505,6 +536,9 @@ export const CatalogSchema = z
         }
       });
     });
+    if (catalog.internetTransfer) {
+      cited({ tiers: catalog.internetTransfer.provenance }, ["internetTransfer"]);
+    }
     const calibrationIds = new Set<string>();
     catalog.calibrations.forEach((calibration, i) => {
       if (calibrationIds.has(calibration.id)) {

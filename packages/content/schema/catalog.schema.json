@@ -747,6 +747,70 @@
         "required": ["id", "title", "source", "component", "setup", "network", "reads", "runs"],
         "additionalProperties": false
       }
+    },
+    "internetTransfer": {
+      "type": "object",
+      "properties": {
+        "tiers": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fromGb": {
+                "type": "number",
+                "minimum": 0
+              },
+              "usdPerGb": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": ["fromGb", "usdPerGb"],
+            "additionalProperties": false
+          }
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "published": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                },
+                "note": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["published"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "basis": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-zA-Z0-9-]*$"
+                  }
+                }
+              },
+              "required": ["model"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["tiers", "provenance"],
+      "additionalProperties": false
     }
   },
   "required": ["version", "kinds"]

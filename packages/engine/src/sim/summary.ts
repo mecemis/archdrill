@@ -92,6 +92,8 @@ export interface Propagation {
   readonly batchedItems: ReadonlyMap<string, Load>;
   /** Requests per second that clients send straight to each component, over connections they open. */
   readonly fromClients: ReadonlyMap<string, number>;
+  /** Bytes a second each component sends clients over the internet: its answers to their requests. */
+  readonly toClients: ReadonlyMap<string, number>;
   /**
    * Bytes a second each connection carries, both ways, for reads and for
    * writes: what its calls carry, and on the way in the requests, their
@@ -342,6 +344,8 @@ export function summarizeComponents(
   crossZoneCost: ReadonlyMap<string, number> = new Map(),
   /** Per component: what its standby region's copy costs a month. */
   standbyCost: ReadonlyMap<string, number> = new Map(),
+  /** Per component: what it sends clients over the internet costs a month. */
+  internetCost: ReadonlyMap<string, number> = new Map(),
 ): Map<string, ComponentMetrics> {
   const metrics = new Map<string, ComponentMetrics>();
   const allFromClients = [...flow.fromClients.values()].reduce((sum, rate) => sum + rate, 0);
@@ -376,6 +380,7 @@ export function summarizeComponents(
     const standbyRegion = standbyCost.get(id) ?? 0;
     const proxyCost = profile.proxyCostPerHour * HOURS_PER_MONTH;
     const iopsCost = profile.provisionedIopsCostPerMonth;
+    const internet = internetCost.get(id) ?? 0;
     const disk = profile.storage;
     // Per instance: a shard's replicas share its connection capacity.
     const perInstance = profile.shards / profile.instances;
@@ -388,6 +393,7 @@ export function summarizeComponents(
       utilization: utilizationOf(load, profile),
       hottestShardUtilization: shardUtilizations(load, hotLoad, profile).hottest,
       bytesOut: load.bytes ?? 0,
+      bytesToClients: flow.toClients.get(id) ?? 0,
       networkUtilization: profile.shards * hotNetwork + network - hotNetwork,
       instances: profile.instances,
       dropRate: drop.get(id) ?? 0,
@@ -423,7 +429,8 @@ export function summarizeComponents(
         crossZone +
         standbyRegion +
         proxyCost +
-        iopsCost,
+        iopsCost +
+        internet,
       costBreakdown: {
         instances: instanceCost,
         requests: requestCost,
@@ -433,6 +440,7 @@ export function summarizeComponents(
         standbyRegion,
         proxy: proxyCost,
         iops: iopsCost,
+        internet,
       },
     });
   }

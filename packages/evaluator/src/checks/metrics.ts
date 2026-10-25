@@ -357,9 +357,22 @@ function unitDriver(units: NonNullable<ComponentMetrics["capacityUnits"]>): stri
   }
 }
 
+/** Bytes a second, for people: "30 GB a second". */
+function rateOfBytes(bytesPerSec: number): string {
+  const units = [
+    [1e9, "GB"],
+    [1e6, "MB"],
+    [1e3, "KB"],
+  ] as const;
+  const [size, unit] = units.find(([s]) => bytesPerSec >= s) ?? [1, "bytes"];
+  const value = bytesPerSec / size;
+  return `${value >= 10 ? Math.round(value) : Number(value.toFixed(1))} ${unit} a second`;
+}
+
 /**
- * A component's monthly cost, with what its capacity units are for and what
- * its calls between zones cost, when either costs anything.
+ * A component's monthly cost, with what its capacity units are for, what its
+ * calls between zones cost and what it sends over the internet, when any of
+ * them costs anything.
  */
 function costLine(ctx: CheckContext, c: ComponentMetrics): string {
   const parts = [`${label(ctx, c.componentId)}: ${usd(c.monthlyCost)}/month`];
@@ -371,6 +384,11 @@ function costLine(ctx: CheckContext, c: ComponentMetrics): string {
   }
   if ((c.costBreakdown.crossZone ?? 0) >= 1) {
     parts.push(`${usd(c.costBreakdown.crossZone)} of it for calls between zones`);
+  }
+  if ((c.costBreakdown.internet ?? 0) >= 1) {
+    parts.push(
+      `${usd(c.costBreakdown.internet)} of it for sending ${rateOfBytes(c.bytesToClients)} to clients over the internet`,
+    );
   }
   return parts.join(", ");
 }

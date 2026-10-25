@@ -44,7 +44,7 @@ Average day (400,000/s) and peak (1,000,000/s).
   - limits hold across the fleet (`limits-are-global`: the deciding count is shared, or a server's own only after the shared count failed);
   - no fixed windows;
   - p99 under 50 ms at peak, nothing above 85%;
-  - an average day under $40,000 a month.
+  - an average day under $96,500 a month ($56,000 of it is sending the API's answers).
 - **Signal:** increments are not retried.
 
 ### S2: When the limiter fails

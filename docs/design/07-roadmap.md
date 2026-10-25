@@ -621,11 +621,16 @@ Photos and other large objects, which do not pass through the services. In parts
   - A `signUpload` decision signs an upload URL for one key, without a call.
   - A handler's network carries what it sends: its responses, and what its calls write. Services get the baseline network of the c6i instance each size stands for.
 - **The catalog.** S3 Standard: 5,500 reads and 3,500 writes a second per prefix, $0.40 a million reads, $5 a million writes, $0.023 a GB a month, and about 120 ms a request.
-- **The scenario.** News feed S4, photos: 500 uploads and 300,000 reads of 200 KB photos a second at peak. Gates on signed uploads, photos kept durably, and 99% of photos loading; checks on photo latency, headroom and a $275,000 budget; senior signals for photos and uploads that skip the services.
+- **The scenario.** News feed S4, photos: 500 uploads and 300,000 reads of 200 KB photos a second at peak. Gates on signed uploads, photos kept durably, and 99% of photos loading; checks on photo latency, headroom and a $275,000 budget (with data sent to the internet, $4.35 million since part 2); senior signals for photos and uploads that skip the services.
 - **The corpus.** Both news feed goldens keep photos in S3 over 70 prefixes and score 100. Six mutants, every one caught: relaying photos through the timeline service (the load balancer alone costs $655,000 a month), relaying uploads, unsigned URLs, photos bound to nothing, and too few prefixes. No other score moved.
 - **Shown.** Object storage in the palette, its prefixes on the node and in the inspector, and a step picker that offers it only a response.
 
-**Part 2, a CDN (next).** Edge caches in front of object storage: their hit ratio from the photos' popularity, what reaches the origin, a viral photo that one prefix cannot serve, and data sent to the internet billed for every design.
+**Part 2, data sent to the internet (as built).** Answers to clients are billed in the Region's tiers, $0.09 a GB down to $0.05 beyond 150 TB a month ([ADR 0022](../adr/0022-data-sent-to-the-internet.md)).
+- **The model.** The component a client talks to sends the answer to each request; the month's total from the Region is priced in the tiers and shared in proportion.
+- **The corpus.** The bill is the same for every design in a scenario, so the seven budgets it pushed out move up by it: news feed S1 from $60,000 to $182,500 (timelines are 2.4 PB a month), S4 to $4.35 million (photos are 79 PB). No band changed, and every mutant is still caught.
+- **Shown.** Each component's share in the Load table, and in the budget finding.
+
+**Part 3, a CDN (next).** Edge caches in front of object storage: their hit ratio from the photos' popularity, what reaches the origin, CloudFront's own transfer tiers, and a viral photo that one prefix cannot serve.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

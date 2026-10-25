@@ -54,7 +54,7 @@ Every operation had a service as its handler: a request reached a service, and t
 
 ## Known gaps
 
-- **Data sent to the internet is not billed.** Every design returns the same bytes to its clients, so leaving out S3's and the load balancer's $0.09 a GB changes no comparison yet. A CDN makes it a choice (M25, part 2).
+- **Data sent to the internet was not billed.** Every design returns the same bytes to its clients, so leaving out S3's and the load balancer's $0.09 a GB changed no comparison. Part 2 bills it for every design ([ADR 0022](0022-data-sent-to-the-internet.md)), ahead of a CDN that makes it a choice.
 - **Inbound traffic is still not counted** ([ADR 0011](0011-work-units-and-bandwidth.md)). A service that relays uploads receives them, and then sends them to storage; only the second counts, which is the same bytes.
 - **One size of photo.** Thumbnails, and the work of making them, are left to the debrief.
 - **Prefixes scale at once.** S3 partitions a busy prefix gradually and answers 503 Slow Down meanwhile; a design's prefixes are taken as partitioned already.

@@ -15,6 +15,8 @@ export interface ComponentMetrics {
   readonly hottestShardUtilization: number;
   /** Bytes a second it sends: the values its reads return, or what a proxy forwards. */
   readonly bytesOut: number;
+  /** Bytes a second of those it sends clients over the internet: its answers to their requests. */
+  readonly bytesToClients: number;
   /**
    * Share of its outbound bandwidth those bytes take, at the shard that holds
    * the hot key; 0 where the catalog gives no bandwidth.
@@ -64,6 +66,8 @@ export interface ComponentMetrics {
     readonly proxy: number;
     /** I/Os provisioned on its volumes above what they include. */
     readonly iops: number;
+    /** What it sends clients over the internet: its share of the Region's tiered bill. */
+    readonly internet: number;
   };
   /**
    * For a store that reads pages from a volume: the share of its reads of

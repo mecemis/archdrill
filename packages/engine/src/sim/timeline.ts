@@ -9,6 +9,7 @@ import type {
 import type { CallPathStep } from "../paths/types";
 import type { ComponentFault } from "./faults";
 import { resolveFaultHits, resolveFaults, selectComponents } from "./faults";
+import { internetTransferCosts } from "./internet";
 import {
   buildFixtures,
   createModel,
@@ -440,6 +441,7 @@ export function simulateTimeline(
       { ...ctx.problem.client, held: fixtures.clientConnections },
       crossZoneCostByCaller(summarizeZoneTraffic(flow.transfer, routes), ctx.attempt),
       standbyCosts(ctx.attempt, ctx.catalog, stored, flow, serving),
+      internetTransferCosts(flow.toClients, ctx.attempt, ctx.catalog),
     );
     const summary = summarizeOperations(
       fixtures.operations,
