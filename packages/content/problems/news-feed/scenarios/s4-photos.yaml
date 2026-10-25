@@ -146,15 +146,17 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: An average day costs less than $275,000 a month
+    title: An average day costs less than $4.35 million a month
     dimension: cost
     weight: 2
     requirements: [FR-3]
-    params: { environment: avg, monthlyUsd: 275000 }
+    params: { environment: avg, monthlyUsd: 4350000 }
     why: >-
-      Photos cost more than the rest of the feed: 150,000 reads a second at
-      $0.40 a million is about $160,000 a month, and a load balancer that
-      carries 30 GB a second bills over $600,000 for it.
+      Photos cost more than the rest of the feed. Sending 30 GB a second to
+      phones is 79 PB a month, about $4 million at the internet's rates
+      whoever sends it. On top, 150,000 reads a second at $0.40 a million is
+      about $160,000, and a load balancer that carries the photos bills over
+      $600,000 more.
     fix: >-
       Keep the photo bytes off the load balancer and the services: clients
       put and get photos in object storage themselves.

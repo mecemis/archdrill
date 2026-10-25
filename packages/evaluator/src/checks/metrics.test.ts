@@ -195,6 +195,31 @@ describe("cost-within-budget", () => {
       "ALB: $23,376/month, $23,360 of it for 4,000 capacity units set by 100,000 new connections a second",
     ]);
   });
+
+  it("says what sending to clients over the internet costs", () => {
+    const check = CHECKS.get("cost-within-budget");
+    if (!check) throw new Error("missing check");
+    const photos = {
+      componentId: "redis",
+      monthlyCost: 4_000_000,
+      costBreakdown: { instances: 0, requests: 160_000, storage: 37_000, internet: 3_803_000 },
+      bytesToClients: 30e9,
+      capacityUnits: null,
+    };
+    const env = {
+      environment: { id: "avg", label: "Average day", rates: {} },
+      components: new Map([["redis", photos]]),
+      monthlyCost: 4_000_000,
+      converged: true,
+    } as unknown as EnvironmentMetrics;
+    const ctx = { ...contextFor(cacheAsideAttempt()), metrics: new Map([["avg", env]]) };
+
+    const outcome = check.run(check.params.parse({ environment: "avg", monthlyUsd: 10_000 }), ctx);
+
+    expect(outcome.details).toEqual([
+      "Redis: $4,000,000/month, $3,803,000 of it for sending 30 GB a second to clients over the internet",
+    ]);
+  });
 });
 
 describe("utilization-below", () => {

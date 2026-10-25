@@ -52,7 +52,7 @@ Average day and peak.
   - nothing above 85%;
   - 90% of timeline reads from the cache;
   - cursor pagination;
-  - an average day under $60,000.
+  - an average day under $182,500 ($122,000 of it is sending the timelines).
 - **Signal:** batched timeline writes.
 
 ### S2: Celebrities
@@ -77,7 +77,7 @@ Average day and peak, with the feed's own traffic and 300,000 photo reads a seco
 - **Checks:**
   - photo p99 under 300 ms;
   - nothing above 85%, prefixes included;
-  - an average day under $275,000.
+  - an average day under $4.35 million (sending 79 PB of photos a month is about $4 million of it).
 - **Signals:** photos, and uploads, go straight between clients and object storage.
 
 ## Corpus

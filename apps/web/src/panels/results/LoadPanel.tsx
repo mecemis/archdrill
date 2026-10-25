@@ -325,6 +325,14 @@ function ComponentRow({
             {usd(metrics.costBreakdown.standbyRegion)} standby region
           </span>
         )}
+        {metrics.costBreakdown.internet >= 1 && (
+          <span
+            className="block text-xs text-fg-subtle"
+            title="Its answers to clients, its share of the Region's tiered price for data sent to the internet"
+          >
+            {usd(metrics.costBreakdown.internet)} to the internet
+          </span>
+        )}
       </td>
     </tr>
   );
@@ -452,8 +460,17 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
       storage: sum.storage + c.costBreakdown.storage,
       crossZone: sum.crossZone + c.costBreakdown.crossZone,
       standbyRegion: sum.standbyRegion + c.costBreakdown.standbyRegion,
+      internet: sum.internet + c.costBreakdown.internet,
     }),
-    { instances: 0, requests: 0, capacityUnits: 0, storage: 0, crossZone: 0, standbyRegion: 0 },
+    {
+      instances: 0,
+      requests: 0,
+      capacityUnits: 0,
+      storage: 0,
+      crossZone: 0,
+      standbyRegion: 0,
+      internet: 0,
+    },
   );
   return (
     <section className="text-sm">
@@ -465,6 +482,7 @@ function CostSummary({ metrics }: { readonly metrics: EnvironmentMetrics }) {
         {usd(totals.storage)}
         {totals.crossZone >= 1 && <> · between zones {usd(totals.crossZone)}</>}
         {totals.standbyRegion >= 1 && <> · standby region {usd(totals.standbyRegion)}</>}
+        {totals.internet >= 1 && <> · to the internet {usd(totals.internet)}</>}
       </p>
       <p className="mt-1 text-xs text-fg-subtle">
         Ballpark list prices for comparing designs, not a quote. Storage counts every replica's

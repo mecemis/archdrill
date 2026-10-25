@@ -148,13 +148,15 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: An average day costs less than $60,000 a month
+    title: An average day costs less than $182,500 a month
     dimension: cost
     requirements: [NFR-1]
-    params: { environment: avg, monthlyUsd: 60000 }
+    params: { environment: avg, monthlyUsd: 182500 }
     why: >-
       Timelines are the product, but memory for 50 million of them is not
-      free.
+      free. Sending them is not either: 150,000 pages of 6 KB a second are
+      2.4 PB a month, about $122,000 at the internet's rates, whatever the
+      design.
     fix: >-
       Cache the active users' timelines only, and autoscale the services.
 

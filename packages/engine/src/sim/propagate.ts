@@ -278,6 +278,7 @@ export function propagate(
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
   const storeReads = new Map<string, Map<string, number>>();
   const fromClients = new Map<string, number>();
+  const toClients = new Map<string, number>();
   const transfer = new Map<string, Load>();
   const carry = (connectionId: string | null | undefined, bytes: number, write: boolean) => {
     if (connectionId == null || bytes <= 0) return;
@@ -349,6 +350,8 @@ export function propagate(
       // Clients open their connections to the first hop; proxies keep theirs open.
       if (index === 0 && trigger === "request" && hop) {
         fromClients.set(hop, (fromClients.get(hop) ?? 0) + arriving);
+        // It answers them over the internet too.
+        toClients.set(hop, (toClients.get(hop) ?? 0) + arriving * op.responseBytes);
       }
       if (hop && op.ingress.includes(hop)) enter(hop);
     });
@@ -507,6 +510,7 @@ export function propagate(
     batchArrivals,
     batchedItems,
     fromClients,
+    toClients,
     transfer,
   };
 }

@@ -210,11 +210,12 @@ Success statuses are declared per operation: `302` and `410`/`404` count as *cor
 
 ### 9. Cost
 
-Monthly cost has three parts:
+Monthly cost has these parts:
 
 - **instances**: `Σ shards × replicas × size.costPerHour × 730`;
 - **storage**: GB-month for durable stores, `(stored entities × entity bytes) × copies × price`. The stored-entity counts come from the workload's `dataset`. Every replica of a shard holds a full copy, so read replicas are expensive at this data size. For URL Shortener, one copy of 158 B links is ~79 TB, so read replicas cannot be the main way to absorb 300,000 reads per second.
-- **requests and egress**: for request-priced flavors (on-demand key-value DB, CDN later), from loads × seconds per month × price per million. This assumes the environment's traffic is sustained for the whole month. Budgets are therefore checked against the average environment, and peak-environment costs are a ceiling.
+- **requests**: for request-priced flavors (on-demand key-value DB, object storage), from loads × seconds per month × price per million. This assumes the environment's traffic is sustained for the whole month. Budgets are therefore checked against the average environment, and peak-environment costs are a ceiling.
+- **data sent to the internet** (as built, M25): the component each client talks to sends `bytes.response` for every request; the month's total from the Region is priced in the catalog's `internetTransfer` tiers and shared in proportion to what each component sent ([ADR 0022](../adr/0022-data-sent-to-the-internet.md)). Traffic between zones and to a standby region is billed as before.
 
 Prices are order-of-magnitude list prices with a stated date and source. They are used for **relative** comparison and budget checks with ±25% tolerance, never as quotes.
 

@@ -203,14 +203,15 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: An average day costs less than $48,000 a month
+    title: An average day costs less than $54,500 a month
     dimension: cost
     weight: 2
     severity: major
-    params: { environment: avg, monthlyUsd: 48000 }
+    params: { environment: avg, monthlyUsd: 54500 }
     why: >-
       Sizing every tier for a once-a-year spike and paying for it every day is
-      the expensive way to survive it.
+      the expensive way to survive it. About $6,400 of the budget is sending
+      the redirects, which every design pays.
     fix: >-
       Autoscale services between an average-day minimum and a spike maximum,
       and let caches absorb the spike instead of the store.

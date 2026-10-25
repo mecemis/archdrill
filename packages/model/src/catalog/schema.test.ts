@@ -30,6 +30,34 @@ describe("catalog", () => {
   });
 });
 
+describe("data sent to the internet", () => {
+  const transfer = (tiers: { fromGb: number; usdPerGb: number }[]) => ({
+    ...testCatalog,
+    internetTransfer: { tiers, provenance: { model: "test", basis: [] } },
+  });
+
+  it("is priced in tiers of the month's gigabytes, from the first one up", () => {
+    const tiers = [
+      { fromGb: 0, usdPerGb: 0.09 },
+      { fromGb: 10240, usdPerGb: 0.085 },
+    ];
+
+    expect(CatalogSchema.safeParse(transfer(tiers)).success).toBe(true);
+  });
+
+  it("rejects tiers that do not start at nothing or do not climb", () => {
+    expect(CatalogSchema.safeParse(transfer([{ fromGb: 10, usdPerGb: 0.09 }])).success).toBe(false);
+    expect(
+      CatalogSchema.safeParse(
+        transfer([
+          { fromGb: 0, usdPerGb: 0.09 },
+          { fromGb: 0, usdPerGb: 0.05 },
+        ]),
+      ).success,
+    ).toBe(false);
+  });
+});
+
 describe("calibrations", () => {
   const benchmark = {
     id: "bench",

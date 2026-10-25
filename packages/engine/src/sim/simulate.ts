@@ -2,6 +2,7 @@ import type { Environment, Workload } from "@archdrill/model";
 import type { CallPathStep } from "../paths/types";
 import type { ComponentProfile } from "./capacity";
 import { resolveFaults } from "./faults";
+import { internetTransferCosts } from "./internet";
 import {
   buildFixtures,
   createModel,
@@ -161,6 +162,7 @@ export function simulateEnvironment(
     { ...ctx.problem.client, held: fixtures.clientConnections },
     crossZoneCostByCaller(zoneTraffic, ctx.attempt),
     standbyCosts(design.attempt, ctx.catalog, stored, final, active),
+    internetTransferCosts(final.toClients, ctx.attempt, ctx.catalog),
   );
   const connections = fixtures.connections;
   return {

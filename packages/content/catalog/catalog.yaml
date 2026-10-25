@@ -1237,7 +1237,27 @@ kinds:
           latencyMs:
             model: A charge takes a few hundred milliseconds; an assumption.
             basis: []
+internetTransfer:
+  tiers:
+    - { fromGb: 0, usdPerGb: 0.09 }
+    - { fromGb: 10240, usdPerGb: 0.085 }
+    - { fromGb: 51200, usdPerGb: 0.07 }
+    - { fromGb: 153600, usdPerGb: 0.05 }
+  provenance:
+    published: aws-data-transfer-price-list
+    note: >-
+      Data out of US East (N. Virginia) to the internet, from EC2, load
+      balancers and S3 alike, billed on the month's total: $0.09 a GB for the
+      first 10 TB, $0.085 for the next 40 TB, $0.07 for the next 100 TB and
+      $0.05 beyond 150 TB. The first 100 GB a month are free across services,
+      which the model leaves out. Data in from the internet is free.
 sources:
+  - id: aws-data-transfer-price-list
+    title: "AWS Price List API: AWS Data Transfer, us-east-1 (data out to the internet, published 2026-09-16)"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-25
   - id: aws-s3-price-list
     title: "AWS Price List API: Amazon S3, us-east-1 (S3 Standard storage and requests, published 2026-10-15)"
     url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json

@@ -36,14 +36,15 @@ dimensions:
 checks:
   - id: within-budget
     use: cost-within-budget
-    title: The design costs less than $46,000 a month
+    title: The design costs less than $52,500 a month
     dimension: cost
     weight: 3
     gate: true
     severity: critical
-    params: { environment: avg, monthlyUsd: 46000 }
+    params: { environment: avg, monthlyUsd: 52500 }
     why: >-
-      This is the scenario's goal. Every read replica stores a full copy of
+      This is the scenario's goal. Sending the redirects to visitors costs
+      about $6,300 of it, whatever the design. Every read replica stores a full copy of
       ~79 TB of links, and pay-per-request stores bill every redirect, so
       scaling the database tier for 300,000 reads per second is the most
       expensive way to absorb skewed traffic. A load balancer billed by

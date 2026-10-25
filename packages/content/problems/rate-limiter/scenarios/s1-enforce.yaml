@@ -132,13 +132,14 @@ checks:
 
   - id: within-budget
     use: cost-within-budget
-    title: An average day costs less than $40,000 a month
+    title: An average day costs less than $96,500 a month
     dimension: cost
     requirements: [NFR-1]
-    params: { environment: avg, monthlyUsd: 40000 }
+    params: { environment: avg, monthlyUsd: 96500 }
     why: >-
       Rate limiting is overhead on every request; it should cost a fraction of
-      the API it protects.
+      the API it protects. Sending the API's answers to clients costs about
+      $56,000 a month by itself.
     fix: >-
       Autoscale the API servers and the backend, and keep counters in memory.
 
