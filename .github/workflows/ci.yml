@@ -21,12 +21,13 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       # Corpus report and evaluation-time budget, published to the run summary.
-      # Shared runners are slower and noisier than a laptop, so CI guards
-      # against regressions with a looser budget than the 100 ms target.
+      # Times are corrected for how fast the runner is (a reference workload
+      # timed between the runs); the budget leaves 30% over the 100 ms target
+      # for what that correction misses on shared runners.
       - run: pnpm report
         env:
-          PERF_BUDGET_MS: "250"
-          PERF_TIMELINE_BUDGET_MS: "5000"
+          PERF_BUDGET_MS: "130"
+          PERF_TIMELINE_BUDGET_MS: "2600"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
