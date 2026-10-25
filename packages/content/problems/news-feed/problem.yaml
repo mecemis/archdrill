@@ -108,6 +108,8 @@ operations:
     method: GET
     path: /photos/{photoId}
     bytes: { request: 600, response: 200500 }
+    # A photo never changes once uploaded, and everyone gets the same one.
+    cacheableAtEdge: true
     class: read
     idempotent: true
     successStatuses: [200]
@@ -173,4 +175,4 @@ estimates:
     derivation: >-
       300,000 pages a second × 200 KB = 60 GB a second, about 480 Gbps: some
       300 servers' worth of network if every photo passed through one.
-scenarios: [s1-timeline, s2-celebrities, s3-timelines-lost, s4-photos]
+scenarios: [s1-timeline, s2-celebrities, s3-timelines-lost, s4-photos, s5-viral-photo]

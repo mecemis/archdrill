@@ -39,6 +39,7 @@ People post short updates and follow each other. The home timeline shows the new
   - A fan-out step (`each: followers`) makes its call once per item, in parallel.
   - It can batch its own calls without waiting for other requests.
 - **Logic.** `isCelebrity`, decided by the `celebrity` fact, and `signUpload`, which signs an upload URL.
+- **At the edge.** `read-photo` is `cacheableAtEdge`: a CDN on its route answers what it keeps ([ADR 0023](../adr/0023-a-cdn-at-the-edge.md)).
 - **Decision.** `pagination`: offset or cursor.
 
 ## Scenarios
@@ -80,20 +81,30 @@ Average day and peak, with the feed's own traffic and 300,000 photo reads a seco
   - an average day under $4.35 million (sending 79 PB of photos a month is about $4 million of it).
 - **Signals:** photos, and uploads, go straight between clients and object storage.
 
+### S5: A viral photo
+S4's traffic, with one read of a photo in five for one celebrity's photo: 60,000 a second at peak.
+- **Gate:** 99% of photos load at peak, the viral one included.
+- **Checks:**
+  - nothing above 85%, the viral photo's prefix included;
+  - half the photos in under 50 ms;
+  - an average day under $2.5 million.
+- **Signal:** photos come from a CDN's edge.
+
 ## Corpus
 
 | ID | Design | Scenarios |
 |---|---|---|
-| `hybrid-fan-out` | Post service → Cassandra and Kafka. A Flink job copies posts to followers' Redis timelines in batches of 100 and keeps celebrities' posts in one entry each. The timeline service reads Redis and merges celebrities from an in-process cache. Rebuilds read followed accounts in batches of 50 behind a bulkhead. Photos live in S3 over 70 prefixes; the post service signs uploads, and S3 answers uploads and reads itself. | S1, S2, S3, S4 |
-| `push-postgres` | The same with PostgreSQL, copying every post, celebrities included. | S1, S3, S4 |
+| `hybrid-fan-out` | Post service → Cassandra and Kafka. A Flink job copies posts to followers' Redis timelines in batches of 100 and keeps celebrities' posts in one entry each. The timeline service reads Redis and merges celebrities from an in-process cache. Rebuilds read followed accounts in batches of 50 behind a bulkhead. Photos live in S3 over 70 prefixes behind CloudFront; the post service signs uploads, phones upload straight to S3, and read photos through the CDN. | S1, S2, S3, S4, S5 |
+| `push-postgres` | The same with PostgreSQL, copying every post, celebrities included. | S1, S3, S4, S5 |
 
-Seventeen mutants cover:
+Nineteen mutants cover:
 - the read path: pulling on every read, and a small timeline cache;
 - the write path: posts not published, posts not fanned out, and unbatched writes;
 - offset pagination;
 - celebrities: their posts pushed, their entries read from the shared cache, and a timeline service capped below what merging them needs;
 - the outage: unbounded rebuilds, and a slow cache timeout;
-- photos: relayed through the timeline service, uploads relayed through the post service, unsigned upload URLs, photos bound to nothing, and too few prefixes (16, and 60).
+- photos: relayed through the timeline service, uploads relayed through the post service, unsigned upload URLs, photos bound to nothing, and too few prefixes without a CDN (16, and 60);
+- the viral photo: no CDN, and 256 prefixes instead of one.
 
 Reading celebrities' entries from the shared cache, without the in-process copy, is caught by the network, not the CPU. A Redis node serves about 400,000 commands a second, as ElastiCache measures it, so the shard holding the celebrities and its replica could take every fan's lookups. Each lookup returns a 1.6 KB list, though: 450,000 a second is about 5.8 Gbps, and the shard's two nodes sustain 2.5 Gbps each (M21's work units). For one part of M21, between calibration and bandwidth, the mutant was gone.
 

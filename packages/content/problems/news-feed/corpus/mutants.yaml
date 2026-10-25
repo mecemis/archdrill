@@ -179,8 +179,9 @@ mutants:
 
   - id: few-photo-prefixes
     base: hybrid-fan-out
-    description: Photos are spread over 16 prefixes.
+    description: Without a CDN, photos are spread over 16 prefixes.
     apply:
+      - removeComponent: { id: photo-cdn }
       - updateComponent: { id: photos, shards: 16 }
     expect:
       scenario: s4-photos
@@ -189,8 +190,9 @@ mutants:
 
   - id: photo-prefixes-at-the-limit
     base: hybrid-fan-out
-    description: Photos are spread over 60 prefixes, enough for the peak with no room to spare.
+    description: Without a CDN, photos are spread over 60 prefixes, enough for the peak with no room to spare.
     apply:
+      - removeComponent: { id: photo-cdn }
       - updateComponent: { id: photos, shards: 60 }
     expect:
       scenario: s4-photos
@@ -204,4 +206,25 @@ mutants:
     expect:
       scenario: s4-photos
       fails: [photos-kept]
+      band: not-passing
+
+  - id: photos-without-a-cdn
+    base: hybrid-fan-out
+    description: Phones fetch every photo straight from S3, the viral one included.
+    apply:
+      - removeComponent: { id: photo-cdn }
+    expect:
+      scenario: s5-viral-photo
+      fails: [photos-served, viral-headroom, photos-from-the-edge, within-budget]
+      band: not-passing
+
+  - id: prefixes-instead-of-a-cdn
+    base: hybrid-fan-out
+    description: Without a CDN, photos are spread over 256 prefixes to absorb the viral one.
+    apply:
+      - removeComponent: { id: photo-cdn }
+      - updateComponent: { id: photos, shards: 256 }
+    expect:
+      scenario: s5-viral-photo
+      fails: [photos-served, viral-headroom]
       band: not-passing

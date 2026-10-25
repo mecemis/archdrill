@@ -11,24 +11,30 @@ export interface IngressRoute {
   readonly connections: readonly string[];
 }
 
+/** Which way a request goes when a CDN offers a route: through it, around it, or the shortest. */
+export type EdgePreference = "through-edge" | "around-edge" | "shortest";
+
 /**
  * Shortest route from any client to the handler. Intermediate hops
  * must be able to carry traffic (load balancers, gateways, CDNs). Ties break
- * deterministically by component id.
+ * deterministically by component id. Requests a CDN can answer prefer a
+ * route through one, and other requests a route around any, when the design
+ * offers both.
  */
 export function findIngressRoute(
   architecture: Architecture,
   catalog: CatalogIndex,
   handlerId: string,
+  preference: EdgePreference = "shortest",
 ): IngressRoute | null {
   const byId = new Map(architecture.components.map((c) => [c.id, c]));
-  const canForward = (id: string) => {
+  const capabilitiesOf = (id: string) => {
     const c = byId.get(id);
-    if (!c) return false;
-    const caps = catalog.capabilities(c.kind, c.flavor);
-    return [...INGRESS_CAPABILITIES].some((cap) => caps.has(cap));
+    return c ? catalog.capabilities(c.kind, c.flavor) : new Set<string>();
   };
-
+  const forwards = (id: string) =>
+    [...INGRESS_CAPABILITIES].some((cap) => capabilitiesOf(id).has(cap));
+  const isEdge = (id: string) => capabilitiesOf(id).has("edge-cache");
   const outgoing = new Map<string, { to: string; connection: string }[]>();
   const sorted = [...architecture.connections].sort((a, b) => a.to.localeCompare(b.to));
   for (const conn of sorted) {
@@ -36,22 +42,49 @@ export function findIngressRoute(
     list.push({ to: conn.to, connection: conn.id });
     outgoing.set(conn.from, list);
   }
-
   const clients = architecture.components
     .filter((c) => catalog.capabilities(c.kind, c.flavor).has("traffic-source"))
     .map((c) => c.id)
     .sort();
+  const search = (starts: readonly string[], target: string, canForward: (id: string) => boolean) =>
+    shortestRoute(outgoing, starts, target, canForward);
 
+  const shortest = () => search(clients, handlerId, forwards);
+  if (preference === "around-edge") {
+    return search(clients, handlerId, (id) => forwards(id) && !isEdge(id)) ?? shortest();
+  }
+  if (preference === "through-edge") {
+    const routes = architecture.components
+      .map((c) => c.id)
+      .filter((id) => id !== handlerId && isEdge(id))
+      .sort()
+      .flatMap((edge) => {
+        const toEdge = search(clients, edge, (id) => forwards(id) && !isEdge(id));
+        const onward = toEdge && search([edge], handlerId, forwards);
+        return toEdge && onward ? [joinRoutes(toEdge, onward)] : [];
+      })
+      .sort((a, b) => a.components.length - b.components.length);
+    return routes[0] ?? shortest();
+  }
+  return shortest();
+}
+
+/** Breadth-first: the fewest hops from any start to the target, through components that forward. */
+function shortestRoute(
+  outgoing: ReadonlyMap<string, readonly { to: string; connection: string }[]>,
+  starts: readonly string[],
+  target: string,
+  canForward: (id: string) => boolean,
+): IngressRoute | null {
   const previous = new Map<string, { from: string; connection: string } | null>();
   const queue: string[] = [];
-  for (const client of clients) {
-    previous.set(client, null);
-    queue.push(client);
+  for (const start of starts) {
+    previous.set(start, null);
+    queue.push(start);
   }
-
   for (let head = 0; head < queue.length; head++) {
     const current = queue[head] as string;
-    if (current === handlerId) return buildRoute(previous, handlerId);
+    if (current === target) return buildRoute(previous, target);
     const isStart = previous.get(current) === null;
     if (!isStart && !canForward(current)) continue;
     for (const edge of outgoing.get(current) ?? []) {
@@ -61,6 +94,14 @@ export function findIngressRoute(
     }
   }
   return null;
+}
+
+/** A route to an intermediate component, then on from it. */
+function joinRoutes(first: IngressRoute, second: IngressRoute): IngressRoute {
+  return {
+    components: [...first.components, ...second.components.slice(1)],
+    connections: [...first.connections, ...second.connections],
+  };
 }
 
 function buildRoute(
@@ -109,7 +150,14 @@ export function findOperationRoute(
   handlerId: string,
 ): IngressRoute | null {
   const trigger = operation.trigger;
-  if (trigger.type === "request") return findIngressRoute(attempt.architecture, catalog, handlerId);
+  if (trigger.type === "request") {
+    return findIngressRoute(
+      attempt.architecture,
+      catalog,
+      handlerId,
+      operation.cacheableAtEdge ? "through-edge" : "around-edge",
+    );
+  }
   if (trigger.type === "schedule") return { components: [handlerId], connections: [] };
   const queues = queuesFor(trigger.event, attempt);
   const connection = [...attempt.architecture.connections]

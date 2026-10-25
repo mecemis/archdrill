@@ -3,6 +3,7 @@ import { type Attempt, AttemptSchema } from "../attempt/schema";
 import { applyCommand } from "../commands/index";
 import { asyncAttempt } from "../testing/async";
 import { cacheAsideAttempt, testCatalogIndex, testProblem } from "../testing/fixtures";
+import { photosAttempt, photosCatalogIndex, photosProblem } from "../testing/photos";
 import { findIngressRoute, findOperationRoute } from "./ingress";
 
 function route(attempt: Attempt, handler: string) {
@@ -119,5 +120,29 @@ describe("findOperationRoute", () => {
 
   it("routes requests from a client as before", () => {
     expect(routeOf(asyncAttempt(), "redirect", "api")?.components).toEqual(["client", "lb", "api"]);
+  });
+});
+
+describe("routes through a CDN", () => {
+  const operation = (id: string) => {
+    const op = photosProblem.operations.find((o) => o.id === id);
+    if (!op) throw new Error(`no ${id}`);
+    return op;
+  };
+  const routeOf = (id: string, attempt = photosAttempt("cdn")) =>
+    findOperationRoute(operation(id), attempt, photosCatalogIndex, "photos")?.components;
+
+  it("sends what the edge can keep through the CDN, and the rest around it", () => {
+    expect(routeOf("read-photo")).toEqual(["users", "edge", "photos"]);
+    expect(routeOf("upload-photo")).toEqual(["users", "photos"]);
+  });
+
+  it("goes through the CDN when it is the only way, and around it when there is none", () => {
+    const onlyEdge = applyCommand(photosAttempt("cdn"), "removeConnection", {
+      id: "users--photos",
+    }).attempt;
+
+    expect(routeOf("upload-photo", onlyEdge)).toEqual(["users", "edge", "photos"]);
+    expect(routeOf("read-photo", photosAttempt("direct"))).toEqual(["users", "photos"]);
   });
 });

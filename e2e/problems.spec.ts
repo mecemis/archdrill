@@ -39,7 +39,7 @@ test("shows a runaway client taking the headroom of the shard that counts it", a
 test("passes every news feed scenario with a hybrid fan-out", async ({ page }) => {
   await importGolden(page, "hybrid-fan-out", "news-feed");
 
-  for (const scenario of [/S1 /, /S2 /, /S3 /, /S4 /]) {
+  for (const scenario of [/S1 /, /S2 /, /S3 /, /S4 /, /S5 /]) {
     await page.getByRole("button", { name: scenario }).click();
     await expect(page.getByTestId("scenario-score")).toHaveText("100");
   }
@@ -54,7 +54,7 @@ test("lets object storage hand photos to clients itself", async ({ page }) => {
   await page.getByLabel("Operation").selectOption("read-photo");
   const handler = page.getByLabel("Handled by");
   await expect(handler).toHaveValue("photos");
-  await expect(page.getByText("Ingress: Users → Photos")).toBeVisible();
+  await expect(page.getByText("Ingress: Users → Photo CDN → Photos")).toBeVisible();
 
   // Relayed by a service, 60 GB a second of photos fill its network and the load balancer's bill.
   await handler.selectOption("timeline-api");
@@ -63,6 +63,24 @@ test("lets object storage hand photos to clients itself", async ({ page }) => {
 
   await handler.selectOption("photos");
   await expect(page.getByTestId("scenario-score")).toHaveText("100");
+});
+
+test("keeps a viral photo at a CDN's edge", async ({ page }) => {
+  await importGolden(page, "hybrid-fan-out", "news-feed");
+  await page.getByRole("button", { name: /S5 / }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+
+  await page.getByRole("tab", { name: "Flow" }).click();
+  await page.getByLabel("Operation").selectOption("read-photo");
+  await expect(page.getByText("Ingress: Users → Photo CDN → Photos")).toBeVisible();
+
+  // Without the CDN, one prefix of the bucket takes the viral photo's 60,000 reads a second.
+  await page.getByTestId("node-Photo CDN").click();
+  await page.getByRole("button", { name: "Remove component" }).click();
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+  await expect(
+    page.getByText("Almost every photo loads at peak, the viral one included (99%)"),
+  ).toBeVisible();
 });
 
 test("passes every chat scenario with gateways sized for connections", async ({ page }) => {

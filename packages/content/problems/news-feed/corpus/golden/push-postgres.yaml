@@ -10,6 +10,7 @@ expect:
   s1-timeline: { minScore: 90 }
   s3-timelines-lost: { minScore: 90 }
   s4-photos: { minScore: 90 }
+  s5-viral-photo: { minScore: 90 }
 attempt:
   schemaVersion: 1
   problemId: news-feed
@@ -55,8 +56,11 @@ attempt:
         label: Photos
         shards: 70
         data: [{ entity: Photo }]
+      - { id: photo-cdn, kind: cdn, flavor: cloudfront, label: Photo CDN }
     connections:
       - { id: users--photos, from: users, to: photos }
+      - { id: users--photo-cdn, from: users, to: photo-cdn }
+      - { id: photo-cdn--photos, from: photo-cdn, to: photos }
       - { id: post-api--photos, from: post-api, to: photos }
       - { id: users--lb, from: users, to: lb }
       - { id: lb--post-api, from: lb, to: post-api }
@@ -177,3 +181,4 @@ attempt:
     events: { x: 700, y: 460 }
     fan-out: { x: 960, y: 300 }
     photos: { x: 420, y: 560 }
+    photo-cdn: { x: 200, y: 560 }

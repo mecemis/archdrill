@@ -1,4 +1,10 @@
-import { type Attempt, type CatalogIndex, runsInRegion, type TransferTier } from "@archdrill/model";
+import {
+  type Attempt,
+  type CatalogIndex,
+  type InternetTransfer,
+  runsInRegion,
+  type TransferTier,
+} from "@archdrill/model";
 import { SECONDS_PER_MONTH } from "./capacity";
 
 const BYTES_PER_GB = 1e9;
@@ -15,27 +21,39 @@ export function tieredCost(gb: number, tiers: readonly TransferTier[]): number {
 }
 
 /**
+ * The price a component's sends to clients fall under: its offering's own (a
+ * CDN's edge locations), else the Region's for what runs in it; nothing for
+ * what runs elsewhere.
+ */
+function priceOf(id: string, attempt: Attempt, catalog: CatalogIndex): InternetTransfer | null {
+  const component = attempt.architecture.components.find((c) => c.id === id);
+  const kind = component && catalog.kind(component.kind);
+  const flavor = component && catalog.flavor(component.kind, component.flavor);
+  if (!kind || !flavor) return null;
+  if (flavor.internetTransfer) return flavor.internetTransfer;
+  return runsInRegion(kind, flavor) ? (catalog.catalog.internetTransfer ?? null) : null;
+}
+
+/**
  * What each component pays a month for what it sends to clients over the
- * internet. The Region's tiers apply to the month's total from every
- * component in it, and each pays its share of the bill.
+ * internet. Each price's tiers apply to the month's total from every
+ * component billed under it, and each pays its share of that bill.
  */
 export function internetTransferCosts(
   toClients: ReadonlyMap<string, number>,
   attempt: Attempt,
   catalog: CatalogIndex,
 ): Map<string, number> {
-  const transfer = catalog.catalog.internetTransfer;
+  const byPrice = new Map<InternetTransfer, [string, number][]>();
+  for (const [id, bytes] of toClients) {
+    const price = bytes > 0 ? priceOf(id, attempt, catalog) : null;
+    if (price) byPrice.set(price, [...(byPrice.get(price) ?? []), [id, bytes]]);
+  }
   const costs = new Map<string, number>();
-  if (!transfer) return costs;
-  const senders = [...toClients].filter(([id, bytes]) => {
-    const component = attempt.architecture.components.find((c) => c.id === id);
-    const kind = component && catalog.kind(component.kind);
-    const flavor = component && catalog.flavor(component.kind, component.flavor);
-    return bytes > 0 && kind !== undefined && flavor !== undefined && runsInRegion(kind, flavor);
-  });
-  const total = senders.reduce((sum, [, bytes]) => sum + bytes, 0);
-  if (total <= 0) return costs;
-  const bill = tieredCost((total * SECONDS_PER_MONTH) / BYTES_PER_GB, transfer.tiers);
-  for (const [id, bytes] of senders) costs.set(id, (bill * bytes) / total);
+  for (const [price, senders] of byPrice) {
+    const total = senders.reduce((sum, [, bytes]) => sum + bytes, 0);
+    const bill = tieredCost((total * SECONDS_PER_MONTH) / BYTES_PER_GB, price.tiers);
+    for (const [id, bytes] of senders) costs.set(id, (bill * bytes) / total);
+  }
   return costs;
 }

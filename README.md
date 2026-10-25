@@ -22,7 +22,7 @@ Interviews reward knowing what happens on a cache miss, when the cache is down, 
 
 ### Design
 
-- **Components from a sourced catalog:** clients, load balancers, API gateways, services, Redis and Memcached, near caches, PostgreSQL and MySQL, DynamoDB, Cassandra, S3 object storage, key generation services, etcd and ZooKeeper, managed queues and Kafka, a Flink stream processor, and third-party APIs. Every capacity, latency and price cites the vendor source it was read from, with the date, or states how it is modelled.
+- **Components from a sourced catalog:** clients, load balancers, API gateways, services, Redis and Memcached, near caches, PostgreSQL and MySQL, DynamoDB, Cassandra, S3 object storage, a CloudFront CDN, key generation services, etcd and ZooKeeper, managed queues and Kafka, a Flink stream processor, and third-party APIs. Every capacity, latency and price cites the vendor source it was read from, with the date, or states how it is modelled.
 - **Placement:** sizes, replicas, shards and autoscaling bounds; instances spread over availability zones; a standby copy in a second region, or both regions taking traffic; an RDS Proxy in front of a database.
 - **Decisions:** interview trade-offs such as the code strategy, code length, redirect status, replication mode and region mode. Many feed the simulation. For example, code length sets the keyspace and with it the collision rate, and replication mode sets write latency and what a failover loses.
 
@@ -79,7 +79,7 @@ Interviews reward knowing what happens on a cache miss, when the cache is down, 
 |---|---|---|
 | [URL Shortener](docs/problems/url-shortener.md) | S1–S9 | Unique codes, caching under Zipf popularity, outages, hot keys, connection pools, failover, zones and regions, asynchronous work, timelines, click analytics |
 | [Distributed Rate Limiter](docs/problems/rate-limiter.md) | S1–S3 | Counting on every request, fleet-wide limits, window algorithms, failing open with a fallback, a runaway client on one shard |
-| [News Feed](docs/problems/news-feed.md) | S1–S4 | Fan-out on write or read, celebrity accounts and the hybrid model, timeline caches, cursor pagination, rebuild storms, photos in object storage with signed uploads |
+| [News Feed](docs/problems/news-feed.md) | S1–S5 | Fan-out on write or read, celebrity accounts and the hybrid model, timeline caches, cursor pagination, rebuild storms, photos in object storage with signed uploads, a CDN and a viral photo |
 | [Chat and Notifications](docs/problems/chat.md) | S1–S3 | Millions of open connections, delivery and push notifications, idempotent resends, per-conversation ordering, large groups, presence |
 | [Orders and Payments](docs/problems/payments.md) | S1–S3 | Idempotency keys, sagas and compensation, the transactional outbox, exactly-once fulfilment, ambiguous timeouts and reconciliation |
 

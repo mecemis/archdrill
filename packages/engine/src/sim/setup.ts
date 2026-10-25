@@ -6,6 +6,7 @@ import {
   hasFact,
   liveStepIds,
   type Operation,
+  onlyServesObjects,
   type Problem,
   REPLICATION_MODES,
   type ReplicationMode,
@@ -46,6 +47,15 @@ export interface SimulationContext {
   readonly analysis: Analysis;
 }
 
+/** A CDN on the way to the handler that keeps the operation's answers at the edge. */
+export interface EdgeCache {
+  readonly componentId: string;
+  /** What the answers are: the entity the workload says the requests ask for. */
+  readonly entity: string;
+  /** Its place in `ingress`: a hit is answered by the components up to it. */
+  readonly at: number;
+}
+
 export interface OperationModel {
   readonly operation: Operation;
   /**
@@ -58,6 +68,13 @@ export interface OperationModel {
   readonly classes: readonly RequestClass[];
   /** Components on the way to the handler that do work (the client is excluded), in order. */
   readonly ingress: readonly string[];
+  /** A CDN on the way that answers from the edge what it keeps; null without one or for answers it cannot keep. */
+  readonly edge: EdgeCache | null;
+  /**
+   * The handler only serves objects (object storage): a hot key's requests
+   * all land on the prefix that holds it.
+   */
+  readonly objectHandler: boolean;
   /** Events the operation's flow publishes. */
   readonly publishes: ReadonlySet<string>;
   /** Popularity of the keys requests address, for handlers that aggregate per key. */
@@ -306,10 +323,9 @@ export function buildOperations(
     analysis,
     classes,
     ...requestKeys(analysis, workload, ctx.problem),
-    ingress: (analysis.ingress?.components ?? []).filter((id) => {
-      const c = ctx.attempt.architecture.components.find((x) => x.id === id);
-      return c ? !ctx.catalog.capabilities(c.kind, c.flavor).has("traffic-source") : false;
-    }),
+    ingress: ingressOf(analysis, ctx),
+    edge: edgeOf(analysis, workload, ctx),
+    objectHandler: servesObjects(analysis.flow?.handler, ctx),
     publishes: publishedEvents(analysis),
     costs: stepCosts(analysis.paths, ctx),
     wireBytes: wireBytes(analysis.operation),
@@ -334,6 +350,70 @@ export function buildOperations(
     }
   }
   return publishersFirst(models);
+}
+
+/** The components on the way to the handler that do work: every one but the client. */
+function ingressOf(analysis: OperationAnalysis, ctx: SimulationContext): string[] {
+  return (analysis.ingress?.components ?? []).filter((id) => {
+    const c = ctx.attempt.architecture.components.find((x) => x.id === id);
+    return c ? !ctx.catalog.capabilities(c.kind, c.flavor).has("traffic-source") : false;
+  });
+}
+
+function capabilitiesOf(id: string, ctx: SimulationContext) {
+  const c = ctx.attempt.architecture.components.find((x) => x.id === id);
+  return c ? ctx.catalog.capabilities(c.kind, c.flavor) : new Set<string>();
+}
+
+function servesObjects(id: string | undefined, ctx: SimulationContext): boolean {
+  if (id === undefined) return false;
+  const c = ctx.attempt.architecture.components.find((x) => x.id === id);
+  return c !== undefined && onlyServesObjects(ctx.catalog.capabilities(c.kind, c.flavor));
+}
+
+/** The first CDN on the way, for answers it can keep and requests the workload says what they ask for. */
+function edgeOf(
+  analysis: OperationAnalysis,
+  workload: Workload,
+  ctx: SimulationContext,
+): EdgeCache | null {
+  if (!analysis.operation.cacheableAtEdge) return null;
+  const entity = workload.operations[analysis.operation.id]?.entity;
+  const ingress = ingressOf(analysis, ctx);
+  const at = ingress.findIndex((id) => capabilitiesOf(id, ctx).has("edge-cache"));
+  const componentId = ingress[at];
+  return entity && componentId !== undefined ? { componentId, entity, at } : null;
+}
+
+/**
+ * The CDNs' caches: one per CDN and entity that some operation's requests
+ * reach it for. An edge keeps an object until its TTL ends, with room for
+ * whatever it is asked for; it is filled from the origin on a miss, and
+ * collapses requests for the same object that arrive while it is fetched.
+ */
+function edgeCacheSpecs(workload: Workload, ctx: SimulationContext): CacheSpec[] {
+  const specs = new Map<string, CacheSpec>();
+  for (const analysis of ctx.analysis.operations.values()) {
+    if (analysis.status !== "ready") continue;
+    const edge = edgeOf(analysis, workload, ctx);
+    if (!edge) continue;
+    const component = ctx.attempt.architecture.components.find((c) => c.id === edge.componentId);
+    const flavor = component && ctx.catalog.flavor(component.kind, component.flavor);
+    specs.set(cacheKey(edge.componentId, edge.entity), {
+      componentId: edge.componentId,
+      callerOf: null,
+      entity: edge.entity,
+      populated: true,
+      ttlSec: flavor?.edgeTtlSec ?? null,
+      negativePopulated: false,
+      negativeTtlSec: null,
+      capacityItems: Number.POSITIVE_INFINITY,
+      existing: workload.keys[edge.entity]?.existing,
+      absent: undefined,
+      coalesced: true,
+    });
+  }
+  return [...specs.values()];
 }
 
 function wireBytes(operation: Operation): number {
@@ -458,7 +538,7 @@ export function buildCacheSpecs(
     });
     return reads.length > 0 && reads.every((s) => s.coalesce === true);
   };
-  return [...lookups.values()].map(({ componentId, entity }) => {
+  const lookedUp = [...lookups.values()].map(({ componentId, entity }) => {
     const entityBytes = ctx.problem.entities.find((e) => e.name === entity)?.avgBytes ?? 1;
     const memoryGb = profiles.get(componentId)?.memoryGb ?? 0;
     const share = entitiesPerCache.get(componentId) ?? 1;
@@ -482,6 +562,11 @@ export function buildCacheSpecs(
       coalesced: coalescedBehind(componentId, entity),
     };
   });
+  const keys = new Set(lookedUp.map((s) => cacheKey(s.componentId, s.entity)));
+  return [
+    ...lookedUp,
+    ...edgeCacheSpecs(workload, ctx).filter((s) => !keys.has(cacheKey(s.componentId, s.entity))),
+  ];
 }
 
 export interface Occupancy {

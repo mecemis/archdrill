@@ -197,6 +197,10 @@
               }
             ]
           },
+          "cacheableAtEdge": {
+            "default": false,
+            "type": "boolean"
+          },
           "class": {
             "type": "string",
             "enum": ["read", "write"]

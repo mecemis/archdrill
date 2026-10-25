@@ -66,12 +66,42 @@ export const FLAVOR_NUMBERS = [
   "connectionProxy",
   "pageCache",
   "storageVolume",
+  "edgeTtlSec",
 ] as const;
 
 const ProvenanceMapSchema = z.partialRecord(
   z.enum([...SIZE_NUMBERS, ...FLAVOR_NUMBERS]),
   ProvenanceSchema,
 );
+
+/** One tier of a monthly volume price: from this many GB in the month, at this price a GB. */
+export const TransferTierSchema = z.strictObject({
+  fromGb: z.number().nonnegative(),
+  usdPerGb: z.number().nonnegative(),
+});
+export type TransferTier = z.infer<typeof TransferTierSchema>;
+
+/**
+ * What data sent from the Region to clients over the internet costs, in
+ * tiers of the month's total: each GB is billed at the tier it falls in.
+ */
+export const InternetTransferSchema = z
+  .strictObject({
+    tiers: z.array(TransferTierSchema).min(1),
+    provenance: ProvenanceSchema,
+  })
+  .refine((t) => t.tiers[0]?.fromGb === 0, {
+    message: "the first tier starts at 0 GB",
+    path: ["tiers"],
+  })
+  .refine(
+    (t) => t.tiers.every((tier, i) => i === 0 || tier.fromGb > (t.tiers[i - 1]?.fromGb ?? 0)),
+    {
+      message: "tiers climb: each starts above the one before",
+      path: ["tiers"],
+    },
+  );
+export type InternetTransfer = z.infer<typeof InternetTransferSchema>;
 
 /** Physics of one size preset. Every number cites where it came from (see SourceSchema). */
 export const SizeSchema = z.object({
@@ -210,6 +240,16 @@ export const FlavorSchema = z
         readMs: z.number().positive(),
       })
       .optional(),
+    /**
+     * For a CDN: seconds an object stays at the edge when its origin sets no
+     * TTL of its own, before the edge asks the origin again.
+     */
+    edgeTtlSec: z.number().positive().optional(),
+    /**
+     * What this offering bills for data it sends clients over the internet,
+     * when not the Region's own price (a CDN's edge locations).
+     */
+    internetTransfer: InternetTransferSchema.optional(),
     sizes: z.record(IdSchema, SizeSchema).default({}),
     defaultSize: IdSchema.optional(),
     /** Durable storage price per GB-month, in USD, charged per stored copy. */
@@ -335,11 +375,17 @@ export function placedInZones(kind: Kind, flavor: Flavor): boolean {
 /**
  * Whether a component runs in the design's region, so that losing the
  * region takes it: not a client, nor an external service reached over the
- * internet, nor in-process (it lives in its service's instances).
+ * internet, nor a CDN's edge locations, nor in-process (it lives in its
+ * service's instances).
  */
 export function runsInRegion(kind: Kind, flavor: Flavor): boolean {
   const caps = new Set([...kind.capabilities, ...flavor.capabilities]);
-  return !kind.inProcess && !caps.has("traffic-source") && !caps.has("external");
+  return (
+    !kind.inProcess &&
+    !caps.has("traffic-source") &&
+    !caps.has("external") &&
+    !caps.has("edge-cache")
+  );
 }
 
 /** Who pays for data crossing zones at a flavor's end, defaults included. */
@@ -415,35 +461,6 @@ export const CalibrationSchema = z.strictObject({
   runs: z.array(BenchmarkRunSchema).min(1),
 });
 export type Calibration = z.infer<typeof CalibrationSchema>;
-
-/** One tier of a monthly volume price: from this many GB in the month, at this price a GB. */
-export const TransferTierSchema = z.strictObject({
-  fromGb: z.number().nonnegative(),
-  usdPerGb: z.number().nonnegative(),
-});
-export type TransferTier = z.infer<typeof TransferTierSchema>;
-
-/**
- * What data sent from the Region to clients over the internet costs, in
- * tiers of the month's total: each GB is billed at the tier it falls in.
- */
-export const InternetTransferSchema = z
-  .strictObject({
-    tiers: z.array(TransferTierSchema).min(1),
-    provenance: ProvenanceSchema,
-  })
-  .refine((t) => t.tiers[0]?.fromGb === 0, {
-    message: "the first tier starts at 0 GB",
-    path: ["tiers"],
-  })
-  .refine(
-    (t) => t.tiers.every((tier, i) => i === 0 || tier.fromGb > (t.tiers[i - 1]?.fromGb ?? 0)),
-    {
-      message: "tiers climb: each starts above the one before",
-      path: ["tiers"],
-    },
-  );
-export type InternetTransfer = z.infer<typeof InternetTransferSchema>;
 
 type CatalogInput = {
   readonly kinds: readonly Kind[];
@@ -531,6 +548,15 @@ export const CatalogSchema = z
         }
         flavorIds.add(flavor.id);
         cited(flavor.provenance, ["kinds", i, "flavors", j]);
+        if (flavor.internetTransfer) {
+          cited({ tiers: flavor.internetTransfer.provenance }, [
+            "kinds",
+            i,
+            "flavors",
+            j,
+            "internetTransfer",
+          ]);
+        }
         for (const [sizeId, size] of Object.entries(flavor.sizes)) {
           cited(size.provenance, ["kinds", i, "flavors", j, "sizes", sizeId]);
         }
