@@ -456,7 +456,8 @@
                                 "push-notifications",
                                 "payments",
                                 "external",
-                                "threat-lists"
+                                "threat-lists",
+                                "serves-objects"
                               ]
                             },
                             "kind": {
@@ -527,7 +528,8 @@
                                 "push-notifications",
                                 "payments",
                                 "external",
-                                "threat-lists"
+                                "threat-lists",
+                                "serves-objects"
                               ]
                             },
                             "kind": {
@@ -593,7 +595,8 @@
                                 "push-notifications",
                                 "payments",
                                 "external",
-                                "threat-lists"
+                                "threat-lists",
+                                "serves-objects"
                               ]
                             },
                             "kind": {
@@ -659,7 +662,8 @@
                                 "push-notifications",
                                 "payments",
                                 "external",
-                                "threat-lists"
+                                "threat-lists",
+                                "serves-objects"
                               ]
                             },
                             "kind": {
@@ -878,7 +882,8 @@
                                 "push-notifications",
                                 "payments",
                                 "external",
-                                "threat-lists"
+                                "threat-lists",
+                                "serves-objects"
                               ]
                             },
                             "kind": {
@@ -960,7 +965,8 @@
                                         "push-notifications",
                                         "payments",
                                         "external",
-                                        "threat-lists"
+                                        "threat-lists",
+                                        "serves-objects"
                                       ]
                                     },
                                     "kind": {
@@ -1031,7 +1037,8 @@
                                         "push-notifications",
                                         "payments",
                                         "external",
-                                        "threat-lists"
+                                        "threat-lists",
+                                        "serves-objects"
                                       ]
                                     },
                                     "kind": {
@@ -1097,7 +1104,8 @@
                                         "push-notifications",
                                         "payments",
                                         "external",
-                                        "threat-lists"
+                                        "threat-lists",
+                                        "serves-objects"
                                       ]
                                     },
                                     "kind": {
@@ -1163,7 +1171,8 @@
                                         "push-notifications",
                                         "payments",
                                         "external",
-                                        "threat-lists"
+                                        "threat-lists",
+                                        "serves-objects"
                                       ]
                                     },
                                     "kind": {
@@ -1290,7 +1299,8 @@
                                     "push-notifications",
                                     "payments",
                                     "external",
-                                    "threat-lists"
+                                    "threat-lists",
+                                    "serves-objects"
                                   ]
                                 },
                                 "kind": {

@@ -196,22 +196,28 @@ kinds:
             capacityPerSec: { read: 4000, write: 2500 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.085
+            networkGbps: 0.781
             standsFor: c6i.large (EC2, 2 vCPU)
           m:
             label: 4 vCPU
             capacityPerSec: { read: 8000, write: 5000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.17
+            networkGbps: 1.562
             standsFor: c6i.xlarge (EC2, 4 vCPU)
           l:
             label: 8 vCPU
             capacityPerSec: { read: 16000, write: 10000 }
             latencyMs: { base: 2, cv: 0.5 }
             costPerHour: 0.34
+            networkGbps: 3.125
             standsFor: c6i.2xlarge (EC2, 8 vCPU)
         defaultSize: m
         notes: Throughput assumes a thin, I/O-bound handler (a lookup and a redirect) on a modern runtime; heavier handlers do far less.
         provenance:
+          networkGbps:
+            published: ec2-compute-optimized-network
+            note: Baseline; c6i instances of these sizes burst to 12.5 Gbps for minutes only. It carries what the service sends, its responses and what its calls write.
           crossZoneBilling:
             published: aws-cross-az-data-transfer
             note: EC2 instances pay $0.01 a GB for data they send to, and receive from, another zone.
@@ -759,6 +765,57 @@ kinds:
             published: ebs-gp3-storage
             note: EBS gp3 volumes on EC2, per stored copy.
 
+  - id: object-store
+    label: Object storage
+    description: Keeps whole objects (photos, videos, files) by key, durably, and hands them to clients itself. Clients reach it directly, uploading with URLs a service signs.
+    capabilities: [durable-store, serves-objects]
+    replicable: false
+    holdsData: true
+    shardable: true
+    shardsLabel: Prefixes
+    flavors:
+      - id: s3
+        label: S3 Standard
+        description: Object storage kept across at least three zones, billed per request and per GB stored (AWS S3 Standard).
+        managedRedundancy: true
+        crossZoneBilling: free
+        storagePricePerGbMonth: 0.023
+        requestCost: { readPerMillion: 0.4, writePerMillion: 5 }
+        sizes:
+          prefix:
+            label: per prefix
+            capacityPerSec: { read: 5500, write: 3500 }
+            latencyMs: { base: 120, cv: 0.35 }
+            costPerHour: 0
+            standsFor: One partitioned prefix of an S3 Standard bucket
+            provenance:
+              capacityPerSec:
+                published: aws-s3-performance
+                note: At least 3,500 PUT, COPY, POST or DELETE and 5,500 GET or HEAD requests a second per partitioned prefix. A bucket has no limit on prefixes; S3 partitions a busy one gradually and answers 503 Slow Down meanwhile.
+              latencyMs:
+                model: AWS gives small objects "roughly 100–200 milliseconds" to the first byte; modelled as a mean of 120 ms with a spread that puts four requests in five between about 70 and 180 ms.
+                basis:
+                  - aws-s3-performance
+              costPerHour:
+                published: aws-s3-price-list
+                note: Nothing by the hour; S3 bills requests and the data it keeps.
+        defaultSize: prefix
+        notes: >-
+          No instances to run: capacity grows with the prefixes the keys are
+          spread over, each taking 5,500 reads and 3,500 writes a second. Billed
+          $0.40 a million reads, $5 a million writes, and $0.023 a GB a month.
+        standsFor: AWS S3 Standard
+        provenance:
+          storagePricePerGbMonth:
+            published: aws-s3-price-list
+            note: The first 50 TB a month; the next 450 TB cost $0.022 and the rest $0.021.
+          requestCost:
+            published: aws-s3-price-list
+            note: $0.0004 per 1,000 GET and $0.005 per 1,000 PUT, COPY, POST or LIST requests.
+          crossZoneBilling:
+            published: aws-s3-pricing
+            note: Data moved between S3 and other AWS services in the bucket's Region is free.
+
   - id: id-generator
     label: Id generator
     description: Service that hands out unique keys, for example a key generation service with a pool of pre-generated random codes.
@@ -1181,6 +1238,24 @@ kinds:
             model: A charge takes a few hundred milliseconds; an assumption.
             basis: []
 sources:
+  - id: aws-s3-price-list
+    title: "AWS Price List API: Amazon S3, us-east-1 (S3 Standard storage and requests, published 2026-10-15)"
+    url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-25
+  - id: aws-s3-pricing
+    title: Amazon S3 pricing
+    url: https://aws.amazon.com/s3/pricing/
+    publisher: AWS
+    kind: price
+    retrieved: 2026-10-25
+  - id: aws-s3-performance
+    title: "Best practices design patterns: optimizing Amazon S3 performance"
+    url: https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html
+    publisher: AWS
+    kind: quota
+    retrieved: 2026-10-25
   - id: aws-ec2-price-list
     title: "AWS Price List API: Amazon EC2, us-east-1"
     url: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json

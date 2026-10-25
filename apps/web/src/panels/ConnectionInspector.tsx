@@ -31,7 +31,8 @@ export function ConnectionInspector({ connection }: { readonly connection: Conne
   const source = components.find((c) => c.id === connection.from);
   // Services and stream processors call over connections from flow steps.
   const callsFlowSteps =
-    source !== undefined && canHandle(catalogIndex.capabilities(source.kind, source.flavor), true);
+    source !== undefined &&
+    canHandle(catalogIndex.capabilities(source.kind, source.flavor), "event");
   const target = components.find((c) => c.id === connection.to);
   // Stores that run one statement per connection are reached through a pool on each caller instance.
   const pooled =

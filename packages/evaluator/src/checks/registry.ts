@@ -31,6 +31,7 @@ import {
   successRateAbove,
   utilizationBelow,
 } from "./metrics";
+import { directWritesSigned, entityDurable } from "./objects";
 import { allSuccessPathsContain, noPath, outcomeHandled, statusForCondition } from "./paths";
 import { connectionPools } from "./pools";
 import {
@@ -90,6 +91,8 @@ export const CHECKS: ReadonlyMap<string, CheckDef> = new Map<string, CheckDef>(
     expiredDataRemoved,
     zoneLocalCalls,
     connectionPools,
+    directWritesSigned,
+    entityDurable,
   ].map((check) => [check.id, check as CheckDef]),
 );
 
@@ -162,8 +165,16 @@ export function validateScenarioConfig(
         message: `decision "${String(decision)}" must be the workload's region-mode decision, so the simulation and the uniqueness verdict agree on whether both regions take traffic`,
       });
     }
-    const { operation: op, job } = parsed.data as { operation?: unknown; job?: unknown };
-    for (const id of [op, job]) {
+    const {
+      operation: op,
+      job,
+      signedBy,
+      entity,
+    } = parsed.data as { operation?: unknown; job?: unknown; signedBy?: unknown; entity?: unknown };
+    if (typeof entity === "string" && !problem.entities.some((e) => e.name === entity)) {
+      issues.push({ checkId: instance.id, message: `unknown entity "${entity}"` });
+    }
+    for (const id of [op, job, signedBy]) {
       if (typeof id === "string" && !operations.has(id)) {
         issues.push({ checkId: instance.id, message: `unknown operation "${id}"` });
       }

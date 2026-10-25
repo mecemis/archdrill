@@ -12,6 +12,7 @@ People post short updates and follow each other. The home timeline shows the new
 | Timeline reads | 150,000 /s on average, 300,000 /s at peak |
 | New posts | 5,000 /s on average, 10,000 /s at peak |
 | Follows | 200 followers and 200 followees on average; celebrities up to 50 million followers |
+| Photos | 1 post in 20 carries one, 200 KB; a timeline page shows about one; about 8 billion kept |
 
 ## Requirements
 
@@ -22,6 +23,9 @@ People post short updates and follow each other. The home timeline shows the new
 | NFR-1 | Timeline p99 < 200 ms; posting p99 < 500 ms |
 | NFR-2 | A new post reaches followers within 5 seconds |
 | NFR-3 | Posting stays available (99.9%) even when timelines cannot be served |
+| FR-3 | Attach a photo to a post, and see it with the post in timelines |
+| NFR-4 | A photo loads in under 300 ms (p99) |
+| NFR-5 | Only signed-in users upload photos, each under the key the service gave them |
 
 ## Model
 
@@ -29,10 +33,12 @@ People post short updates and follow each other. The home timeline shows the new
   - `Post` and `AuthorPosts` (an account's recent posts) are durable.
   - `Timeline` is ephemeral (cached per user).
   - `CelebrityPosts` is ephemeral. It is hot for readers who follow celebrities (`hotFor: followsCelebrity`).
+  - `Photo` is 200 KB and durable.
+- **Photo operations.** `start-upload` answers with a key and an upload URL; `upload-photo` and `read-photo` carry the photo. Object storage can handle the last two itself ([ADR 0021](../adr/0021-object-storage.md)).
 - **Counts.** `followers` (200 by default, 50 million for a celebrity), `followees` (200) and `celebritiesFollowed` (0 by default, 3 for many readers).
   - A fan-out step (`each: followers`) makes its call once per item, in parallel.
   - It can batch its own calls without waiting for other requests.
-- **Logic.** `isCelebrity`, decided by the `celebrity` fact.
+- **Logic.** `isCelebrity`, decided by the `celebrity` fact, and `signUpload`, which signs an upload URL.
 - **Decision.** `pagination`: offset or cursor.
 
 ## Scenarios
@@ -65,19 +71,29 @@ The timeline cache is down at peak.
   - cache calls time out within 50 ms.
 - **Signal:** a circuit breaker on the cache.
 
+### S4: Photos
+Average day and peak, with the feed's own traffic and 300,000 photo reads a second at peak. `start-upload` is optional.
+- **Gates:** only signed URLs upload; photos are kept in durable storage; 99% of photos load at peak.
+- **Checks:**
+  - photo p99 under 300 ms;
+  - nothing above 85%, prefixes included;
+  - an average day under $275,000.
+- **Signals:** photos, and uploads, go straight between clients and object storage.
+
 ## Corpus
 
 | ID | Design | Scenarios |
 |---|---|---|
-| `hybrid-fan-out` | Post service → Cassandra and Kafka. A Flink job copies posts to followers' Redis timelines in batches of 100 and keeps celebrities' posts in one entry each. The timeline service reads Redis and merges celebrities from an in-process cache. Rebuilds read followed accounts in batches of 50 behind a bulkhead. | S1, S2, S3 |
-| `push-postgres` | The same with PostgreSQL, copying every post, celebrities included. | S1, S3 |
+| `hybrid-fan-out` | Post service → Cassandra and Kafka. A Flink job copies posts to followers' Redis timelines in batches of 100 and keeps celebrities' posts in one entry each. The timeline service reads Redis and merges celebrities from an in-process cache. Rebuilds read followed accounts in batches of 50 behind a bulkhead. Photos live in S3 over 70 prefixes; the post service signs uploads, and S3 answers uploads and reads itself. | S1, S2, S3, S4 |
+| `push-postgres` | The same with PostgreSQL, copying every post, celebrities included. | S1, S3, S4 |
 
-Eleven mutants cover:
+Seventeen mutants cover:
 - the read path: pulling on every read, and a small timeline cache;
 - the write path: posts not published, posts not fanned out, and unbatched writes;
 - offset pagination;
 - celebrities: their posts pushed, their entries read from the shared cache, and a timeline service capped below what merging them needs;
-- the outage: unbounded rebuilds, and a slow cache timeout.
+- the outage: unbounded rebuilds, and a slow cache timeout;
+- photos: relayed through the timeline service, uploads relayed through the post service, unsigned upload URLs, photos bound to nothing, and too few prefixes (16, and 60).
 
 Reading celebrities' entries from the shared cache, without the in-process copy, is caught by the network, not the CPU. A Redis node serves about 400,000 commands a second, as ElastiCache measures it, so the shard holding the celebrities and its replica could take every fan's lookups. Each lookup returns a 1.6 KB list, though: 450,000 a second is about 5.8 Gbps, and the shard's two nodes sustain 2.5 Gbps each (M21's work units). For one part of M21, between calibration and bandwidth, the mutant was gone.
 

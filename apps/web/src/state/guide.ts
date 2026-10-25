@@ -50,7 +50,9 @@ export function guideFor(
   const operation = focus.find((o) => waiting(result, o.id)) ?? focus[0];
   const consumes = operation?.trigger.type === "event";
   const handlers = attempt.architecture.components
-    .filter((c) => canHandle(catalog.capabilities(c.kind, c.flavor), consumes))
+    .filter((c) =>
+      canHandle(catalog.capabilities(c.kind, c.flavor), operation?.trigger.type ?? "request"),
+    )
     .map((c) => c.id);
   const flow = attempt.flows.find((f) => f.operation === operation?.id);
   const reachable =

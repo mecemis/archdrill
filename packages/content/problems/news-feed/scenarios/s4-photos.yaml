@@ -1,0 +1,199 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s4-photos
+problemId: news-feed
+title: Photos
+order: 4
+story: |
+  "Posts can now carry a photo. One post in twenty has one, about 200 KB
+  after the phone shrinks it, and a timeline page shows about one: 300,000
+  photos a second at peak, on top of everything the feed already does. Where
+  do the bytes go, on the way up and on the way down? And who may upload?"
+focusOperations: [start-upload, upload-photo, read-photo]
+# A design that takes uploads through its own service needs no upload URLs.
+optionalOperations: [start-upload]
+prerequisites: [s1-timeline]
+workload:
+  operations:
+    create-post:
+      entity: Post
+      classes:
+        - { id: regular, share: 1 }
+    read-timeline:
+      entity: Timeline
+      classes:
+        - { id: reader, share: 1 }
+    start-upload:
+      entity: Photo
+      classes:
+        - { id: author, share: 1 }
+    upload-photo:
+      entity: Photo
+      classes:
+        - { id: author, share: 1 }
+    read-photo:
+      entity: Photo
+      classes:
+        - { id: reader, share: 1 }
+  keys:
+    Timeline:
+      existing: { distribution: zipf, s: 0.9, population: 5.0e7 }
+    Photo:
+      existing: { distribution: zipf, s: 0.9, population: 8.0e9 }
+  # A year of photos: 432 million posts a day, one in twenty with a photo.
+  dataset:
+    Photo: 8.0e9
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day.
+      rates:
+        create-post: 5000
+        read-timeline: 150000
+        start-upload: 250
+        upload-photo: 250
+        read-photo: 150000
+    - id: peak
+      label: Peak
+      description: Peak traffic.
+      rates:
+        create-post: 10000
+        read-timeline: 300000
+        start-upload: 500
+        upload-photo: 500
+        read-photo: 300000
+dimensions:
+  security: 0.2
+  scalability: 0.2
+  availability: 0.15
+  cost: 0.2
+  latency: 0.15
+  durability: 0.1
+checks:
+  - id: uploads-signed
+    use: direct-writes-signed
+    title: Only the URLs the service signs can upload
+    dimension: security
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [NFR-5]
+    params: { operation: upload-photo, signedBy: start-upload }
+    why: >-
+      Storage that takes uploads straight from clients cannot tell a user from
+      anyone else on the internet. Without a signature it stores whatever
+      anyone sends, under any key, and serves it from your domain.
+    fix: >-
+      Have the service sign a short-lived upload URL for one key when a signed-in
+      user starts an upload; the storage accepts only what the signature allows.
+
+  - id: photos-kept
+    use: entity-durable
+    title: Photos are kept in durable storage
+    dimension: durability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-3]
+    params: { entity: Photo }
+    why: >-
+      A photo exists only once; a cache that loses it loses it for good.
+    fix: >-
+      Keep photos in object storage, and bind Photo to it.
+
+  - id: photos-served
+    use: success-rate-above
+    title: Almost every photo loads at peak (99%)
+    dimension: availability
+    weight: 2
+    gate: true
+    severity: critical
+    requirements: [FR-3, NFR-4]
+    params: { operation: read-photo, environment: peak, min: 0.99 }
+    why: >-
+      A feed whose pictures fail to load is broken for the people looking at
+      it, however fast its text arrives.
+    fix: >-
+      Find what runs out at peak: a service's network if photos pass through
+      it, or prefixes if they come straight from object storage.
+
+  - id: photos-fast
+    use: latency-below
+    title: Photos load in under 300 ms (p99) at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-4]
+    params: { operation: read-photo, environment: peak, percentile: p99, ms: 300 }
+    why: >-
+      A timeline that shows its text and waits for its pictures looks broken.
+    fix: >-
+      Serve photos from storage that answers in a couple of hundred
+      milliseconds, and give it enough prefixes for the peak.
+
+  - id: headroom-peak
+    use: utilization-below
+    title: Nothing runs above 85% at peak
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-4]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      300,000 photos of 200 KB a second is 60 GB a second. Through a service,
+      that is some 300 servers' worth of network; in object storage, it is
+      300,000 requests a second, and each prefix takes 5,500 reads.
+    fix: >-
+      Let clients fetch photos from object storage themselves, and spread the
+      keys over enough prefixes for the peak.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $275,000 a month
+    dimension: cost
+    weight: 2
+    requirements: [FR-3]
+    params: { environment: avg, monthlyUsd: 275000 }
+    why: >-
+      Photos cost more than the rest of the feed: 150,000 reads a second at
+      $0.40 a million is about $160,000 a month, and a load balancer that
+      carries 30 GB a second bills over $600,000 for it.
+    fix: >-
+      Keep the photo bytes off the load balancer and the services: clients
+      put and get photos in object storage themselves.
+
+  - id: photos-skip-services
+    use: ingress-has-capability
+    title: Photos go straight from object storage to clients
+    dimension: scalability
+    signal: senior
+    requirements: [FR-3]
+    params: { operation: read-photo, capability: serves-objects }
+    why: >-
+      A service that relays photos adds nothing but bytes to carry and a hop
+      to wait for.
+    fix: >-
+      Give clients the photo's URL in the timeline and let them fetch it from
+      object storage.
+
+  - id: uploads-skip-services
+    use: ingress-has-capability
+    title: Uploads go straight from clients to object storage
+    dimension: scalability
+    signal: senior
+    requirements: [FR-3, NFR-5]
+    params: { operation: upload-photo, capability: serves-objects }
+    why: >-
+      Relaying uploads keeps a server busy for as long as the slowest phone
+      takes to send 200 KB, for no work of its own.
+    fix: >-
+      Hand out signed upload URLs and let the phone put the photo into
+      object storage itself.
+hints:
+  - "Where do 60 GB a second of photos go? Count the servers whose network they would fill on the way."
+  - "Object storage can answer clients itself. What stops anyone from uploading to it, then?"
+  - "The service signs an upload URL for one key; the phone puts the photo there; timelines carry the photo's URL, and clients fetch it from object storage, spread over enough prefixes."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - Phones show a small version in the feed and a large one when tapped. Who makes the small one, and when?
+  - A celebrity posts a photo and 10 million followers open it within a minute. What happens to the prefix it lives in?
+  - Photos are 300,000 requests a second at $0.40 a million. What would a CDN change, in latency and in the bill?
+  - A user deletes a post. How long can its photo still be fetched?

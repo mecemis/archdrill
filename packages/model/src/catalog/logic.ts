@@ -111,6 +111,13 @@ export const LOGIC = {
       what: "a URL-safety API that provides threat lists to download (the Update API)",
     },
   },
+  signUpload: {
+    label: "sign upload URL",
+    outcomes: ["ok"],
+    description:
+      "Sign a URL that lets this client put one object, under a key the service chose, straight into object storage for a few minutes. No network call: the service signs with its own credentials, and the storage checks the signature.",
+    needs: { capability: "serves-objects", what: "object storage to sign the upload for" },
+  },
   obfuscateId: {
     label: "obfuscate id",
     outcomes: ["ok"],

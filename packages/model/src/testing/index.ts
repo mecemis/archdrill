@@ -10,4 +10,10 @@ export {
   testProblem,
 } from "./fixtures";
 export { withNearCache } from "./near-cache";
+export {
+  type PhotoRoute,
+  photosAttempt,
+  photosCatalogIndex,
+  photosProblem,
+} from "./photos";
 export { createLinkAttempt, type Generator } from "./write-path";

@@ -12,6 +12,7 @@ import type { EditContext, GroupStep, Lead, Position } from "./flow-edits";
 import type { PickerMode } from "./pick";
 import { stepSentence } from "./sentences";
 import { componentLabel } from "./step-label";
+import { servesOnly } from "./step-options";
 
 /** A usual way of doing something, added as one group of steps that can then be edited. */
 export interface Pattern {
@@ -279,6 +280,7 @@ function outboxPublish(ctx: EditContext, at: Position): Pattern[] {
 
 /** The patterns that fit a place of a flow, for the entity the operation works on. */
 export function patternsAt(ctx: EditContext, mode: PickerMode, entity: string): Pattern[] {
+  if (servesOnly(ctx)) return [];
   const previous = mode.at.kind === "after" ? ctx.flow.steps[mode.at.stepId] : undefined;
   return [
     ...cacheAside(ctx, entity),

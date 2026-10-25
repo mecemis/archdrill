@@ -10,6 +10,7 @@ import {
   getLogic,
   type LogicId,
   offeredLogic,
+  onlyServesObjects,
   type StepInput,
 } from "@archdrill/model";
 import { activePack } from "../../state/content";
@@ -75,11 +76,24 @@ export function callOptions(
   return byTarget;
 }
 
+/**
+ * The flow's handler only serves objects (object storage): it answers with
+ * the object or stores it, so its flow is one response.
+ */
+export function servesOnly(ctx: Pick<EditContext, "attempt" | "flow" | "catalog">): boolean {
+  const handler = ctx.attempt.architecture.components.find((c) => c.id === ctx.flow.handler);
+  return (
+    handler !== undefined &&
+    onlyServesObjects(ctx.catalog.capabilities(handler.kind, handler.flavor))
+  );
+}
+
 /** Statuses offered after the success ones, in the order people reach for them. */
 const COMMON_STATUSES = [400, 404, 409, 429, 503] as const;
 
 /** The problem's decisions, those a request of this operation can meet first. */
 export function decisionOptions(ctx: EditContext, facts: ReadonlySet<string>): Option[] {
+  if (servesOnly(ctx)) return [];
   const relevant = (id: LogicId) => {
     const fact = getLogic(id).decidedBy?.fact;
     return fact === undefined || facts.has(fact) ? 0 : 1;
@@ -96,10 +110,11 @@ export function decisionOptions(ctx: EditContext, facts: ReadonlySet<string>): O
 
 /**
  * The answers a request can end with there: none in front of a step or as
- * the first step, since a request does something before it answers.
+ * the first step, since a request does something before it answers; object
+ * storage only answers, first.
  */
 export function responseOptions(ctx: EditContext, mode: PickerMode): Option[] {
-  if (mode.kind === "insert" || mode.at.kind === "root") return [];
+  if (mode.kind === "insert" || (mode.at.kind === "root" && !servesOnly(ctx))) return [];
   const { background, operation, problem, attempt } = ctx;
   const success = background ? [200] : [successStatus(operation, problem, attempt)];
   const statuses = background

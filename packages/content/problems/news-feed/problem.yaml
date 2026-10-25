@@ -8,18 +8,23 @@ brief: |
   the newest posts from everyone you follow, 20 at a time, and you can keep
   scrolling back. Most people follow a few hundred accounts and are followed
   by a few hundred; a handful of accounts are followed by tens of millions.
-  A new post should show up in followers' timelines within seconds.
+  A new post should show up in followers' timelines within seconds. Posts can
+  carry a photo, which followers see with the post.
 scale:
   - { label: Daily users, value: "200 million", note: "50 million active in any hour" }
   - { label: Timeline reads, value: "150,000 /s avg, 300,000 /s peak", note: "20 posts a page" }
   - { label: New posts, value: "5,000 /s avg, 10,000 /s peak", note: "about 432 million a day" }
   - { label: Follows, value: "200 followers and 200 followees on average", note: "celebrities: up to 50 million followers" }
+  - { label: Photos, value: "1 post in 20 carries one; 200 KB each", note: "a timeline page shows about one; about 8 billion kept" }
 requirements:
   - { id: FR-1, kind: functional, text: "Post an update." }
   - { id: FR-2, kind: functional, text: "Read the home timeline: the newest posts from followed accounts, 20 a page, scrolling back without repeated or skipped posts." }
   - { id: NFR-1, kind: non-functional, text: "Timeline p99 < 200 ms; posting p99 < 500 ms." }
   - { id: NFR-2, kind: non-functional, text: "A new post reaches followers' timelines within 5 seconds." }
   - { id: NFR-3, kind: non-functional, text: "Posting stays available (99.9%) even when timelines cannot be served." }
+  - { id: FR-3, kind: functional, text: "Attach a photo to a post, and see it with the post in timelines." }
+  - { id: NFR-4, kind: non-functional, text: "A photo loads in under 300 ms (p99)." }
+  - { id: NFR-5, kind: non-functional, text: "Only signed-in users upload photos, each under the key the service gave them." }
 entities:
   - name: Post
     key: postId
@@ -40,6 +45,10 @@ entities:
     avgBytes: 1600
     ephemeral: true
     hotFor: followsCelebrity
+  - name: Photo
+    key: photoId
+    fields: [photoId, bytes]
+    avgBytes: 200000
 # bytes: one request and its response on the wire, HTTP headers included.
 operations:
   - id: create-post
@@ -71,6 +80,39 @@ operations:
     successStatuses: [200]
     requirements: [NFR-2]
     introducedIn: s1-timeline
+  # The app asks where to put a photo, puts it there, then creates the post with its key.
+  - id: start-upload
+    label: Start photo upload
+    method: POST
+    path: /photos/uploads
+    # The answer is a key and an upload URL, signed or not, about a kilobyte.
+    bytes: { request: 500, response: 1500 }
+    class: read
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-3, NFR-5]
+    introducedIn: s4-photos
+  - id: upload-photo
+    label: Upload photo
+    method: PUT
+    path: /photos/{photoId}
+    # A 200 KB photo, resized on the phone before it is sent.
+    bytes: { request: 200800, response: 300 }
+    class: write
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-3, NFR-5]
+    introducedIn: s4-photos
+  - id: read-photo
+    label: Read photo
+    method: GET
+    path: /photos/{photoId}
+    bytes: { request: 600, response: 200500 }
+    class: read
+    idempotent: true
+    successStatuses: [200]
+    requirements: [FR-3, NFR-4]
+    introducedIn: s4-photos
 events:
   - { id: post-created, label: Post created, entity: Post }
 counts:
@@ -80,7 +122,7 @@ counts:
 # A reading session pages through about ten timelines over one connection,
 # open for a few minutes and then until the idle timeout closes it.
 client: { flavor: browser, label: Visitors, requestsPerConnection: 10, connectionSec: 300 }
-logic: [isCelebrity]
+logic: [isCelebrity, signUpload]
 decisionPoints:
   - id: pagination
     question: How does a client ask for the next page of the timeline?
@@ -124,4 +166,11 @@ estimates:
     derivation: >-
       300,000 timeline reads × 200 followed accounts = 60 million reads a
       second, which is why timelines are assembled when posts are written.
-scenarios: [s1-timeline, s2-celebrities, s3-timelines-lost]
+  - id: photo-bandwidth
+    question: A timeline page shows about one 200 KB photo. How many bytes a second do photos take at peak?
+    kind: byte-rate
+    answer: 60000000000
+    derivation: >-
+      300,000 pages a second × 200 KB = 60 GB a second, about 480 Gbps: some
+      300 servers' worth of network if every photo passed through one.
+scenarios: [s1-timeline, s2-celebrities, s3-timelines-lost, s4-photos]

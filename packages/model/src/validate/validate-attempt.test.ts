@@ -9,6 +9,7 @@ import {
   testCatalogIndex,
   testProblem,
 } from "../testing/fixtures";
+import { photosAttempt, photosCatalogIndex, photosProblem } from "../testing/photos";
 import { createLinkAttempt } from "../testing/write-path";
 import type { IssueCode } from "./issues";
 import { validateAttempt } from "./validate-attempt";
@@ -604,5 +605,41 @@ describe("validateAttempt for asynchronous work", () => {
     const step = attempt.flows.find((f) => f.operation === "create-link")?.steps.publish;
 
     expect(step?.type === "call" && step.event).toBeUndefined();
+  });
+
+  describe("object storage", () => {
+    const photos = { catalog: photosCatalogIndex, problem: photosProblem };
+    const photoCodes = (attempt: Attempt) =>
+      validateAttempt(attempt, photos).map((issue) => issue.code);
+
+    it("lets object storage answer clients' requests itself", () => {
+      expect(validateAttempt(photosAttempt("direct"), photos)).toEqual([]);
+      expect(validateAttempt(photosAttempt("through-service"), photos)).toEqual([]);
+    });
+
+    it("lets object storage only answer, never call or decide", () => {
+      const deciding = mutate(
+        "addStep",
+        {
+          operation: "read-photo",
+          step: { type: "logic", logic: "signUpload" },
+          attach: { to: "root" },
+          continueWith: { outcome: "ok" },
+        },
+        photosAttempt("direct"),
+      );
+
+      const issue = validateAttempt(deciding, photos).find(
+        (i) => i.code === "flow-handler-serves-only",
+      );
+      expect(issue?.severity).toBe("error");
+      expect(issue?.location).toEqual({ type: "step", operation: "read-photo", stepId: "s1" });
+    });
+
+    it("signs uploads only for a service connected to object storage", () => {
+      const unconnected = mutate("removeConnection", { id: "api--photos" }, photosAttempt());
+
+      expect(photoCodes(unconnected)).toContain("step-logic-needs-component");
+    });
   });
 });
