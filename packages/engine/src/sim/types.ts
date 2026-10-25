@@ -62,7 +62,22 @@ export interface ComponentMetrics {
     readonly standbyRegion: number;
     /** The connection proxy in front of it. */
     readonly proxy: number;
+    /** I/Os provisioned on its volumes above what they include. */
+    readonly iops: number;
   };
+  /**
+   * For a store that reads pages from a volume: the share of its reads of
+   * ordinary keys its page cache answers, the I/Os a second its reads and
+   * writes take on one copy, what one copy sustains, and how busy the
+   * busiest shard's volumes are. Null for other components.
+   */
+  readonly disk: {
+    readonly hitRatio: number;
+    readonly readIops: number;
+    readonly writeIops: number;
+    readonly limit: number;
+    readonly utilization: number;
+  } | null;
 }
 
 /** How full a caller's pools to a store are (Little's law) and what that does to its calls. */

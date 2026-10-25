@@ -7,8 +7,10 @@ description: >-
   cross-region read replica, promoted in about three minutes once the
   primary region is declared lost; the standby Redis is a Global Datastore
   secondary, kept filled. Standby fleets run their autoscaling minimum and
-  scale up when clients arrive. It costs about twice as much, so it is not an
-  answer to the budgets of S3 and S5.
+  scale up when clients arrive. Its database has four shards × 2 replicas
+  with 20,000 I/Os provisioned on each copy, for the links the cache misses.
+  It costs about twice as much, so it is not an answer to the budgets of S3
+  and S5.
 expect:
   s1-create: { minScore: 90 }
   s2-redirect: { minScore: 90 }
@@ -52,8 +54,9 @@ attempt:
         label: Links DB
         regions: 2
         size: l
-        shards: 2
+        shards: 4
         replicas: 2
+        iops: 20000
         zones: 3
         data: [{ entity: Link }]
       - { id: kgs, kind: id-generator, flavor: kgs, label: KGS, size: m, replicas: 2, zones: 2, regions: 2 }

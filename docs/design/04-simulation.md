@@ -351,6 +351,19 @@ A store that runs one statement per connection (`pooledConnections`: PostgreSQL,
   - The statements it serves do not queue behind its open connections, unlike a gateway's requests behind its held client connections.
 - **A proxy** (`proxy: true`) holds the callers' pools instead, so they no longer count against the limit. It adds its latency to every call, and costs its price per vCPU of the instances behind it.
 
+## Memory and disk (as built, M24)
+
+A store whose flavor has a `pageCache` and a `storageVolume` (PostgreSQL, MySQL) caches pages of its data and reads the rest from a volume ([ADR 0020](../adr/0020-memory-and-disk.md)). Stores holding no data the problem gives a size for are taken to fit in memory.
+
+- **The page cache.** A copy caches `memoryGb × memoryShare` (0.692: three quarters of DBInstanceClassMemory) in pages of `pageBytes`, and a read by key touches `pagesPerRead` of them, so it holds `memory / (pageBytes × pagesPerRead)` keys of its shard. The entities read from it share them.
+- **Its hit ratio.** Che's approximation over the shard's keys, as for caches, with the keys' rates:
+  - reads that came straight follow the workload's popularity;
+  - reads that missed caches on the way follow what those caches leave, bucket by bucket (`cacheHitsByBucket`, scaled to each cache's hit ratio in the fixed point). Behind a large cache, that is the long tail.
+  - The hot key's reads stay in memory. Propagation records each store's reads by the caches they missed (`storeReads`), and `relaxStorage` relaxes the hit ratio and the I/Os a read takes with the rest of the fixed point.
+- **The volume.** A copy's data is the dataset over its shards. Below `stripedFromGb` it has `baselineIops`, from it `stripedIops`; `iops` provisions up to `maxIops`, billed above `stripedIops` with a striped volume's size at least. A copy sustains the fewer of that and its instance's `ebsIops`.
+- **Utilisation.** `(reads × ioPerRead + writes × pagesPerWrite × copies) / (iopsPerCopy × instances)` joins requests, network and connections in `utilizationOf`; whichever is fullest limits the store, and beyond 1 the share `1 − 1/ρ` is refused. A consistent read's I/O counts as its load does, on the primary alone.
+- **Latency.** Reads that miss wait `pagesPerRead × (readMs + W)`, where `W` is an M/D/1 wait at the copy's volume utilisation (capped at 0.98, beyond which the store's overload wait applies).
+
 ## Money and events (as built, M16)
 
 - **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.

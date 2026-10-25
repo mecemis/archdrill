@@ -4,6 +4,7 @@ import { applyCommand, type CommandArgs, type CommandName } from "../commands/in
 import { asyncAttempt } from "../testing/async";
 import {
   cacheAsideAttempt,
+  diskCatalogIndex,
   pooledCatalogIndex,
   testCatalogIndex,
   testProblem,
@@ -295,6 +296,25 @@ describe("validateAttempt", () => {
 
     expect(loaded.architecture.connections.some((c) => "mode" in c)).toBe(false);
     expect(validateAttempt(loaded, ctx).filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("provisions I/Os only on a store with a volume, within its range", () => {
+    const disk = { ...ctx, catalog: diskCatalogIndex };
+    const provisioned = mutate("updateComponent", { id: "db", iops: 20000 });
+    const tooFew = mutate("updateComponent", { id: "db", iops: 5000 });
+    const cache = mutate("updateComponent", { id: "redis", iops: 20000 });
+
+    expect(validateAttempt(provisioned, disk)).toEqual([]);
+    expect(validateAttempt(tooFew, disk).find((i) => i.code === "iops-out-of-range")).toMatchObject(
+      {
+        severity: "error",
+        message: "PostgreSQL's volume is provisioned for 12,000 to 64,000 I/Os a second.",
+      },
+    );
+    expect(validateAttempt(cache, disk).find((i) => i.code === "iops-ignored")).toMatchObject({
+      severity: "warning",
+      message: "Redis has no volume to provision I/Os on; they are ignored.",
+    });
   });
 
   it("puts a connection proxy only in front of a store that has one", () => {

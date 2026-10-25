@@ -294,7 +294,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
 **As built (M5)** (`s5-hot-keys`)
 - Environments: `avg` (an average day, 100,000 redirects a second, no viral link) and `spike` (a million redirects a second, 30% of them for one link, plus the usual creates).
 - Gate: `serves-spike` (99% of redirects succeed during the spike).
-- Baseline: `spike-availability` (99.99%, critical), `hot-shard-headroom` (no component or shard above 85%, major), `spike-p99`, `creates-unaffected` (critical), `within-budget` (an average day under $40,000, major) and `idle-fleet` (minor).
+- Baseline: `spike-availability` (99.99%, critical), `hot-shard-headroom` (no component or shard above 85%, major), `spike-p99`, `creates-unaffected` (critical), `within-budget` (an average day under $48,000, major) and `idle-fleet` (minor).
 - Signals: a near cache, autoscaling services and rate-limited creation (senior).
 - Valid answers in the corpus: the Postgres golden (a 10-second near cache, both services autoscaling, a rate-limiting gateway) and the DynamoDB golden (autoscaling with a near cache). Without a near cache, Redis carries the viral link's 300,000 lookups a second on its shard's two copies (73% at the spike), but the popular links the near cache held miss through to the database, whose bulkhead sheds 4% of redirects. A fleet fixed at the spike's size breaks the average-day budget.
 - Timeline (M9): `viral-surge`, redirects growing exponentially from 100,000 to a million a second over ten minutes, while new instances take a minute to start. Its check, `surge-served`, keeps redirects at 99% throughout. Scaling at 70% passes; the `autoscaling-target-too-high` mutant (80%) sheds requests for about eight minutes.
@@ -473,7 +473,7 @@ Each of these is accepted. The candidate sees the different availability/cost pr
   - `no-link-lost-with-region` (at most the last second of creates, the RPO);
   - the standby region carries the peak at 99.9%, with redirect p99 under 50 ms, and takes creates;
   - redirects back within four minutes (critical), and creates within five;
-  - under $80,000 a month on an average day.
+  - under $86,000 a month on an average day.
 - **Signal (staff):** `hot-standby`, redirects back as soon as clients reach the standby region, which takes the peak's instances running there every day.
 - **Goldens:** the single-region goldens score 20 here. Two new ones keep a warm standby of every component:
   - `postgres-redis-two-regions` ($75,367 a month): redirects back after 210 s, creates after 270 s, once the RDS standby is promoted;

@@ -3,6 +3,7 @@ export { type ClickOptions, clickAnalyticsAttempt } from "./click-analytics";
 export { disableLinkAttempt, type Invalidation } from "./disable";
 export {
   cacheAsideAttempt,
+  diskCatalogIndex,
   pooledCatalogIndex,
   testCatalog,
   testCatalogIndex,

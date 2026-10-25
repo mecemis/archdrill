@@ -4,8 +4,8 @@ title: PostgreSQL sized to survive cache loss
 description: >-
   ALB → Link API (33 × 8 vCPU over three zones) → Redis cache-aside (3 shards × 2 replicas,
   20 ms timeout behind a circuit breaker) → PostgreSQL sized to serve the
-  full read peak without any cache (16 vCPU, 4 shards × 3 replicas,
-  semi-synchronous). Redirects keep working even when the whole cache is
+  full read peak without any cache (16 vCPU, 4 shards × 3 replicas, 16,000
+  I/Os provisioned on each copy, semi-synchronous). Redirects keep working even when the whole cache is
   gone, which is the staff-level answer to S4; the price is a database tier
   that breaks the S3 budget.
 expect:
@@ -31,6 +31,7 @@ attempt:
         size: l
         shards: 4
         replicas: 3
+        iops: 16000
         zones: 3
         data: [{ entity: Link }]
     connections:

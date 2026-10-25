@@ -580,9 +580,12 @@ What fills up before the CPU does. In parts, like M22 and M23:
   - A "Connection proxy" switch on the database, and a "proxy" tag on its node.
   - Open and accepted connections in the results.
 
-**Part 2, memory and disk (next).** The catalog's database capacity is measured with the data in memory. Next:
-- the buffer cache's hit ratio from its memory and the keys' popularity, as for caches;
-- reads that miss it go to the volume, whose IOPS (gp3's 3,000 baseline, provisioned up to 16,000, or io2) are the next limit.
+**Part 2, memory and disk (as built, #46).** A relational database caches pages of its data and reads the rest from its volume ([ADR 0020](../adr/0020-memory-and-disk.md)).
+- **The page cache.** Three quarters of DBInstanceClassMemory caches pages, 16 KiB a key (PostgreSQL's index leaf and heap page, InnoDB's clustered leaf). Its hit ratio comes from Che's approximation over each shard's keys, as for caches.
+- **Behind a cache.** A store sees what the caches in front miss: the long tail. Per popularity bucket, the caches' hits filter its reads. Behind Redis, the URL shortener's database page cache answers about 1% of reads.
+- **The volume.** RDS gp3 gives 3,000 I/Os a second below 400 GiB and 12,000 from it, provisionable to 64,000 at $0.02 an I/O a month; the instance caps it (12,000 for 8 vCPUs, 20,000 for 16). The volume's share joins CPU, network and connections in a store's utilisation, and a miss waits a millisecond a page plus the volume's queue.
+- **The corpus.** The PostgreSQL goldens add shards and provision I/Os, the budgets of S3, S5 and S9 that assumed a database in memory move up, two mutants are added and one is retired.
+- **Next, part 3 (the interface).** Provisioned I/Os in the inspector, and the page cache and the volume in the results.
 
 ## The flow editor, revisited (as built)
 

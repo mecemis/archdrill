@@ -442,5 +442,10 @@ export function faultedProfile(profile: ComponentProfile, fault: ComponentFault)
     serviceTimeMs: profile.serviceTimeMs * fault.slowFactor,
     // Concurrency is capacity × service time, so slowness does not change it.
     servers: Math.max(1, Math.round(profile.servers * fault.readCapacity)),
+    // Lost instances take their volumes with them.
+    storage: profile.storage && {
+      ...profile.storage,
+      iopsCapacity: profile.storage.iopsCapacity * fault.readCapacity,
+    },
   };
 }

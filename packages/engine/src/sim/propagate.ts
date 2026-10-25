@@ -52,6 +52,9 @@ export interface LoopState {
   readonly poolExhausted: Map<string, number>;
   /** Per pooled connection: milliseconds an attempt waits for its connection. */
   readonly poolWait: Map<string, number>;
+  /** Per store that reads pages from a volume: I/Os a read takes, and its page cache's hit ratio. */
+  readonly ioPerRead: Map<string, number>;
+  readonly pageHit: Map<string, number>;
 }
 
 export function emptyLoopState(): LoopState {
@@ -67,6 +70,8 @@ export function emptyLoopState(): LoopState {
     breakerHeld: new Map(),
     poolExhausted: new Map(),
     poolWait: new Map(),
+    ioPerRead: new Map(),
+    pageHit: new Map(),
   };
 }
 
@@ -223,6 +228,36 @@ function countEntityLookups(
   }
 }
 
+/** A read a store serves: its component and entity (`cacheKey`), and the caches it missed for it. */
+type StoreRead = { readonly key: string; readonly way: string } | undefined;
+
+const STORE_READS = new WeakMap<readonly PathStep[], readonly StoreRead[]>();
+
+/**
+ * Per step of a path, the store read it is, by the caches the path missed
+ * for that entity before it (their ids joined with commas). It depends on
+ * the path alone, so it is worked out once, not on every pass.
+ */
+function storeReadsOf(steps: readonly PathStep[]): readonly StoreRead[] {
+  const known = STORE_READS.get(steps);
+  if (known) return known;
+  const missed = new Map<string, string>();
+  const reads = steps.map((step): StoreRead => {
+    if (step.kind !== "call" || step.entity === undefined) return undefined;
+    if (step.action === "cache.get") {
+      if (step.outcome === "miss") {
+        const before = missed.get(step.entity);
+        missed.set(step.entity, before ? `${before},${step.target}` : step.target);
+      }
+      return undefined;
+    }
+    if (ACTIONS[step.action].effect !== "read") return undefined;
+    return { key: cacheKey(step.target, step.entity), way: missed.get(step.entity) ?? "" };
+  });
+  STORE_READS.set(steps, reads);
+  return reads;
+}
+
 /** One pass of load propagation over every operation's paths and request classes. */
 export function propagate(
   operations: readonly OperationModel[],
@@ -241,6 +276,7 @@ export function propagate(
   const traffic = new Map<string, number>();
   const tallies = new Map<string, CallTally>();
   const entityLookups = new Map<string, { lookups: number; hits: number }>();
+  const storeReads = new Map<string, Map<string, number>>();
   const fromClients = new Map<string, number>();
   const transfer = new Map<string, Load>();
   const carry = (connectionId: string | null | undefined, bytes: number, write: boolean) => {
@@ -337,6 +373,7 @@ export function propagate(
         const weight = once * deliveries;
         redelivered += weight - once;
         if (cls.exists) countEntityLookups(path.steps, weight, entityLookups);
+        const reads = storeReadsOf(path.steps);
         for (let stepIndex = 0; stepIndex < path.steps.length; stepIndex++) {
           const step = path.steps[stepIndex] as PathStep;
           if (step.kind !== "call") continue;
@@ -378,6 +415,13 @@ export function propagate(
               : requests * cost.weight;
           const bytes = carried * cost.bytes;
           add(loads, step.target, work, write, bytes);
+          const read = reads[stepIndex];
+          if (read && !hot) {
+            const ways = storeReads.get(read.key) ?? new Map<string, number>();
+            // A consistent read is the primary's alone: its volume reads it, weighted as its CPU is.
+            ways.set(read.way, (ways.get(read.way) ?? 0) + carried * cost.weight);
+            storeReads.set(read.key, ways);
+          }
           carry(step.connectionId, carried * cost.carriedBytes, write);
           if (batches && !cost.perItem && !cost.perRequest) {
             add(batchedItems, step.target, carried - requests, write);
@@ -454,6 +498,7 @@ export function propagate(
     traffic,
     calls: tallies,
     entityLookups,
+    storeReads,
     operations: resolved,
     batchArrivals,
     batchedItems,

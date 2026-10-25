@@ -14,8 +14,9 @@ import {
   type Zipf,
 } from "@archdrill/model";
 import type { Analysis, OperationAnalysis } from "../analyze";
-import { type ComponentProfile, componentProfile } from "./capacity";
+import { type ComponentProfile, componentProfile, volumeIops } from "./capacity";
 import { type ComponentFault, faultedProfile, NO_FAULT } from "./faults";
+import type { ZipfPopularity } from "./math/zipf";
 import { openConnections, poolSpecs } from "./pools";
 import { messageBytes, type StepCost, stepCosts } from "./step-costs";
 import { replicaRoundTripMs } from "./zone-traffic";
@@ -115,6 +116,78 @@ export interface CacheSpec {
 export const cacheKey = (componentId: string, entity: string | undefined) =>
   `${componentId}|${entity ?? ""}`;
 
+const BYTES_PER_GIB = 2 ** 30;
+
+/** A store that caches pages of its data in memory and reads the rest from a volume. */
+export interface StorageSpec {
+  readonly componentId: string;
+  readonly shards: number;
+  /** Keys one copy's page cache holds, shared by the entities read from it. */
+  readonly cachedKeys: number;
+  readonly pagesPerRead: number;
+  readonly pagesPerWrite: number;
+  /**
+   * Popularity of the keys of each entity it holds: the workload's, or even
+   * over its dataset. Entities with neither are taken to fit in memory.
+   */
+  readonly popularity: ReadonlyMap<string, ZipfPopularity>;
+  /** Gigabytes of data one copy holds. */
+  readonly copyGb: number;
+  /** I/Os a second one copy's volume offers, and one instance sustains. */
+  readonly volumeIops: number;
+  readonly instanceIops: number;
+  readonly readMs: number;
+}
+
+/**
+ * The stores whose flavors cache pages and read the rest from a volume, with
+ * what one copy holds in memory and on disk. A copy holds its shard's keys;
+ * the instance's memory is in GiB, as AWS publishes it. A store holding no
+ * data the problem gives a size for is taken to fit in memory, as before.
+ */
+export function buildStorageSpecs(workload: Workload, ctx: SimulationContext): StorageSpec[] {
+  const stored = storedGb(workload, ctx);
+  return ctx.attempt.architecture.components.flatMap((component) => {
+    const kind = ctx.catalog.kind(component.kind);
+    const flavor = ctx.catalog.flavor(component.kind, component.flavor);
+    const size = flavor?.sizes[component.size ?? flavor.defaultSize ?? ""];
+    const pages = flavor?.pageCache;
+    const volume = flavor?.storageVolume;
+    if (!kind || !size || !pages || !volume) return [];
+    if (!component.data.some(({ entity }) => (workload.dataset[entity] ?? 0) > 0)) return [];
+    const shards = kind.shardable ? component.shards : 1;
+    const copyGb = (stored.get(component.id) ?? 0) / shards;
+    const popularity = new Map<string, ZipfPopularity>();
+    for (const { entity } of component.data) {
+      const keys = workload.keys[entity]?.existing;
+      const count = workload.dataset[entity];
+      if (keys) popularity.set(entity, { s: keys.s, population: keys.population });
+      else if (count) popularity.set(entity, { s: 0, population: count });
+    }
+    const memory = (size.memoryGb ?? 0) * BYTES_PER_GIB * pages.memoryShare;
+    return [
+      {
+        componentId: component.id,
+        shards,
+        cachedKeys: memory / (pages.pageBytes * pages.pagesPerRead),
+        pagesPerRead: pages.pagesPerRead,
+        pagesPerWrite: pages.pagesPerWrite,
+        popularity,
+        copyGb,
+        volumeIops: volumeIops(volume, component.iops, copyGb),
+        instanceIops: size.ebsIops ?? Number.POSITIVE_INFINITY,
+        readMs: volume.readMs,
+      },
+    ];
+  });
+}
+
+/** Where a store's page cache stands in the fixed point. */
+export interface StorageState {
+  readonly ioPerRead: number;
+  readonly hitRatio: number;
+}
+
 /**
  * Rounds autoscaled replicas up to whole instances, with a tolerance for the
  * fixed point stopping a hair above an exact count.
@@ -135,6 +208,11 @@ export function buildProfiles(
   whole = false,
   /** Client connections held open, shared by the components that hold connections. */
   connections = 0,
+  /** Stores that read pages from a volume, and where their page caches stand. */
+  storage: {
+    readonly specs: readonly StorageSpec[];
+    readonly states: ReadonlyMap<string, StorageState>;
+  } = { specs: [], states: new Map() },
 ): Map<string, ComponentProfile> {
   const profiles = new Map<string, ComponentProfile>();
   const gateways = ctx.attempt.architecture.components.filter((c) =>
@@ -150,7 +228,9 @@ export function buildProfiles(
     );
     if (!profile) continue;
     const holding = gateways.includes(component) ? { ...profile, heldConnections: held } : profile;
-    profiles.set(component.id, faultedProfile(holding, faults.get(component.id) ?? NO_FAULT));
+    const spec = storage.specs.find((s) => s.componentId === component.id);
+    const reading = spec ? withStorage(holding, spec, storage.states.get(component.id)) : holding;
+    profiles.set(component.id, faultedProfile(reading, faults.get(component.id) ?? NO_FAULT));
   }
   // Every caller instance pools to each shard's primary, which accepts only so many connections.
   for (const [id, open] of openConnections(poolSpecs(ctx), profiles, faults)) {
@@ -161,6 +241,32 @@ export function buildProfiles(
     profiles.set(id, { ...profile, heldConnections: open * replicas });
   }
   return profiles;
+}
+
+/**
+ * A store's profile with its volume: each copy sustains the fewer of its
+ * volume's I/Os and its instance's, and a write is applied on every copy of
+ * its shard.
+ */
+function withStorage(
+  profile: ComponentProfile,
+  spec: StorageSpec,
+  state: StorageState | undefined,
+): ComponentProfile {
+  const iopsPerCopy = Math.min(spec.volumeIops, spec.instanceIops);
+  const copies = profile.instances / profile.shards;
+  return {
+    ...profile,
+    storage: {
+      ioPerRead: state?.ioPerRead ?? 0,
+      ioPerWrite: spec.pagesPerWrite * copies,
+      iopsPerCopy,
+      iopsCapacity: iopsPerCopy * profile.instances,
+      readMs: spec.readMs,
+      pagesPerRead: spec.pagesPerRead,
+      hitRatio: state?.hitRatio ?? 1,
+    },
+  };
 }
 
 /**

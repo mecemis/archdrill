@@ -216,9 +216,14 @@ test("fits every instance's pools into the database, or puts a proxy in front", 
     page.getByText("Every instance's database pools fit its connection limit at the spike"),
   ).toBeVisible();
 
+  // A proxy holds the pools instead: the limit is met again. It is billed per vCPU of the
+  // database's ten instances, which takes an average day just over S5's budget.
   await page.locator('.react-flow__node[data-id="links-db"]').click();
   await page.getByRole("checkbox", { name: "Connection proxy (RDS Proxy)" }).check();
-  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await expect(
+    page.getByText("Every instance's database pools fit its connection limit at the spike"),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("scenario-score")).toHaveText("89");
   await expect(
     page.locator('.react-flow__node[data-id="links-db"]').getByText("proxy"),
   ).toBeVisible();

@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     name: "reports",
     include: ["report/**/*.run.ts"],
-    testTimeout: 300_000,
+    // The time budget is each design's p95, checked by the report itself. Measuring every
+    // golden padded to 30 components already took about 285 s of 300 on CI runners.
+    testTimeout: 600_000,
   },
 });

@@ -225,6 +225,26 @@ describe("utilization-below", () => {
     expect(run(busy(0.9)).details[0]).toContain("fill its network bandwidth");
     expect(run(busy(0.2)).details[0]).not.toContain("network");
   });
+
+  it("says when a store's volume is what fills up, and how much its page cache answers", () => {
+    const env = busy(0.2);
+    const redis = env.components.get("redis");
+    const disk = {
+      hitRatio: 0.012,
+      readIops: 17011,
+      writeIops: 747,
+      limit: 20000,
+      utilization: 0.9,
+    };
+    const reading = {
+      ...env,
+      components: new Map([["redis", { ...redis, disk }]]),
+    } as unknown as EnvironmentMetrics;
+
+    expect(run(reading).details[0]).toContain(
+      "Its page cache answers 1.2% of reads; the rest read their pages from the volume: 17,758 I/Os a second on each copy, of the 20,000 one copy sustains.",
+    );
+  });
 });
 
 describe("success-rate-above", () => {
