@@ -313,3 +313,32 @@ test("provisions I/Os on the database's volumes for the misses it reads from dis
   await iops.press("Enter");
   await expect(page.getByTestId("scenario-score")).toHaveText("100");
 });
+
+test("fades what only operations outside the scenario's focus use", async ({ page }) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S2 / }).click();
+  const kgs = page.getByTestId("node-KGS");
+  const faded = /opacity-50/;
+
+  // S2 is about redirects: the create path's key service steps back, the redirect path does not.
+  await expect(kgs).toHaveClass(faded);
+  await expect(page.getByTestId("node-Redirect API")).not.toHaveClass(faded);
+  await expect(page.getByTestId("node-Redis")).not.toHaveClass(faded);
+
+  // The operation being edited stays in view, in focus or not.
+  await page.getByLabel("Operation").selectOption("create-link");
+  await expect(kgs).not.toHaveClass(faded);
+  await page.getByLabel("Operation").selectOption("redirect");
+  await expect(kgs).toHaveClass(faded);
+
+  const toggle = page.getByRole("button", { name: "Focus on the scenario" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(kgs).not.toHaveClass(faded);
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Focus on the scenario" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});

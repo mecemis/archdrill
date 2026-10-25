@@ -213,6 +213,59 @@ describe("projection", () => {
     expect(nodes.find((n) => n.id === "lb")?.data.hasError).toBe(true);
   });
 
+  it("fades what is out of focus, unless a highlight or a problem asks for it", () => {
+    const outOfFocus = { components: new Set(["redis", "db"]), connections: new Set(["api--db"]) };
+    const overloaded = {
+      components: new Map([
+        [
+          "db",
+          {
+            utilization: 1.3,
+            hottestShardUtilization: 1.3,
+            instances: 1,
+            faults: [],
+            faultDisrupts: false,
+          },
+        ],
+      ]),
+      connections: new Map(),
+    } as ProjectionInput["metrics"];
+    const emphasis = (overrides: Partial<ProjectionInput>) =>
+      Object.fromEntries(
+        [
+          ...projectNodes(inputFor(undefined, overrides)),
+          ...projectEdges(inputFor(undefined, overrides)),
+        ]
+          .filter((item) => ["redis", "db", "api", "api--db", "api--redis"].includes(item.id))
+          .map((item) => [item.id, item.data?.emphasis]),
+      );
+
+    expect(emphasis({ outOfFocus })).toEqual({
+      api: "normal",
+      redis: "faded",
+      db: "faded",
+      "api--redis": "normal",
+      "api--db": "faded",
+    });
+    // An overloaded component stays in full view, wherever its load comes from.
+    expect(emphasis({ outOfFocus, metrics: overloaded }).db).toBe("normal");
+    // So does what is selected.
+    expect(emphasis({ outOfFocus, selection: { type: "component", id: "redis" } }).redis).toBe(
+      "normal",
+    );
+    expect(
+      emphasis({ outOfFocus, selection: { type: "connection", id: "api--db" } }),
+    ).toMatchObject({ "api--db": "normal", db: "faded" });
+    // A highlight takes over the whole canvas.
+    const highlight = {
+      components: new Set(["db"]),
+      connections: new Set<string>(),
+      steps: new Set<string>(),
+      decisions: new Set<string>(),
+    };
+    expect(emphasis({ outOfFocus, highlight })).toMatchObject({ db: "highlighted", api: "dimmed" });
+  });
+
   it("leaves the canvas alone for a finding about a decision", () => {
     const highlight = {
       components: new Set<string>(),

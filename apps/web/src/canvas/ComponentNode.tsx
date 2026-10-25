@@ -11,6 +11,7 @@ const EMPHASIS_CLASSES = {
   normal: "",
   highlighted: "ring-2 ring-warn ring-offset-2 ring-offset-app",
   dimmed: "opacity-35",
+  faded: "opacity-50",
 } as const;
 
 const HANDLE_CLASS = "!h-2.5 !w-2.5 !border-2 !border-elevated !bg-fg-faint hover:!bg-accent";

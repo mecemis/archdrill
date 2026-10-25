@@ -13,9 +13,11 @@ import {
 } from "@archdrill/model";
 import type { Edge, Node } from "@xyflow/react";
 import type { Highlight, Selection } from "../state/ui-store";
+import type { OutOfFocus } from "./focus";
 import type { NodeFindings } from "./node-findings";
 
-export type Emphasis = "normal" | "highlighted" | "dimmed";
+/** Faded: out of the scenario's focus. Dimmed: outside the highlight that holds the canvas. */
+export type Emphasis = "normal" | "highlighted" | "dimmed" | "faded";
 
 /**
  * How a component is doing under the simulated load: overloaded or failing
@@ -92,6 +94,8 @@ export interface ProjectionInput {
   readonly metrics?: CanvasLoad | undefined;
   /** Open findings per component, for badges. */
   readonly findings?: ReadonlyMap<string, NodeFindings> | undefined;
+  /** Parts only operations outside the scenario's focus use, to fade. */
+  readonly outOfFocus?: OutOfFocus | undefined;
 }
 
 /**
@@ -170,11 +174,21 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
     const kind = catalog.kind(component.kind);
     const flavor = catalog.flavor(component.kind, component.flavor);
     const size = component.size ? flavor?.sizes[component.size] : undefined;
+    const health = healthOf(input.metrics?.components.get(component.id));
+    const findings = input.findings?.get(component.id) ?? null;
+    const selected = selection?.type === "component" && selection.id === component.id;
+    // Fading must never hide a problem, nor what the person is looking at.
+    const faded =
+      (input.outOfFocus?.components.has(component.id) ?? false) &&
+      !selected &&
+      !erroneous.has(component.id) &&
+      findings === null &&
+      health !== "critical";
     return {
       id: component.id,
       type: "component",
       position: attempt.layout[component.id] ?? { x: 0, y: 0 },
-      selected: selection?.type === "component" && selection.id === component.id,
+      selected,
       data: {
         label: component.label,
         kind: component.kind,
@@ -192,7 +206,7 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         replicable: (kind?.replicable ?? false) && !(flavor?.managedRedundancy ?? false),
         entities: component.data.map((d) => d.entity),
         isHandler: flow?.handler === component.id,
-        emphasis: emphasisOf(highlight, highlight?.components.has(component.id) ?? false),
+        emphasis: emphasisOf(highlight, highlight?.components.has(component.id) ?? false, faded),
         hasError: erroneous.has(component.id),
         callable: callable.has(component.id),
         utilization: input.metrics?.components.get(component.id)?.utilization ?? null,
@@ -201,8 +215,8 @@ export function projectNodes(input: ProjectionInput): Node<ComponentNodeData>[] 
         autoscaleMax: component.autoscale?.max ?? null,
         running: input.metrics?.components.get(component.id)?.instances ?? null,
         hotShard: hotShardOf(input.metrics?.components.get(component.id)),
-        health: healthOf(input.metrics?.components.get(component.id)),
-        findings: input.findings?.get(component.id) ?? null,
+        health,
+        findings,
       },
     };
   });
@@ -262,26 +276,35 @@ export function projectEdges(input: ProjectionInput): Edge<ConnectionEdgeData>[]
     ),
   );
   const messaging = messagingConnections(attempt, input.catalog, input.operations);
-  return attempt.architecture.connections.map((connection) => ({
-    id: connection.id,
-    type: "connection",
-    source: connection.from,
-    target: connection.to,
-    selected: selection?.type === "connection" && selection.id === connection.id,
-    data: {
-      messaging: messaging.has(connection.id),
-      steps: usage.get(connection.id) ?? [],
-      ingress: ingress.has(connection.id),
-      emphasis: emphasisOf(highlight, highlight?.connections.has(connection.id) ?? false),
-      hasError: erroneous.has(connection.id),
-      rate: input.metrics ? (input.metrics.connections.get(connection.id) ?? 0) : null,
-      targetHealth: healthOf(input.metrics?.components.get(connection.to)),
-    },
-  }));
+  return attempt.architecture.connections.map((connection) => {
+    const selected = selection?.type === "connection" && selection.id === connection.id;
+    const faded =
+      (input.outOfFocus?.connections.has(connection.id) ?? false) &&
+      !selected &&
+      !erroneous.has(connection.id);
+    return {
+      id: connection.id,
+      type: "connection",
+      source: connection.from,
+      target: connection.to,
+      selected,
+      data: {
+        messaging: messaging.has(connection.id),
+        steps: usage.get(connection.id) ?? [],
+        ingress: ingress.has(connection.id),
+        emphasis: emphasisOf(highlight, highlight?.connections.has(connection.id) ?? false, faded),
+        hasError: erroneous.has(connection.id),
+        rate: input.metrics ? (input.metrics.connections.get(connection.id) ?? 0) : null,
+        targetHealth: healthOf(input.metrics?.components.get(connection.to)),
+      },
+    };
+  });
 }
 
-function emphasisOf(highlight: Highlight | null, member: boolean): Emphasis {
+function emphasisOf(highlight: Highlight | null, member: boolean, faded: boolean): Emphasis {
   // A highlight with nothing on the canvas (a decision) leaves the canvas as it is.
-  if (!highlight || highlight.components.size + highlight.connections.size === 0) return "normal";
+  if (!highlight || highlight.components.size + highlight.connections.size === 0) {
+    return faded ? "faded" : "normal";
+  }
   return member ? "highlighted" : "dimmed";
 }

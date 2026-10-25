@@ -29,6 +29,15 @@ export function respondLabel(status: number, background: boolean): string {
   return status >= 200 && status < 300 ? `${status} done` : `${status} try again later`;
 }
 
+/** The problem's operations, those the scenario focuses on first, each group in the problem's order. */
+export function operationsFocusFirst(focus: readonly string[]): readonly Operation[] {
+  const { operations } = activePack.problem;
+  return [
+    ...operations.filter((o) => focus.includes(o.id)),
+    ...operations.filter((o) => !focus.includes(o.id)),
+  ];
+}
+
 export function operationById(id: string): Operation | undefined {
   return activePack.problem.operations.find((o) => o.id === id);
 }

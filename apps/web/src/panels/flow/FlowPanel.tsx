@@ -9,7 +9,7 @@ import { AlertTriangle, CircleCheck, Info, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
 import { activePack, catalogIndex } from "../../state/content";
 import { useAttemptStore } from "../../state/store";
-import { eventLabel, triggerSummary } from "../../state/triggers";
+import { eventLabel, operationsFocusFirst, triggerSummary } from "../../state/triggers";
 import { useUi } from "../../state/ui-store";
 import { Button, Field, FOCUS_RING, SectionTitle, Select } from "../../ui/primitives";
 import { openSlots } from "./add-step";
@@ -40,7 +40,7 @@ export function FlowPanel() {
     <div className="flex flex-col gap-4 p-4">
       <Field label="Operation">
         <Select value={operationId} onChange={(e) => setOperation(e.target.value)}>
-          {activePack.problem.operations.map((op) => (
+          {operationsFocusFirst(scenario?.focusOperations ?? []).map((op) => (
             <option key={op.id} value={op.id}>
               {triggerSummary(op)} · {op.label}
               {scenario?.focusOperations.includes(op.id) ? " (in focus)" : ""}

@@ -10,7 +10,7 @@ import {
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react";
-import { Activity } from "lucide-react";
+import { Activity, Focus } from "lucide-react";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GuideCard } from "../panels/onboarding/GuideCard";
 import { activePack, catalogIndex } from "../state/content";
@@ -26,6 +26,7 @@ import { IconButton } from "../ui/primitives";
 import { AddStepsButton, CursorBar, StepMenu, StudioButton } from "./CanvasSteps";
 import { ComponentNode } from "./ComponentNode";
 import { ConnectionEdge, EdgeMarkers } from "./ConnectionEdge";
+import { outOfFocus } from "./focus";
 import { findingsByComponent } from "./node-findings";
 import { addComponentFromPalette, PALETTE_MIME, parsePaletteData } from "./palette-drop";
 import { type ComponentNodeData, projectEdges, projectNodes } from "./projection";
@@ -95,6 +96,7 @@ function CanvasInner() {
   const { analysis, scenarios } = useEvaluation();
   const scenarioId = useUi((s) => s.scenarioId);
   const animateTraffic = useLayout((s) => s.animateTraffic);
+  const focusView = useLayout((s) => s.focusView);
   const guideOpen = useOnboarding((s) => s.guideOpen);
   const operationId = useUi((s) => s.operation);
   const selection = useUi((s) => s.selection);
@@ -109,6 +111,13 @@ function CanvasInner() {
   const operation = analysis.operations.get(operationId);
   const highlight = hover ?? pinned?.highlight ?? null;
   const result = scenarios.find((s) => s.scenarioId === scenarioId);
+  const scenario = activePack.scenarios.find((s) => s.id === scenarioId);
+  // The operation being edited stays in view, in focus or not.
+  const faded = useMemo(
+    () => (scenario ? outOfFocus(analysis, [...scenario.focusOperations, operationId]) : undefined),
+    [analysis, scenario, operationId],
+  );
+  const fadable = faded !== undefined && faded.components.size + faded.connections.size > 0;
   const findings = useMemo(
     () =>
       result?.status === "evaluated"
@@ -128,8 +137,20 @@ function CanvasInner() {
       operations: activePack.problem.operations,
       metrics,
       findings,
+      outOfFocus: focusView ? faded : undefined,
     }),
-    [attempt, operation, analysis.issues, highlight, selection, slotArmed, metrics, findings],
+    [
+      attempt,
+      operation,
+      analysis.issues,
+      highlight,
+      selection,
+      slotArmed,
+      metrics,
+      findings,
+      focusView,
+      faded,
+    ],
   );
   const projectedNodes = useMemo(() => projectNodes(input), [input]);
   const edges = useMemo(() => projectEdges(input), [input]);
@@ -232,6 +253,22 @@ function CanvasInner() {
         <TrafficControl />
         <StudioButton />
         <AddStepsButton />
+        {fadable && (
+          <IconButton
+            active={focusView}
+            aria-pressed={focusView}
+            aria-label="Focus on the scenario"
+            title={
+              focusView
+                ? "Show what other operations use at full strength"
+                : "Fade what only operations outside this scenario's focus use"
+            }
+            onClick={() => useLayout.getState().setFocusView(!focusView)}
+            className={`border border-line shadow-card ${focusView ? "" : "bg-elevated"}`}
+          >
+            <Focus className="h-4 w-4" />
+          </IconButton>
+        )}
         {metrics && (
           <IconButton
             active={animateTraffic}
