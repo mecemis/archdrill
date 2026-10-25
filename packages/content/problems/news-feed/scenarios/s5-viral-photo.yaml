@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=../../../schema/scenario.schema.json
+id: s5-viral-photo
+problemId: news-feed
+title: A viral photo
+order: 5
+story: |
+  "A celebrity with 50 million followers posts a photo, and for the rest of
+  the day one read in five is for that one photo: 60,000 a second at peak.
+  The photo lives under one key, in one prefix of the bucket. Who answers
+  those 60,000 requests? And what does sending 79 PB of photos a month cost,
+  depending on who sends them?"
+focusOperations: [read-photo]
+prerequisites: [s4-photos]
+workload:
+  operations:
+    create-post:
+      entity: Post
+      classes:
+        - { id: regular, share: 1 }
+    read-timeline:
+      entity: Timeline
+      classes:
+        - { id: reader, share: 1 }
+    start-upload:
+      entity: Photo
+      classes:
+        - { id: author, share: 1 }
+    upload-photo:
+      entity: Photo
+      classes:
+        - { id: author, share: 1 }
+    read-photo:
+      entity: Photo
+      classes:
+        - { id: reader, share: 0.8 }
+        # A celebrity's new photo: one key, a fifth of every photo read.
+        - { id: viral, share: 0.2, hotKey: true }
+  keys:
+    Timeline:
+      existing: { distribution: zipf, s: 0.9, population: 5.0e7 }
+    Photo:
+      existing: { distribution: zipf, s: 0.9, population: 8.0e9 }
+  # A year of photos: 432 million posts a day, one in twenty with a photo.
+  dataset:
+    Photo: 8.0e9
+  environments:
+    - id: avg
+      label: Average day
+      description: An ordinary day.
+      rates:
+        create-post: 5000
+        read-timeline: 150000
+        start-upload: 250
+        upload-photo: 250
+        read-photo: 150000
+    - id: peak
+      label: Peak
+      description: Peak traffic.
+      rates:
+        create-post: 10000
+        read-timeline: 300000
+        start-upload: 500
+        upload-photo: 500
+        read-photo: 300000
+dimensions:
+  availability: 0.35
+  latency: 0.25
+  cost: 0.25
+  scalability: 0.15
+checks:
+  - id: photos-served
+    use: success-rate-above
+    title: Almost every photo loads at peak, the viral one included (99%)
+    dimension: availability
+    weight: 3
+    gate: true
+    severity: critical
+    requirements: [FR-3, NFR-4]
+    params: { operation: read-photo, environment: peak, min: 0.99 }
+    why: >-
+      One prefix of S3 takes 5,500 reads a second. 60,000 a second for one
+      photo leave nine in ten of them answered with 503 Slow Down, and the
+      post everyone is looking at shows a broken image.
+    fix: >-
+      Put a CDN in front of the photos: it keeps the viral one at the edge and
+      asks the origin for it once in a while, not 60,000 times a second.
+
+  - id: viral-headroom
+    use: utilization-below
+    title: Nothing runs above 85% at peak, the viral photo's prefix included
+    dimension: scalability
+    weight: 2
+    requirements: [NFR-4]
+    params: { environment: peak, max: 0.85 }
+    why: >-
+      More prefixes do not help: one photo has one key, and one key lives in
+      one prefix.
+    fix: >-
+      Answer the viral photo from the edge, so that its prefix sees only the
+      misses.
+
+  - id: photos-from-the-edge
+    use: latency-below
+    title: Half the photos load in under 50 ms at peak
+    dimension: latency
+    weight: 2
+    requirements: [NFR-4]
+    params: { operation: read-photo, environment: peak, percentile: p50, ms: 50 }
+    why: >-
+      S3 answers a small object in 100 to 200 ms. An edge that already has the
+      photo answers in a few.
+    fix: >-
+      Serve photos through a CDN that keeps them at the edge; only the misses
+      wait for the origin.
+
+  - id: within-budget
+    use: cost-within-budget
+    title: An average day costs less than $2.5 million a month
+    dimension: cost
+    weight: 2
+    requirements: [FR-3]
+    params: { environment: avg, monthlyUsd: 2500000 }
+    why: >-
+      79 PB of photos a month cost about $4 million sent from S3, at $0.05 a
+      GB, and about $1.6 million sent from CloudFront's edges, down to $0.02.
+      The edge bills $1 a million requests, more than S3's $0.40, and still
+      halves the bill.
+    fix: >-
+      Send photos from a CDN: data from S3 to CloudFront is free, and its own
+      rates for data sent to clients are lower.
+
+  - id: photos-at-the-edge
+    use: ingress-has-capability
+    title: Photos come from a CDN's edge
+    dimension: latency
+    signal: senior
+    requirements: [NFR-4]
+    params: { operation: read-photo, capability: edge-cache }
+    why: >-
+      Photos never change and everyone sees the same ones: the content a CDN
+      is for.
+    fix: >-
+      Put a CDN between clients and the bucket for photo reads, and keep
+      uploads going straight to the bucket.
+hints:
+  - "Which prefix holds the viral photo, and how many reads a second does one prefix take?"
+  - "Something closer to the clients could keep a photo that never changes. What would it cost per request, and per GB?"
+  - "Clients read photos through a CDN in front of the bucket and upload straight to the bucket; the edge keeps the viral photo and answers most reads in a few milliseconds."
+debrief: |
+  Questions an interviewer would ask next:
+
+  - The celebrity deletes the photo. How long do the edges keep serving it, and how would you stop them?
+  - Photos are now cheap to read. What about a 50 MB video, watched from the middle?
+  - A new photo is fetched by every edge at once. What stops 600 edges from asking the origin together?

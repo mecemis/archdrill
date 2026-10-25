@@ -19,6 +19,7 @@ import newsFeedS1 from "../problems/news-feed/scenarios/s1-timeline.yaml";
 import newsFeedS2 from "../problems/news-feed/scenarios/s2-celebrities.yaml";
 import newsFeedS3 from "../problems/news-feed/scenarios/s3-timelines-lost.yaml";
 import newsFeedS4 from "../problems/news-feed/scenarios/s4-photos.yaml";
+import newsFeedS5 from "../problems/news-feed/scenarios/s5-viral-photo.yaml";
 import paymentsProblem from "../problems/payments/problem.yaml";
 import paymentsS1 from "../problems/payments/scenarios/s1-checkout.yaml";
 import paymentsS2 from "../problems/payments/scenarios/s2-fulfilment.yaml";
@@ -104,7 +105,7 @@ export const problemPacks: readonly ProblemPack[] = [
     urlShortenerS9,
   ]),
   loadProblemPack(rateLimiterProblem, [rateLimiterS1, rateLimiterS2, rateLimiterS3]),
-  loadProblemPack(newsFeedProblem, [newsFeedS1, newsFeedS2, newsFeedS3, newsFeedS4]),
+  loadProblemPack(newsFeedProblem, [newsFeedS1, newsFeedS2, newsFeedS3, newsFeedS4, newsFeedS5]),
   loadProblemPack(chatProblem, [chatS1, chatS2, chatS3]),
   loadProblemPack(paymentsProblem, [paymentsS1, paymentsS2, paymentsS3]),
 ];

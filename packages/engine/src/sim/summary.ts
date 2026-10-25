@@ -104,8 +104,11 @@ export interface Propagation {
 
 export interface ResolvedOperation {
   readonly rate: number;
+  /** The classes of the requests that reach the handler: past a CDN, those it missed. */
   readonly classes: readonly RequestClass[];
   readonly redeliveries: number;
+  /** Share of the requests passing a CDN on the way that it answers from the edge. */
+  readonly edgeShare: number;
 }
 
 export function batchKey(operation: string, stepId: string): string {
@@ -714,7 +717,8 @@ export function summarizeOperations(
   operations: readonly OperationModel[],
   resolved: ReadonlyMap<string, ResolvedOperation>,
   state: OutcomeState,
-  ingressPass: (op: OperationModel) => number,
+  /** Share of requests that get through these components on the way in (see `ingressModel`). */
+  passThrough: (op: OperationModel, ids: readonly string[], hotShare?: number) => number,
   inputs: LatencyInputs,
   /** Per-path metrics cost a quantile search per path; timelines leave them out. */
   withPaths = true,
@@ -723,10 +727,11 @@ export function summarizeOperations(
 ): Map<string, OperationMetrics> {
   const result = new Map<string, OperationMetrics>();
   for (const op of operations) {
-    const { rate, classes, redeliveries } = resolved.get(op.operation.id) ?? {
+    const { rate, classes, redeliveries, edgeShare } = resolved.get(op.operation.id) ?? {
       rate: op.rate,
       classes: op.classes,
       redeliveries: 0,
+      edgeShare: 0,
     };
     const trigger = op.operation.trigger.type;
     const batchers = inputs.components.get(op.analysis.flow?.handler ?? "")?.instances ?? 1;
@@ -739,7 +744,15 @@ export function summarizeOperations(
       const latency = inputs.components.get(id)?.latency;
       if (latency) ingressLatency = addMoments(ingressLatency, latency);
     }
-    const pass = ingressPass(op);
+    // A CDN answers its hits from the edge; the misses pass on to the handler.
+    const edgeAt = op.edge?.at ?? op.ingress.length - 1;
+    const hotShare = classes.reduce((sum, c) => sum + (c.hotKey ? c.share : 0), 0);
+    const toEdge = passThrough(op, op.ingress.slice(0, edgeAt + 1), op.edge ? 0 : hotShare);
+    const beyond = passThrough(op, op.ingress.slice(edgeAt + 1), hotShare);
+    const answered = op.edge ? edgeShare : 0;
+    // Requests that reach the handler's steps.
+    const pass = toEdge * (1 - answered) * beyond;
+    const reached = toEdge * (answered + (1 - answered) * beyond);
     const paths: PathMetrics[] = [];
     const mixture: WeightedMoments[] = [];
     let success = 0;
@@ -824,17 +837,31 @@ export function summarizeOperations(
         if (r.hot) mixture.push({ weight: pass * r.weight * hotProbability, ...r.hot });
       }
     }
+    if (op.edge && answered > 0) {
+      // A hit waits for the hops up to the edge and for the edge itself.
+      let edgeLatency = (op.analysis.ingress?.connections ?? [])
+        .slice(0, edgeAt + 1)
+        .reduce<Moments>(
+          (sum, connectionId) => addMoments(sum, hopOver(inputs.hops, connectionId, false)),
+          NO_WAIT,
+        );
+      for (const id of op.ingress.slice(0, edgeAt + 1)) {
+        const latency = inputs.components.get(id)?.latency;
+        if (latency) edgeLatency = addMoments(edgeLatency, latency);
+      }
+      mixture.push({ weight: toEdge * answered, ...edgeLatency });
+    }
     result.set(op.operation.id, {
       operation: op.operation.id,
       trigger,
       rate,
       // Work that waits in a queue or a job's backlog is late, not lost.
-      backlogGrowth: trigger === "request" ? 0 : rate * (1 - pass),
+      backlogGrowth: trigger === "request" ? 0 : rate * (1 - reached),
       redeliveries,
-      successRate: pass * success,
-      ingressRejectRate: 1 - pass,
+      successRate: toEdge * answered + pass * success,
+      ingressRejectRate: 1 - reached,
       failures: {
-        rejected: 1 - pass,
+        rejected: 1 - reached,
         unhandled: pass * unhandled,
         errorStatus: pass * errorStatus,
       },

@@ -372,6 +372,17 @@ Object storage answers clients itself ([ADR 0021](../adr/0021-object-storage.md)
 - **As a handler.** A component that only serves objects (`serves-objects` without `stateless-compute`) can handle clients' requests. Its flow only responds, so a request costs it one read or one write, as the operation's class says, against `capacityPerSec × shards` (its prefixes). It bills `requestCost` for them like any metered store, and `storagePricePerGbMonth` for the data bound to it.
 - **What a handler sends.** The handler's network carries the response to every request it serves (`bytes.response`), and each call's `sentBytes`: the item a write, a message or a request to another service carries, unless the target lives in the handler's own memory. Proxies on the way still carry the request and the response. Services' sizes have `networkGbps`, so this joins requests in their utilisation, and their autoscalers follow it.
 
+## Edge caches (as built, M25)
+
+A CDN on the way in answers what it keeps ([ADR 0023](../adr/0023-a-cdn-at-the-edge.md)).
+
+- **What it keeps.** Requests of an operation marked `cacheableAtEdge`, for the entity its workload names. Routes for them prefer a CDN; other requests' routes avoid one.
+- **Its hit ratio.** A cache spec per CDN and entity: the workload's popularity, TTL `edgeTtlSec`, room for every object (`capacityItems` infinite), filled on every miss, coalesced. `relaxCaches` relaxes it with the rest.
+- **In propagation.** At the CDN each class is answered with its hit ratio (the hot key's for a hot class); lookups and fills are recorded under the cache's key; the misses go on with their classes reweighted (`edgeShare` in the resolved operation).
+- **In the results.** The ingress pass splits at the CDN: requests that reach it, those it answers, and the misses that get past the rest. Hits add the hops and components up to the edge to the latency mixture; misses add the whole route and their path.
+- **A hot key at object storage.** A handler that only serves objects puts a hot class's requests on one prefix (`hotLoads`), and those requests meet that prefix's overload.
+- **Data sent.** A CDN's sends to clients are priced at its flavor's `internetTransfer` tiers, separately from the Region's.
+
 ## Money and events (as built, M16)
 
 - **Outbox publishes.** A publish through a transactional outbox is part of the store write before it, and a relay sends it afterwards. Like a fire-and-forget publish, it adds no latency and the request never sees it fail. Unlike one, nothing is lost: the relay retries until the queue takes the message.

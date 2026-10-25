@@ -630,7 +630,11 @@ Photos and other large objects, which do not pass through the services. In parts
 - **The corpus.** The bill is the same for every design in a scenario, so the seven budgets it pushed out move up by it: news feed S1 from $60,000 to $182,500 (timelines are 2.4 PB a month), S4 to $4.35 million (photos are 79 PB). No band changed, and every mutant is still caught.
 - **Shown.** Each component's share in the Load table, and in the budget finding.
 
-**Part 3, a CDN (next).** Edge caches in front of object storage: their hit ratio from the photos' popularity, what reaches the origin, CloudFront's own transfer tiers, and a viral photo that one prefix cannot serve.
+**Part 3, a CDN (as built).** CloudFront in front of the bucket keeps photos at the edge ([ADR 0023](../adr/0023-a-cdn-at-the-edge.md)).
+- **The model.** A CDN on the way in answers what an operation marks `cacheableAtEdge`, at the hit ratio of a cache with CloudFront's default day as TTL over the photos' popularity; the misses go on to the origin. Cacheable requests route through a CDN, others around it. Object storage now puts a hot key's requests on the one prefix that holds it.
+- **The bill.** $1 a million HTTPS requests and CloudFront's own tiers for data sent, $0.085 down to $0.02 a GB; data from S3 to CloudFront is free.
+- **The scenario.** News feed S5, a viral photo: one read in five for one celebrity's photo, 60,000 a second at peak. Without a CDN its prefix is 11.5 times over and 19% of photo reads fail; more prefixes do not help.
+- **The corpus.** The goldens read photos through CloudFront: S4's average day falls from $4.32 million to $2.26 million, photos take 6 ms at the median, and both goldens score 100 in S5. 152 mutants, every one caught.
 
 ## v0.4 and later (only if justified)
 - Shareable read-only links (static, encoded attempt).

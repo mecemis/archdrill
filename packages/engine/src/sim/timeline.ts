@@ -447,7 +447,7 @@ export function simulateTimeline(
       fixtures.operations,
       flow.operations,
       model.state,
-      model.ingress.pass,
+      model.ingress.passThrough,
       {
         components: metrics,
         hops,

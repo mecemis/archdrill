@@ -441,7 +441,11 @@ function CachesTable({ metrics }: { readonly metrics: EnvironmentMetrics }) {
                 {c.populated ? percent(c.hitRatio) : "never populated"}
               </td>
               <td>{percent(c.negativeHitRatio)}</td>
-              <td>{compact(c.capacityItems)} entries</td>
+              <td>
+                {Number.isFinite(c.capacityItems)
+                  ? `${compact(c.capacityItems)} entries`
+                  : "what it is asked for"}
+              </td>
               <td>{c.ttlSec === null ? "none" : `${compact(c.ttlSec)} s`}</td>
             </tr>
           ))}

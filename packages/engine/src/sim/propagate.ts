@@ -161,12 +161,21 @@ export function ingressModel(faults: ReadonlyMap<string, ComponentFault>, loop: 
     op.operation.trigger.type === "event" && op.analysis.ingress?.components[0] === id
       ? false
       : op.operation.class === "write";
-  const pass = (op: OperationModel) =>
-    op.ingress.reduce(
-      (share, id) => share * (1 - overload(id)) * (1 - lost(id, writes(op, id))),
-      1,
-    );
-  return { overload, lost, writes, pass };
+  /**
+   * Share of requests that get through these components. At object storage
+   * that answers itself, a hot key's requests (`hotShare` of them) meet the
+   * overload of the prefix that holds it.
+   */
+  const passThrough = (op: OperationModel, ids: readonly string[], hotShare = 0) =>
+    ids.reduce((share, id) => {
+      const hotPrefix = op.objectHandler && id === op.analysis.flow?.handler && hotShare > 0;
+      const drop = hotPrefix
+        ? (1 - hotShare) * overload(id) + hotShare * (loop.hotDrop.get(id) ?? 0)
+        : overload(id);
+      return share * (1 - drop) * (1 - lost(id, writes(op, id)));
+    }, 1);
+  const pass = (op: OperationModel) => passThrough(op, op.ingress);
+  return { overload, lost, writes, pass, passThrough };
 }
 
 export type IngressModel = ReturnType<typeof ingressModel>;
@@ -325,7 +334,11 @@ export function propagate(
   };
 
   for (const op of operations) {
-    const { rate, classes } = resolveRate(op, published, drains.get(op.operation.id) ?? 0);
+    const resolvedRate = resolveRate(op, published, drains.get(op.operation.id) ?? 0);
+    const rate = resolvedRate.rate;
+    // A CDN on the way answers what it keeps; past it, only the misses go on.
+    let classes = resolvedRate.classes;
+    let edgeShare = 0;
     const trigger = op.operation.trigger.type;
     let arriving = rate;
     const route = op.analysis.ingress;
@@ -337,7 +350,45 @@ export function propagate(
       const served = arriving * (1 - lost);
       // A proxy on the way sends the request on and the response back; the handler sends the response.
       add(loads, id, served, write, served * (id === handler ? op.responseBytes : op.wireBytes));
+      // Object storage keeps a hot key in one prefix, which takes all its requests.
+      if (id === handler && op.objectHandler) {
+        const hot = classes.reduce((sum, c) => sum + (c.hotKey ? c.share : 0), 0);
+        if (hot > 0) add(hotLoads, id, served * hot, write);
+      }
       arriving *= (1 - ingress.overload(id)) * (1 - lost);
+    };
+    /** The CDN answers the share of requests it keeps; the misses go on, filling it on the way back. */
+    const answerAtEdge = (edge: NonNullable<OperationModel["edge"]>) => {
+      const key = cacheKey(edge.componentId, edge.entity);
+      const hits = classes.map((cls) =>
+        state.exists(edge.entity, cls)
+          ? state.hitRatio(edge.componentId, edge.entity, cls.hotKey)
+          : 0,
+      );
+      const asked = { ...(lookups.get(key) ?? { existing: 0, absent: 0, hot: 0 }) };
+      const filled = { ...(fills.get(key) ?? { existing: 0, hot: 0 }) };
+      classes.forEach((cls, i) => {
+        const requests = arriving * cls.share;
+        const missed = requests * (1 - (hits[i] ?? 0));
+        if (!state.exists(edge.entity, cls)) asked.absent += requests;
+        else if (cls.hotKey) {
+          asked.hot += requests;
+          filled.hot += missed;
+        } else {
+          asked.existing += requests;
+          filled.existing += missed;
+        }
+      });
+      lookups.set(key, asked);
+      fills.set(key, filled);
+      edgeShare = classes.reduce((sum, cls, i) => sum + cls.share * (hits[i] ?? 0), 0);
+      if (edgeShare < 1) {
+        classes = classes.map((cls, i) => ({
+          ...cls,
+          share: (cls.share * (1 - (hits[i] ?? 0))) / (1 - edgeShare),
+        }));
+      }
+      arriving *= 1 - edgeShare;
     };
     // Work that starts inside the system enters at the first component on its
     // route: a queue delivers messages; a scheduled job starts in its handler.
@@ -354,6 +405,7 @@ export function propagate(
         toClients.set(hop, (toClients.get(hop) ?? 0) + arriving * op.responseBytes);
       }
       if (hop && op.ingress.includes(hop)) enter(hop);
+      if (op.edge && hop === op.edge.componentId) answerAtEdge(op.edge);
     });
     let redelivered = 0;
     // Steps that sum per key over a window write one item (row) per key and window.
@@ -494,7 +546,7 @@ export function propagate(
         carry(connectionId, redelivered * op.hopBytes, false);
       }
     }
-    resolved.set(op.operation.id, { rate, classes, redeliveries: redelivered });
+    resolved.set(op.operation.id, { rate, classes, redeliveries: redelivered, edgeShare });
   }
   return {
     loads,

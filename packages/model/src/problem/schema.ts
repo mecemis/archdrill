@@ -76,6 +76,11 @@ export const OperationSchema = z.object({
     .object({ request: z.number().int().positive(), response: z.number().int().positive() })
     .optional(),
   trigger: TriggerSchema.prefault({ type: "request" }),
+  /**
+   * Its answer is the same for everyone and does not change (a photo, a
+   * static file), so a CDN can keep it at the edge and answer from there.
+   */
+  cacheableAtEdge: z.boolean().default(false),
   class: z.enum(["read", "write"]),
   idempotent: z.boolean(),
   /** Statuses that count as a correct answer for availability purposes. */

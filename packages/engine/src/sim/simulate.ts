@@ -171,7 +171,7 @@ export function simulateEnvironment(
       fixtures.operations,
       final.operations,
       model.state,
-      model.ingress.pass,
+      model.ingress.passThrough,
       {
         components,
         hops: withProxyHops(routeHops(routes), fixtures.pools),

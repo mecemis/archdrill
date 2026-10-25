@@ -16,6 +16,13 @@ function numbers() {
         if (flavor[field] === undefined) continue;
         found.push({ where: at, field, provenance: flavor.provenance[field] });
       }
+      if (flavor.internetTransfer) {
+        found.push({
+          where: at,
+          field: "internetTransfer",
+          provenance: flavor.internetTransfer.provenance,
+        });
+      }
       for (const [sizeId, size] of Object.entries(flavor.sizes)) {
         for (const field of SIZE_NUMBERS) {
           const value = size[field];

@@ -5,8 +5,9 @@ import { testCatalog } from "./fixtures";
 
 /**
  * The test catalog with object storage (S3's numbers: 5,500 reads and 3,500
- * writes a second per prefix, billed per request), and services whose
- * network carries what they send (c6i.xlarge's 1.562 Gbps baseline).
+ * writes a second per prefix, billed per request), a CDN (CloudFront's: $1 a
+ * million requests, objects kept a day), and services whose network carries
+ * what they send (c6i.xlarge's 1.562 Gbps baseline).
  */
 export const photosCatalogIndex = createCatalogIndex({
   ...testCatalog,
@@ -60,6 +61,42 @@ export const photosCatalogIndex = createCatalogIndex({
         },
       ],
     },
+    {
+      id: "cdn",
+      label: "CDN",
+      description: "Answers clients from caches at the edge.",
+      capabilities: ["edge-cache"],
+      replicable: false,
+      holdsData: false,
+      shardable: false,
+      writeScaling: "all-replicas",
+      inProcess: false,
+      quorum: false,
+      pooledConnections: false,
+      flavors: [
+        {
+          id: "cloudfront",
+          label: "CloudFront",
+          description: "CloudFront.",
+          capabilities: [],
+          managedRedundancy: true,
+          crossZoneBilling: "free",
+          requestCost: { readPerMillion: 1, writePerMillion: 1 },
+          edgeTtlSec: 86_400,
+          sizes: {
+            edge: {
+              label: "edge",
+              capacityPerSec: { read: 5e6, write: 5e6 },
+              latencyMs: { base: 5, cv: 0.5 },
+              costPerHour: 0,
+              provenance: {},
+            },
+          },
+          defaultSize: "edge",
+          provenance: {},
+        },
+      ],
+    },
   ],
 });
 
@@ -99,6 +136,7 @@ export const photosProblem: Problem = ProblemSchema.parse({
       method: "GET",
       path: "/photos/{id}",
       bytes: { request: 500, response: 200300 },
+      cacheableAtEdge: true,
       class: "read",
       idempotent: true,
       successStatuses: [200],
@@ -110,9 +148,10 @@ export const photosProblem: Problem = ProblemSchema.parse({
 
 /**
  * Where the photos' bytes go: straight between clients and object storage,
- * with the service only signing uploads, or through the service.
+ * with the service only signing uploads; the same with reads through a CDN;
+ * or through the service.
  */
-export type PhotoRoute = "direct" | "through-service";
+export type PhotoRoute = "direct" | "cdn" | "through-service";
 
 /**
  * Users → ALB → API (2 instances), and photos in S3 over 4 prefixes. The API
@@ -120,7 +159,8 @@ export type PhotoRoute = "direct" | "through-service";
  * through the service, the API stores and reads every photo for them.
  */
 export function photosAttempt(route: PhotoRoute = "direct"): Attempt {
-  const direct = route === "direct";
+  const direct = route !== "through-service";
+  const cdn = route === "cdn";
   const served = (operation: string) => ({
     operation,
     handler: "photos",
@@ -144,12 +184,19 @@ export function photosAttempt(route: PhotoRoute = "direct"): Attempt {
           shards: 4,
           data: [{ entity: "Photo" }],
         },
+        ...(cdn ? [{ id: "edge", kind: "cdn", flavor: "cloudfront", label: "Edge" }] : []),
       ],
       connections: [
         { id: "users--lb", from: "users", to: "lb" },
         { id: "lb--api", from: "lb", to: "api" },
         { id: "api--photos", from: "api", to: "photos" },
         ...(direct ? [{ id: "users--photos", from: "users", to: "photos" }] : []),
+        ...(cdn
+          ? [
+              { id: "users--edge", from: "users", to: "edge" },
+              { id: "edge--photos", from: "edge", to: "photos" },
+            ]
+          : []),
       ],
     },
     flows: [
@@ -205,6 +252,7 @@ export function photosAttempt(route: PhotoRoute = "direct"): Attempt {
       lb: { x: 200, y: 0 },
       api: { x: 400, y: 0 },
       photos: { x: 600, y: 100 },
+      ...(cdn ? { edge: { x: 300, y: 200 } } : {}),
     },
   });
 }
