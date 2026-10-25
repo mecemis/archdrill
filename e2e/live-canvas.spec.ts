@@ -291,3 +291,25 @@ test("types steps on the command line", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(bar).toHaveCount(0);
 });
+
+test("provisions I/Os on the database's volumes for the misses it reads from disk", async ({
+  page,
+}) => {
+  await importGolden(page, "postgres-redis-cache-aside");
+  await page.getByRole("button", { name: /S5 / }).click();
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+  await page.locator('.react-flow__node[data-id="links-db"]').click();
+
+  const iops = page.getByLabel("Provisioned I/Os a second on each copy");
+  await expect(iops).toHaveValue("20000");
+  await expect(page.getByTestId("volume-metrics")).toContainText("Page cache answers");
+
+  // Back to the striped volume's 12,000: the viral spike's misses no longer fit.
+  await iops.fill("");
+  await iops.press("Enter");
+  await expect(page.getByTestId("scenario-score")).not.toHaveText("100");
+
+  await iops.fill("20000");
+  await iops.press("Enter");
+  await expect(page.getByTestId("scenario-score")).toHaveText("100");
+});

@@ -1,11 +1,12 @@
 import { componentProfile, HOURS_PER_MONTH } from "@archdrill/engine";
-import { type Component, placedInZones, runsInRegion } from "@archdrill/model";
+import { type Component, type Flavor, placedInZones, runsInRegion } from "@archdrill/model";
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { activePack, catalogIndex } from "../state/content";
+import { useScenarioLoad } from "../state/evaluation";
 import { useAttemptStore } from "../state/store";
 import { useUi } from "../state/ui-store";
-import { compact, usd } from "../ui/format";
+import { compact, percent, usd } from "../ui/format";
 import { Button, Field, INPUT_CLASS, SectionTitle, Select } from "../ui/primitives";
 import { AutoscaleEditor } from "./AutoscaleEditor";
 import { ConnectionInspector } from "./ConnectionInspector";
@@ -47,6 +48,7 @@ function ComponentInspector({ component }: { readonly component: Component }) {
     zones?: number;
     regions?: number;
     proxy?: boolean;
+    iops?: number | null;
   }) => dispatch("updateComponent", { id: component.id, ...changes });
   const profile = componentProfile(component, catalogIndex);
 
@@ -116,6 +118,15 @@ function ComponentInspector({ component }: { readonly component: Component }) {
           latencyMs={flavor.connectionProxy.latencyMs}
           maxConnections={size?.maxConnections}
           onChange={(proxy) => update({ proxy })}
+        />
+      )}
+      {flavor?.storageVolume && flavor.pageCache && profile && (
+        <StorageVolume
+          component={component}
+          volume={flavor.storageVolume}
+          instanceIops={size?.ebsIops}
+          copies={profile.instances}
+          onChange={(iops) => update({ iops })}
         />
       )}
       {kind?.replicable && !kind.holdsData && !flavor?.managedRedundancy && (
@@ -200,6 +211,112 @@ function ConnectionProxy({
           : `Every caller instance's pool connects straight to the database, and each takes its connections${limit}.`}
       </p>
     </div>
+  );
+}
+
+/** I/Os provisioned within the volume's range; undefined for the volume its size gives. */
+function provisioned(volume: NonNullable<Flavor["storageVolume"]>, iops: number | undefined) {
+  return iops === undefined
+    ? undefined
+    : Math.min(volume.maxIops, Math.max(volume.stripedIops, iops));
+}
+
+/**
+ * The volume a store reads the pages its page cache misses from: what it
+ * gives, the I/Os provisioned on it and what they cost, and how busy it is.
+ */
+function StorageVolume({
+  component,
+  volume,
+  instanceIops,
+  copies,
+  onChange,
+}: {
+  readonly component: Component;
+  readonly volume: NonNullable<Flavor["storageVolume"]>;
+  readonly instanceIops: number | undefined;
+  readonly copies: number;
+  readonly onChange: (iops: number | null) => void;
+}) {
+  const { metrics } = useScenarioLoad();
+  const shown = component.iops === undefined ? "" : String(component.iops);
+  const [draft, setDraft] = useState(shown);
+  useEffect(() => setDraft(shown), [shown]);
+  const commit = () => {
+    if (draft.trim() === "") {
+      if (component.iops !== undefined) onChange(null);
+      return;
+    }
+    const next = provisioned(volume, Math.round(Number(draft)));
+    if (next === undefined || !Number.isFinite(next)) {
+      setDraft(shown);
+      return;
+    }
+    setDraft(String(next));
+    if (next !== component.iops) onChange(next);
+  };
+  const iops = provisioned(volume, component.iops);
+  const monthly =
+    iops === undefined ? 0 : (iops - volume.stripedIops) * volume.pricePerIopsMonth * copies;
+  const disk = metrics?.components.get(component.id)?.disk;
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1">
+        <SectionTitle>Volume</SectionTitle>
+      </legend>
+      <label className="flex items-center gap-2 text-xs text-fg-muted">
+        <input
+          type="number"
+          min={volume.stripedIops}
+          max={volume.maxIops}
+          step={1000}
+          value={draft}
+          placeholder="its size's"
+          aria-label="Provisioned I/Os a second on each copy"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+          }}
+          className={`${INPUT_CLASS} w-24`}
+        />
+        I/Os a second provisioned on each copy
+      </label>
+      <p className="text-xs text-fg-subtle">
+        Reads its page cache misses read their pages from the volume. A copy gets{" "}
+        {compact(volume.baselineIops)} I/Os a second below {compact(volume.stripedFromGb)} GB of
+        data, and {compact(volume.stripedIops)} from it; provisioning sets{" "}
+        {compact(volume.stripedIops)} to {compact(volume.maxIops)}
+        {monthly >= 1 ? `, for ${usd(monthly)} a month on its ${copies} copies` : ""}.
+        {instanceIops !== undefined &&
+          ` One instance sustains ${compact(instanceIops)}, whatever is provisioned.`}
+      </p>
+      {iops !== undefined && instanceIops !== undefined && iops > instanceIops && (
+        <p className="rounded-md bg-warn-soft px-2.5 py-2 text-xs text-warn-fg">
+          {compact(iops - instanceIops)} of them are paid for and unused: a larger size sustains
+          more.
+        </p>
+      )}
+      {disk && metrics && (
+        <section className="rounded-md bg-sunken p-2.5 text-xs" data-testid="volume-metrics">
+          <h4 className="mb-1 font-semibold text-fg-muted">At {metrics.environment.label}</h4>
+          <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
+            <dt className="text-fg-muted">Page cache answers</dt>
+            <dd className="text-right text-fg">{percent(disk.hitRatio, 1)} of reads</dd>
+            <dt className="text-fg-muted">I/Os a second a copy</dt>
+            <dd className="text-right text-fg">
+              {compact(disk.readIops + disk.writeIops)} of {compact(disk.limit)}
+            </dd>
+            <dt className="text-fg-muted">Busiest volume</dt>
+            <dd
+              className={`text-right ${disk.utilization > 1 ? "font-semibold text-bad-fg" : "text-fg"}`}
+            >
+              {percent(disk.utilization, 0)}
+            </dd>
+          </dl>
+        </section>
+      )}
+    </fieldset>
   );
 }
 
